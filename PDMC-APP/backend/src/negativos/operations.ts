@@ -8,6 +8,7 @@ import { uuid, NegativosError } from "./validation";
 import {countWorkflow,type CountWorkflow} from "../../../shared/workflow/count-routing";
 import {currentMonth,monthRange} from "../../../shared/month";
 import {validarMotivoNegativo} from "../../../shared/negativos/reasons";
+import {photoComparison} from "./photo-comparison";
 
 export const stateSchema = z.enum(Object.keys(estados) as [keyof typeof estados, ...(keyof typeof estados)[]]);
 const note = z.string().trim().max(10000);
@@ -32,6 +33,7 @@ export const listingSchema = z.object({ bodegaId: uuid.optional(), skip: z.coerc
   take: z.coerce.number().int().min(1).max(100).default(25), q: z.string().trim().max(200).default(""),
   flujo:z.enum(["todos","trabajo"]).default("todos"),
   cola:z.enum(["automatica","pendientes","gestion","aprobados","listos","desaparecidos"]).default("automatica"),
+  comparacion:z.enum(["todos","nuevos","aumentaron","disminuyeron","iguales","desaparecieron"]).default("todos"),
   filtro: z.union([stateSchema, z.enum(["pending", "resolved", "all", "anulados", "con_conteo"])]).default("pending"),
 }).strict();
 export async function lockWarehouse(tx: Prisma.TransactionClient, id: string) {
@@ -151,14 +153,18 @@ export class NegativeOperations {
           : {OR:[...(countIds.length?[{bodegaId:{in:countIds},conteoFisico:null,estado:{notIn:workExcluded}}]:[]),...(managementIds.length?[{bodegaId:{in:managementIds},conteoFisico:{not:null},estado:{notIn:workExcluded}}]:[])]};
       const selectedPeriod=monthRange(p.mes),isCurrentPeriod=p.mes===currentMonth();
       const activePhoto=await tx.fotoNegativos.findFirst({where:{fechaCorte:selectedPeriod},orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],include:{items:true,consulta:true}});
+      const previousPhoto=activePhoto?await tx.fotoNegativos.findFirst({where:{fechaCorte:{lt:activePhoto.fechaCorte}},orderBy:{fechaCorte:"desc"},include:{items:true}}):null;
+      const previousAmounts=new Map(previousPhoto?.items.map(row=>[row.productoId,row.existencia])??[]);
       const inventory=activePhoto?activePhoto.items.map(row=>({productoId:row.productoId,_sum:{existencia:row.existencia}})):isCurrentPeriod?await tx.inventarioActual.groupBy({by:["productoId"],_sum:{existencia:true}}):[];
       const currentAmounts=new Map(inventory.filter(row=>row._sum.existencia?.isNegative()).map(row=>[row.productoId,row._sum.existencia!]));
       const currentProductIds=[...currentAmounts.keys()];
+      const comparisonLabels={nuevos:"Nuevo",aumentaron:"Empeoró",disminuyeron:"Mejoró",iguales:"Sin cambio",desaparecieron:"Desapareció"};
+      const comparisonIds=p.comparacion==="todos"?[]:[...new Set([...currentProductIds,...previousAmounts.keys()])].filter(id=>photoComparison(previousAmounts.get(id)?.toFixed(4)??null,currentAmounts.get(id)?.toFixed(4)??null,Boolean(previousPhoto),Boolean(activePhoto)).estado===comparisonLabels[p.comparacion as keyof typeof comparisonLabels]);
       const latest=activePhoto?.consulta??await tx.consultaInventario.findFirst({where:{fechaConsulta:selectedPeriod},orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]});
       const flow=p.flujo==="trabajo"?workflowWhere:{};
       const effectiveView=p.cola==="desaparecidos"?"pendientes_verificar":p.vista;
       const period=effectiveView==="actual"?{}:{ultimaDeteccion:monthRange(p.mes)};
-      const base: Prisma.NegativoWhereInput = { AND:[{bodegaId:scopedId},flow,period], anuladoAt: null, fusionadoEnId:null,
+      const base: Prisma.NegativoWhereInput = { AND:[{bodegaId:scopedId},flow,period,...(p.comparacion!=="todos"?[{productoId:{in:comparisonIds}}]:[])], anuladoAt: null, fusionadoEnId:null,
         ...(effectiveView==="actual" && p.filtro!=="anulados" && p.cola!=="listos" ? {productoId:{in:currentProductIds}} :
           effectiveView==="pendientes_verificar" ? {productoId:{notIn:currentProductIds},estado:"PENDIENTE_VERIFICAR"} : {}),
       };
@@ -191,7 +197,7 @@ export class NegativeOperations {
       const resueltos = await tx.negativo.count({ where: { ...summaryBase, estado: { in: [...closed] } } });
       const sinConteo = await tx.negativo.count({ where: { ...summaryBase,conteoFisico:null,estado:{notIn:[...approvedStates,...closed]} } });
       const productWarehouse = p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{};
-      const visibleCurrent=await tx.negativo.findMany({where:{AND:[{bodegaId:scopedId},period],fusionadoEnId:null,anuladoAt:null,estado:{notIn:[...closed]},productoId:{in:currentProductIds},...productWarehouse},select:{productoId:true}});
+      const visibleCurrent=await tx.negativo.findMany({where:{AND:[where,{estado:{notIn:[...closed]}}]},select:{productoId:true}});
       const units=visibleCurrent.reduce((sum,item)=>sum.add(currentAmounts.get(item.productoId)??0),new Prisma.Decimal(0));
       const allActiveCases=await tx.negativo.findMany({where:{...globalSummaryBase,estado:{notIn:[...closed]}},select:{productoId:true}});
       const allActiveUnits=allActiveCases.reduce((sum,item)=>sum.add(currentAmounts.get(item.productoId)??0),new Prisma.Decimal(0));
@@ -199,8 +205,8 @@ export class NegativeOperations {
       const conConteo=Math.max(0,activos-sinConteo-aprobados-listosEnFoto),actuales=sinConteo+conConteo+aprobados+listosEnFoto;
       const pendientesVerificar = await tx.negativo.count({where:{AND:[{bodegaId:scopedId},period],fusionadoEnId:null,anuladoAt:null,estado:"PENDIENTE_VERIFICAR",...productWarehouse,productoId:{notIn:currentProductIds}}});
       const workflow=p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?"desaparecidos":countIds.length&&managementIds.length?"mixto":countIds.length?"conteo":"gestion";
-      return { total, skip: p.skip, take: p.take, workflow, resumen: { actuales, pendientesVerificar, activos, resueltos, sinConteo, conConteo, aprobados, listosCerrar, totalCasosActivos:allActiveCases.length, totalUnidadesActivas:allActiveUnits.abs().toFixed(4), grupos: { EN_INVESTIGACION: activos - aprobados - listosEnFoto, AJUSTE_AUTORIZADO: aprobados + listosEnFoto, SOLUCIONADO: resueltos }, unidades: units.abs().toFixed(4) }, ultimaConsulta: latest, corteNegativos:activePhoto?{fechaCorte:activePhoto.fechaCorte,tipoCorte:activePhoto.tipoCorte}:null,
-        items: items.map(n => ({ ...n, inconsistenciasActivas:inconsistencyCount.get(n.producto.codigoBarra)??0, workflow:p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?(n.conteoFisico===null?"conteo":"gestion"):workflows.get(n.bodegaId)??"gestion", existenciaActual: currentAmounts.get(n.productoId)?.toFixed(4)??null, existenciaAnterior:null })),
+      return { total, skip: p.skip, take: p.take, workflow, resumen: { actuales, pendientesVerificar, activos, resueltos, sinConteo, conConteo, aprobados, listosCerrar, totalCasosActivos:allActiveCases.length, totalUnidadesActivas:allActiveUnits.abs().toFixed(4), grupos: { EN_INVESTIGACION: activos - aprobados - listosEnFoto, AJUSTE_AUTORIZADO: aprobados + listosEnFoto, SOLUCIONADO: resueltos }, unidades: units.abs().toFixed(4) }, ultimaConsulta: latest, corteNegativos:activePhoto?{fechaCorte:activePhoto.fechaCorte,tipoCorte:activePhoto.tipoCorte}:null,fotografiaAnterior:previousPhoto?{fechaCorte:previousPhoto.fechaCorte}:null,
+        items: items.map(n => ({ ...n, inconsistenciasActivas:inconsistencyCount.get(n.producto.codigoBarra)??0, workflow:p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?(n.conteoFisico===null?"conteo":"gestion"):workflows.get(n.bodegaId)??"gestion", existenciaActual: currentAmounts.get(n.productoId)?.toFixed(4)??null, existenciaAnterior:previousAmounts.get(n.productoId)?.toFixed(4)??null,comparacionFoto:photoComparison(previousAmounts.get(n.productoId)?.toFixed(4)??null,activePhoto?currentAmounts.get(n.productoId)?.toFixed(4)??null:null,Boolean(previousPhoto),Boolean(activePhoto)) })),
       };
     }, { isolationLevel: "RepeatableRead" });
   }

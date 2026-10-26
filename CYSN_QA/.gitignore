@@ -1,0 +1,28 @@
+# Secretos y configuración local: nunca se versionan
+.env
+.env.*
+!.env.example
+config.env
+*.pem
+*.key
+*.pfx
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Agente: binarios compilados y estado local (se publican como descarga en GitHub)
+agente_tienda/dist/
+agente_tienda/build/
+agente_tienda/.venv/
+*.sqlite3
+*.rar
+*.zip
+
+# Frontend y logs
+node_modules/
+frontend/dist/
+logs/
+*.log

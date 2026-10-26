@@ -3,11 +3,13 @@ import { useState } from "react";
 import { Button } from "@frontend/components/ui/button";
 import { Input } from "@frontend/components/ui/input";
 import { PasswordInput } from "@frontend/components/ui/password-input";
+import {syncProjectStorage} from "@frontend/lib/project-storage";
 
 async function submit(action:string,data:unknown) {
   const response=await fetch(`/api/auth/${action}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data),cache:"no-store"});
   const result=await response.json();
   if(!response.ok||!result.ok)throw new Error(result.error?.message??"No se pudo completar la operación.");
+  if(action==="login")syncProjectStorage(result.data.reinicio??null);
   if(action==="logout"||action==="password") {const channel=new BroadcastChannel("pdmc-auth");channel.postMessage("session-changed");channel.close();}
   return result.data;
 }

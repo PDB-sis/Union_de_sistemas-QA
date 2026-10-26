@@ -8,6 +8,7 @@ import { getDb } from "../db";
 import { NegativosService } from "./service";
 import { NegativosError, uuid } from "./validation";
 import type { ApiEnvelope } from "../../../shared/negativos/contracts";
+import {enterApiRequest} from "../maintenance";
 
 export const pagination = z.object({
   bodegaId: uuid,
@@ -38,7 +39,9 @@ export async function jsonBody(request: Request, maxBytes = 3_000_000) {
 
 export async function endpoint<T>(request: Request, action: (service: NegativosService, access: Authorization) => Promise<T>, guard: (request: Request) => void = requireOrigin) {
   const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" };
+  let release:(()=>void)|undefined;
   try {
+    release=enterApiRequest();
     const session = await requireApiSession(request);
     const access = new Authorization(getDb(),session.usuario.id);
     guard(request);
@@ -51,5 +54,5 @@ export async function endpoint<T>(request: Request, action: (service: NegativosS
     const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
     const conflict = ["P2002", "P2034"].includes(code);
     return Response.json({ ok: false, error: { code: conflict ? "CONFLICTO" : "SERVICIO_NO_DISPONIBLE", message: conflict ? "Conflicto concurrente; reintente la operación." : "No se pudo completar la operación. Revise la conexión del servidor." } }, { status: conflict ? 409 : 503, headers });
-  }
+  } finally {release?.();}
 }

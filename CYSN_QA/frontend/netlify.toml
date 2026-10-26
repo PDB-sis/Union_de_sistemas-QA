@@ -1,0 +1,14 @@
+# Netlify: en "Base directory" ponga la carpeta de este archivo
+# (CYSN_QA/frontend en Union_de_sistemas-QA, o frontend en el repositorio CYSN_QA).
+# VITE_API_URL se define en Netlify (Site configuration > Environment variables).
+[build]
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

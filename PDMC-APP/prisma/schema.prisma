@@ -86,6 +86,23 @@ model Usuario {
   importacionesDevoluciones DevolucionConsultaImport[]
   pedidosTienda               PedidoTienda[]                     @relation("PedidoTiendaSolicitante")
   observacionesFacturacion    ObservacionFacturador[]            @relation("ObservacionFacturadorAutor")
+  restablecimientos           RestablecimientoProyecto[]
+}
+
+model RestablecimientoProyecto {
+  id               String @id @default(uuid()) @db.Uuid
+  usuarioId        String @db.Uuid
+  tokenHash        String @db.VarChar(64)
+  sesionHash       String @db.VarChar(64)
+  conteos          Json
+  disponibleDesde DateTime @db.Timestamptz(3)
+  expiresAt        DateTime @db.Timestamptz(3)
+  consumidoAt      DateTime? @db.Timestamptz(3)
+  respaldoNombre   String? @db.VarChar(200)
+  respaldoSha256   String? @db.VarChar(64)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  usuario          Usuario @relation(fields:[usuarioId],references:[id],onDelete:Cascade)
+  @@index([usuarioId,createdAt])
 }
 
 model Bodega {

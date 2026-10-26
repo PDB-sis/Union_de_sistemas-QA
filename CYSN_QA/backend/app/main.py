@@ -359,9 +359,15 @@ def _condicion_codigo_barra_qa_valido():
         ),
     )
 
+# Orígenes del frontend que pueden llamar a la API (por ejemplo, el sitio de Netlify).
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    *(
+        valor.strip().rstrip("/")
+        for valor in os.getenv("CYSN_CORS_ORIGINS", "").split(",")
+        if valor.strip()
+    ),
 ]
 
 
