@@ -1,0 +1,98 @@
+# Unión de Sistemas QA: PDMC + NEXO QA sobre la base unificada sistemas_unificados.
+#   cp .env.example .env   (y completar los secretos)
+#   docker compose up -d
+# PDMC: http://localhost:3000 · NEXO QA: http://localhost:8080 · API para agentes: http://localhost:5082
+# Las imágenes están en Docker Hub (sistemaspdb/*); "docker compose build" las reconstruye desde el código.
+name: union-sistemas-qa
+
+services:
+  postgres:
+    image: sistemaspdb/postgres-unificada:${VERSION:-latest}
+    build: { context: ., dockerfile: docker/postgres/Dockerfile }
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:${POSTGRES_PUERTO:-55450}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sistemas_unificados"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  pdmc:
+    image: sistemaspdb/pdmc:${VERSION:-latest}
+    build: { context: ., dockerfile: docker/pdmc/Dockerfile }
+    command: ["web"]
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment: &pdmc_env
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/sistemas_unificados?schema=pdmc
+      PDMC_AUTH_ORIGIN: ${PDMC_ORIGEN:-http://localhost:3000}
+      PDMC_AGENTE_SCHEMA: cysn_qa
+      PDMC_INVENTARIO_DIM_ID: ${PDMC_INVENTARIO_DIM_ID:-2004}
+      PDMC_SYNC_USUARIO_EMAIL: ${PDMC_SYNC_USUARIO_EMAIL:-sincronizacion@pdmc.local}
+      PDMC_SQLSERVER_ENABLED: ${PDMC_SQLSERVER_ENABLED:-false}
+      PDMC_SQLSERVER_HOST: ${PDMC_SQLSERVER_HOST:-}
+      PDMC_SQLSERVER_INSTANCE: ${PDMC_SQLSERVER_INSTANCE:-}
+      PDMC_SQLSERVER_PORT: ${PDMC_SQLSERVER_PORT:-}
+      PDMC_SQLSERVER_DATABASE: ${PDMC_SQLSERVER_DATABASE:-}
+      PDMC_SQLSERVER_USER: ${PDMC_SQLSERVER_USER:-}
+      PDMC_SQLSERVER_PASSWORD: ${PDMC_SQLSERVER_PASSWORD:-}
+      PDMC_SQLSERVER_TRUST_SERVER_CERTIFICATE: ${PDMC_SQLSERVER_TRUST_SERVER_CERTIFICATE:-false}
+      PDMC_QA_SSO_SECRET: ${SSO_SECRET:?Defina SSO_SECRET en .env (32 caracteres o más)}
+      PDMC_QA_SSO_DESTINATION: ${NEXOQA_ORIGEN:-http://localhost:8080}
+    ports:
+      - "${PDMC_PUERTO:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  pdmc-sync:
+    image: sistemaspdb/pdmc:${VERSION:-latest}
+    command: ["sync"]
+    restart: unless-stopped
+    # Espera a que la web haya aplicado las migraciones de PDMC.
+    depends_on:
+      pdmc: { condition: service_healthy }
+    environment:
+      <<: *pdmc_env
+      PDMC_SYNC_MODULOS: ${PDMC_SYNC_MODULOS:-SUCURSALES,FACTURADORES,TRANSFERENCIAS,DEVOLUCIONES,INVENTARIO}
+
+  nexoqa-api:
+    image: sistemaspdb/nexoqa-api:${VERSION:-latest}
+    build: { context: ., dockerfile: docker/nexoqa-api/Dockerfile }
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: sistemas_unificados
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      CYSN_POSTGRES_SCHEMA: cysn_qa
+      CYSN_PDMC_SCHEMA: pdmc
+      JWT_SECRET_KEY: ${NEXOQA_JWT_SECRET:?Defina NEXOQA_JWT_SECRET en .env (32 caracteres o más)}
+      CYSN_PDMC_SSO_SECRET: ${SSO_SECRET}
+      CYSN_SQLSERVER_ENABLED: "false"
+    ports:
+      - "${NEXOQA_API_PUERTO:-5082}:5082"
+
+  nexoqa-web:
+    image: sistemaspdb/nexoqa-web:${VERSION:-latest}
+    build: { context: ., dockerfile: docker/nexoqa-web/Dockerfile }
+    restart: unless-stopped
+    depends_on:
+      - nexoqa-api
+    ports:
+      - "${NEXOQA_PUERTO:-8080}:8080"
+
+volumes:
+  postgres_data:

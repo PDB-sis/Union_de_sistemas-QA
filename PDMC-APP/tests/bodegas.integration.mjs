@@ -59,6 +59,14 @@ async function enviar(dim,tarea,clave,datos,activo=true){
 }
 const transferencias=async numero=>(await db.transferenciaConsulta.findMany({where:{numero},include:{detalles:true,origen:true},orderBy:{origenId:"asc"}}));
 
+test("sin datos de ningún agente no es un fallo",async()=>{
+  for(const id of ["TRANSFERENCIAS","DEVOLUCIONES","INVENTARIO"]){
+    const r=await ejecutarModulo(db,modulo(id));
+    assert.equal(r.estado,"SIN_CAMBIOS",id);assert.equal(r.totalFilas,0);assert.match(r.resumen.aviso,/todavía/);
+  }
+  await admin.query(`DELETE FROM "SincronizacionEstado"`);
+});
+
 test("facturadores llegan del agente",async()=>{
   await enviar(2004,"usuarios","F1",{CodUsuario:"F1",NombreUsuario:"ANA"});
   const r=await ejecutarModulo(db,modulo("FACTURADORES"));

@@ -67,7 +67,8 @@ async function desdeAgente(db: PrismaClient, modulo: Modulo, tarea: TareaAgente,
   const { firma, filas } = await firmaAgente(db, tarea);
   if (modulo.omitirSiIgual && firma === ultimoHash) return { hash: firma, totalFilas: filas, result: { sinCambios: true } };
   const cargas = await cargasAgente(db, tarea, columnas);
-  if (!cargas.length) throw new Error(`Ningún agente de bodega ha enviado ${tarea} todavía.`);
+  // Instalación nueva o sitio sin agente: no es un fallo; lo ya importado se conserva.
+  if (!cargas.length) return { hash: firma, totalFilas: 0, result: { sinCambios: true, resumen: { aviso: `Ningún agente de bodega ha enviado ${tarea} todavía.` } } };
   const porSitio = [];
   let sinCambios = true;
   for (const carga of cargas) {
@@ -83,6 +84,8 @@ async function desdeInventarioAgente(db: PrismaClient, modulo: Modulo, ultimoHas
   const { firma, filas } = await firmaInventario(db);
   // Publicar la fotografía de negativos siempre se aplica, aunque el inventario no haya cambiado.
   if (!opciones.publicarNegativos && modulo.omitirSiIgual && firma === ultimoHash) return { hash: firma, totalFilas: filas, result: { sinCambios: true } };
+  // Sin inventario del agente todavía: no es un fallo; el inventario vigente se conserva.
+  if (!filas && !opciones.publicarNegativos) return { hash: firma, totalFilas: 0, result: { sinCambios: true, resumen: { aviso: "El agente del sitio PDMC_INVENTARIO_DIM_ID todavía no ha enviado inventario." } } };
   const carga = await cargaInventario(db);
   const ubicacion = await db.ubicacion.findUnique({ where: { dimIdTienda: carga.dim }, select: { id: true } });
   const result = await modulo.importar(db, carga.csv, { ...opciones, sitio: { ubicacionId: ubicacion?.id ?? "", dimIdTienda: carga.dim } });

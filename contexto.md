@@ -251,6 +251,19 @@ npm run build
 
 Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `public.` a `cysn_qa.`. No copia datos de negocio: estos llegan por los sincronizadores.
 
+### 5.5 Docker (instalación completa desde cero)
+
+- **Qué hay:** `compose.yaml` en la raíz levanta cuatro imágenes publicadas en Docker Hub (`sistemaspdb/*`, públicas, sin datos ni secretos):
+  - `postgres-unificada`: PostgreSQL 18 con los esquemas `pdmc` y `cysn_qa`, la estructura y las migraciones 001-006 de CYSN, y sus catálogos (roles y tipos de diferencia);
+  - `pdmc`: la web, que aplica las migraciones al arrancar, y también el sincronizador;
+  - `nexoqa-api`;
+  - `nexoqa-web`: nginx, que reenvía `/api/` a la API.
+- **Dónde está cada cosa:** los Dockerfiles en `docker/`, la guía en `DOCKER.md` y la configuración en `.env.example`, que se copia a `.env`.
+- **Cómo se publica una versión:** `docker compose build` y después `docker compose push`, con `VERSION` (la primera es `2026.10.26` y `latest`).
+- **Probado el 2026-10-26 desde cero:** migraciones, usuarios iniciales, inicio de sesión en los dos sistemas y una transferencia enviada por un agente hasta PDMC.
+- **Comandos nuevos para Docker:** `python -m app.crear_administrador` crea el primer administrador de NEXO QA. El sincronizador de PDMC corre aunque `PDMC_SQLSERVER_ENABLED=false`, porque ese valor solo afecta al catálogo de sitios. Y si todavía no hay datos de ningún agente, la carga queda `SIN_CAMBIOS` con un aviso, no `FALLIDA`.
+- **Hueco abierto:** sin acceso a `BODEGA_DATOS`, una instalación nueva no tiene catálogo de sitios, y no se pueden registrar agentes.
+
 ### 5.4 Despliegue en servidor
 
 1. **Backend QA:** `deployment\Iniciar-Backend-QA.ps1 [-SincronizarCreacion]` (crea venv, instala dependencias, levanta Uvicorn en `127.0.0.1:5082`, verifica `/api/health`).
@@ -338,7 +351,7 @@ Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `pu
 
 ## 7. Seguridad
 
-> La auditoría de seguridad y su plan de acción **no se publican** en este repositorio público. Se mantienen en la copia interna de `contexto.md`. Para revisar la seguridad, pídela al equipo responsable.
+> La auditoría de seguridad y su plan de acción **no se publican** en este repositorio público. Se mantienen en la copia interna de `contexto.md`.
 
 ---
 

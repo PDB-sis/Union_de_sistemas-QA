@@ -43,11 +43,14 @@ async function ciclo(db: ReturnType<typeof getDb>, modulo: Modulo, yaEjecutado: 
 }
 
 async function run() {
-  if (!sqlServerSyncEnabled()) {
-    console.info("Sincronizacion SQL Server desactivada. Configure PDMC_SQLSERVER_ENABLED=true para iniciarla.");
+  // PDMC_SQLSERVER_ENABLED solo afecta a los módulos que consultan SQL Server (el
+  // catálogo de sitios); los que llegan de los agentes leen PostgreSQL y siempre corren.
+  const modulos = modulosActivos().filter(modulo => modulo.fuente.tipo !== "SQLSERVER" || sqlServerSyncEnabled());
+  if (!sqlServerSyncEnabled()) console.info("SQL Server desactivado (PDMC_SQLSERVER_ENABLED): se omiten los módulos que lo consultan.");
+  if (!modulos.length) {
+    console.info("No hay módulos que sincronizar.");
     return;
   }
-  const modulos = modulosActivos();
   const db = getDb();
   const stop = () => { stopping = true; for (const done of [...sleepers]) done(); };
   process.once("SIGINT", stop);
