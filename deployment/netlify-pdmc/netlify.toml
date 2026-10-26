@@ -1,0 +1,13 @@
+# Sitio de entrada de PDMC en Netlify.
+# PDMC se sigue ejecutando en el servidor (Next.js + PostgreSQL); Netlify solo reenvía
+# cada petición a https://apiqa.apipalacio.com y el navegador conserva la dirección de Netlify.
+# En Netlify: Base directory = deployment/netlify-pdmc, sin build command ni variables.
+# En el servidor: PDMC_AUTH_ADDITIONAL_ORIGINS debe incluir la dirección de este sitio.
+[build]
+  publish = "."
+
+[[redirects]]
+  from = "/*"
+  to = "https://apiqa.apipalacio.com/:splat"
+  status = 200
+  force = true
