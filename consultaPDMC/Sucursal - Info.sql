@@ -1,0 +1,10 @@
+SELECT [dimID_Tienda]
+      ,[Codigo]
+      ,[Nombre]
+      ,[Descripcion]
+      ,[Zona]
+      ,[Status]
+      ,[Tipo]
+      ,[ModoOp]
+  FROM [BODEGA_DATOS].[dbo].[tbDimTiendas]
+  where Status = 1

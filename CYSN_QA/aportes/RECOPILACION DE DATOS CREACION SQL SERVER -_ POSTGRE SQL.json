@@ -1,0 +1,151 @@
+{
+  "name": "RECOPILACION DE DATOS CREACION SQL SERVER -> POSTGRE SQL",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "USE CREACION;\n\n;WITH TasaReciente AS (\n    SELECT TOP (1) \n        Valor, \n        Fecha\n    FROM dbo.TASA_CAMBIO\n    ORDER BY Fecha DESC\n),\nParametro AS (\n    SELECT TOP (1) \n        nombre\n    FROM dbo.PARAMETROS\n)\n\nSELECT\n    TR.Valor AS TasaCambio,\n    CONVERT(VARCHAR(19), TR.Fecha, 120) AS FECHA_TASA_CAMBIO,\n\n    P.nombre AS SUCURSAL,\n\n    I.CodigoBarra,\n    I.Referencia,\n    I.CodigoMarca AS CodigoMarcaOrigen,\n    I.Referencia + CAST(I.CodigoMarca AS VARCHAR) AS Concatenado,\n\n    M.Nombre AS Marca,\n\n    I.Nombre AS Descripcion,\n\n    -- Categoría\n    C.Codigo AS CodigoCategoria,\n    C.Nombre AS NombreCategoria,\n\n    I.Status,\n    I.Existencia,\n\n    -- Costos\n    I.CostoDolar,\n    I.CostoInicial,\n\n    -- Precio promoción\n    I.PrecioPromocion,\n\n    -- Precios\n    ROUND((I.PrecioDetal * 1.16) / TR.Valor, 2) AS PrecioDetalUSDMasIVA,\n    ROUND((I.PrecioDetal * 1.16), 2) AS PrecioDetalMasIVA,\n\n    ROUND((I.PrecioMayor * 1.16) / TR.Valor, 2) AS PrecioMayorUSDMasIVA,\n    ROUND((I.PrecioMayor * 1.16), 2) AS PrecioMayorMasIVA\n\nFROM dbo.INVENTARIO I\n\nLEFT JOIN dbo.MARCAS M\n    ON I.CodigoMarca = M.Codigo\n\nLEFT JOIN dbo.CATEGORIAS C\n    ON I.Categoria = C.Codigo\n\nCROSS JOIN TasaReciente TR\nCROSS JOIN Parametro P\n\nWHERE I.Status = 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        64
+      ],
+      "id": "9da4cbac-efaf-4bf6-a21a-59e06ab8184f",
+      "name": "RECOPILACION DE CREACION",
+      "credentials": {
+        "microsoftSql": {
+          "id": "tIDmbCpAjjeV5bti",
+          "name": "QA_PRECIOS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const BATCH_SIZE = 500;\n\nconst items = $input.all();\n\n\n// ============================================================\n// CODIGO BARRA\n// Misma regla utilizada por NEXO QA:\n//\n// - Quita espacios.\n// - Quita comilla simple inicial.\n// - Mínimo 9 caracteres.\n// - Solamente números.\n// ============================================================\n\nfunction limpiarCodigoBarra(value) {\n\n  return String(value ?? '')\n    .trim()\n    .replace(/^'+/, '')\n    .trim();\n}\n\n\nfunction esCodigoBarraValido(codigo) {\n\n  if (codigo.length < 9) {\n    return false;\n  }\n\n  if (!/^\\d+$/.test(codigo)) {\n    return false;\n  }\n\n  return true;\n}\n\n\n// ============================================================\n// SQL TEXT\n// ============================================================\n\nfunction sqlText(value) {\n\n  if (\n    value === null ||\n    value === undefined ||\n    value === ''\n  ) {\n    return 'NULL';\n  }\n\n  const clean = String(value)\n    .replace(/'/g, \"''\");\n\n  return `'${clean}'`;\n}\n\n\n// ============================================================\n// SQL NUMBER\n// ============================================================\n\nfunction sqlNumber(value) {\n\n  if (\n    value === null ||\n    value === undefined ||\n    value === ''\n  ) {\n    return 'NULL';\n  }\n\n  const num = Number(\n    String(value)\n      .trim()\n      .replace(',', '.')\n  );\n\n  if (!Number.isFinite(num)) {\n    return 'NULL';\n  }\n\n  return String(num);\n}\n\n\n// ============================================================\n// SQL TIMESTAMP\n// Entrada esperada:\n// YYYY-MM-DD HH:MM:SS\n// ============================================================\n\nfunction sqlTimestamp(value) {\n\n  if (\n    value === null ||\n    value === undefined ||\n    value === ''\n  ) {\n    return 'NULL';\n  }\n\n  const clean = String(value)\n    .trim()\n    .replace(/'/g, \"''\");\n\n  return `'${clean}'::timestamp`;\n}\n\n\n// ============================================================\n// FILTRAR CODIGOS DE BARRA INVALIDOS\n// ============================================================\n\nconst validos = [];\n\nlet registrosFiltrados = 0;\n\n\nfor (const item of items) {\n\n  const json = item.json || {};\n\n  const codigoBarra =\n    limpiarCodigoBarra(\n      json.CodigoBarra\n    );\n\n\n  if (\n    !esCodigoBarraValido(\n      codigoBarra\n    )\n  ) {\n\n    registrosFiltrados++;\n\n    continue;\n  }\n\n\n  validos.push({\n    ...json,\n    CodigoBarra: codigoBarra,\n  });\n}\n\n\n// ============================================================\n// CONSTRUIR FILA POSTGRESQL\n// ============================================================\n\nfunction buildValueRow(json) {\n\n  return `(\n    ${sqlText(json.SUCURSAL)},\n    ${sqlNumber(json.TasaCambio)},\n    ${sqlTimestamp(json.FECHA_TASA_CAMBIO)},\n\n    ${sqlText(json.CodigoBarra)},\n    ${sqlText(json.Referencia)},\n    ${sqlText(json.CodigoMarcaOrigen)},\n    ${sqlText(json.Concatenado)},\n\n    ${sqlText(json.Marca)},\n    ${sqlText(json.Descripcion)},\n\n    ${sqlText(json.CodigoCategoria)},\n    ${sqlText(json.NombreCategoria)},\n\n    ${sqlText(json.Status)},\n    ${sqlNumber(json.Existencia)},\n\n    ${sqlNumber(json.CostoDolar)},\n    ${sqlNumber(json.CostoInicial)},\n\n    ${sqlNumber(json.PrecioPromocion)},\n\n    ${sqlNumber(json.PrecioDetalUSDMasIVA)},\n    ${sqlNumber(json.PrecioDetalMasIVA)},\n\n    ${sqlNumber(json.PrecioMayorUSDMasIVA)},\n    ${sqlNumber(json.PrecioMayorMasIVA)}\n  )`;\n}\n\n\n// ============================================================\n// SIN REGISTROS VALIDOS\n// ============================================================\n\nif (validos.length === 0) {\n\n  return [\n    {\n      json: {\n\n        query:\n          \"SELECT 'Sin registros validos para insertar' AS resultado;\",\n\n        total_origen:\n          items.length,\n\n        total_validos:\n          0,\n\n        registros_filtrados:\n          registrosFiltrados,\n\n        lote:\n          0,\n\n        total_lotes:\n          0,\n      },\n    },\n  ];\n}\n\n\n// ============================================================\n// CREAR LOTES\n// ============================================================\n\nconst batches = [];\n\n\nfor (\n  let i = 0;\n  i < validos.length;\n  i += BATCH_SIZE\n) {\n\n  batches.push(\n    validos.slice(\n      i,\n      i + BATCH_SIZE\n    )\n  );\n}\n\n\n// ============================================================\n// GENERAR INSERTS\n// ============================================================\n\nconst output = batches.map(\n  (batch, index) => {\n\n    const values = batch\n      .map(\n        json =>\n          buildValueRow(json)\n      )\n      .join(',\\n');\n\n\n    const query = `\n\nINSERT INTO public.creacion\n(\n    sucursal_origen,\n\n    tasa_cambio,\n    fecha_tasa_cambio,\n\n    codigo_barra,\n    referencia,\n    codigo_marca_origen,\n    concatenado,\n\n    marca_origen,\n    descripcion,\n\n    codigo_categoria,\n    nombre_categoria,\n\n    status_origen,\n    existencia,\n\n    costo_dolar,\n    costo_inicial,\n\n    precio_promocion,\n\n    precio_detal_usd_mas_iva,\n    precio_detal_mas_iva,\n\n    precio_mayor_usd_mas_iva,\n    precio_mayor_mas_iva\n)\nVALUES\n\n${values};\n\n`;\n\n\n    return {\n\n      json: {\n\n        query,\n\n        lote:\n          index + 1,\n\n        total_lotes:\n          batches.length,\n\n        registros_lote:\n          batch.length,\n\n        total_origen:\n          items.length,\n\n        total_validos:\n          validos.length,\n\n        registros_filtrados:\n          registrosFiltrados,\n      },\n    };\n  }\n);\n\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        64
+      ],
+      "id": "712f200d-6318-4c4f-b08d-31107d4c4cdf",
+      "name": "ARMAR LOTES CREACION"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "TRUNCATE TABLE public.creacion\nRESTART IDENTITY;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        144,
+        64
+      ],
+      "id": "6b38cb7d-f561-476b-bd55-fd7ea8d5ee08",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "vsmAetbAHTBT40sz",
+          "name": "Postgres account adolfo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.query }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        800,
+        64
+      ],
+      "id": "ac97058b-9d1e-44ef-a762-887db5b9cf64",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "vsmAetbAHTBT40sz",
+          "name": "Postgres account adolfo"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        64
+      ],
+      "id": "78ef0639-adc9-479f-84d5-3f77413d4eb6",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "RECOPILACION DE CREACION": {
+      "main": [
+        [
+          {
+            "node": "ARMAR LOTES CREACION",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ARMAR LOTES CREACION": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "RECOPILACION DE CREACION",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a047aef2-47c9-46e6-beff-9e6cc17ae6f4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d02efdc2f83633d6924ac68b5155b6e0404ac90c0e96bcd72c9f08cc98fc5bbb"
+  },
+  "id": "8q8b5VMIcA7I0NPQ",
+  "tags": []
+}

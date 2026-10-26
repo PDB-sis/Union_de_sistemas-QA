@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "FotoNegativos_fechaCorte_key" ON "FotoNegativos"("fechaCorte");

@@ -1,0 +1,757 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EstadoNegativo {
+  NUEVO               @map("Nuevo")
+  EN_INVESTIGACION    @map("En investigación")
+  ESPERANDO_CONTEO    @map("Esperando conteo físico")
+  ESPERANDO_DECISION  @map("Esperando decisión")
+  AJUSTE_AUTORIZADO   @map("Ajuste autorizado")
+  AJUSTE_REALIZADO    @map("Ajuste realizado")
+  PENDIENTE_VERIFICAR @map("Pendiente de verificar")
+  CERRADO_SIN_AJUSTE  @map("Cerrado sin ajuste")
+  SOLUCIONADO         @map("Solucionado")
+  REABIERTO           @map("Reabierto")
+}
+
+enum EstadoUsuario {
+  INVITADO
+  ACTIVO
+  BLOQUEADO
+  INACTIVO
+}
+
+enum RolUsuario {
+  ADMINISTRADOR
+  MEJORA_CONTINUA
+  TIENDA
+  JEFE_BODEGA
+  RECTIFICACION
+  RECEPCION
+  AUDITORIA
+  FACTURACION
+}
+
+model SesionUsuario {
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique @db.VarChar(64)
+  usuarioId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt DateTime @db.Timestamptz(3)
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+  @@index([expiresAt])
+}
+
+model IntentoAcceso {
+  clave     String   @id @db.VarChar(64)
+  intentos  Int      @default(1)
+  expiresAt DateTime @db.Timestamptz(3)
+
+  @@index([expiresAt])
+}
+
+model Usuario {
+  id                          String                             @id @default(uuid()) @db.Uuid
+  email                       String                             @unique @db.VarChar(254)
+  nombre                      String                             @db.VarChar(200)
+  activo                      Boolean                            @default(true)
+  estado                      EstadoUsuario                      @default(INVITADO)
+  rol                         RolUsuario                         @default(AUDITORIA)
+  passwordHash                String?                            @db.Text
+  debeCambiarPassword         Boolean                            @default(true)
+  passwordTemporalHasta       DateTime?                          @db.Timestamptz(3)
+  passwordChangedAt           DateTime?                          @db.Timestamptz(3)
+  sesiones                    SesionUsuario[]
+  asignaciones                AsignacionAcceso[]
+  vinculosOperativos          VinculoOperativo[]
+  createdAt                   DateTime                           @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime                           @updatedAt @db.Timestamptz(3)
+  asignados                   Negativo[]
+  historial                   HistorialNegativo[]
+  auditorias                  Auditoria[]
+  consultasInventario         ConsultaInventario[]
+  inconsistencias             Inconsistencia[]                   @relation("InconsistenciaActualizadaPor")
+  reportesTienda              Inconsistencia[]                   @relation("InconsistenciaReportadaPor")
+  transferenciasReportadas    ReporteTransferenciaTienda[]       @relation("ReporteTransferenciaTiendaUsuario")
+  codigosNoInventario         InconsistenciaCodigoNoInventario[] @relation("CodigoNoInventarioUsuario")
+  importacionesTransferencias TransferenciaConsultaImport[]
+  importacionesDevoluciones DevolucionConsultaImport[]
+  pedidosTienda               PedidoTienda[]                     @relation("PedidoTiendaSolicitante")
+  observacionesFacturacion    ObservacionFacturador[]            @relation("ObservacionFacturadorAutor")
+}
+
+model Bodega {
+  id          String     @id @default(uuid()) @db.Uuid
+  codigo      String     @unique @db.VarChar(80)
+  nombre      String     @db.VarChar(200)
+  activa      Boolean    @default(true)
+  ubicacionId String?    @unique @db.Uuid
+  ubicacion   Ubicacion? @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(3)
+  negativos   Negativo[]
+}
+
+enum TipoUbicacion {
+  REGION
+  BODEGA
+  TIENDA
+}
+
+enum MotivoReporteTienda {
+  FALTANTE
+  SOBRANTE
+  CRUCE
+  DANADO
+  VENCIDO
+  OTRO
+}
+
+enum SubmotivoReporteTienda {
+  UNIDADES_MAS_PAQUETE
+  NO_ESTA_TRANSFERENCIA
+  UNIDADES_MENOS_PAQUETE
+  NO_ESTA_FISICO
+}
+
+enum ResponsableInconsistencia {
+  SIN_DETERMINAR
+  FACTURACION
+  BODEGA
+  TIENDA
+  TRANSPORTE
+  SISTEMA
+}
+
+enum MotivoCodigoNoInventario {
+  CODIGO_MEZCLADO_PAQUETE
+  OTRA_PRENDA
+  OTRO
+}
+
+enum EstadoPedidoTienda {
+  ENVIADO
+  EN_REVISION
+  APROBADO
+  APROBADO_PARCIAL
+  EN_PREPARACION
+  DESPACHADO
+  RECIBIDO
+  RECHAZADO
+  CANCELADO
+}
+
+// Un rol siempre está ligado a su propio alcance; no se cruzan roles y lugares.
+model AsignacionAcceso {
+  id          String     @id @default(uuid()) @db.Uuid
+  usuarioId   String     @db.Uuid
+  rol         RolUsuario
+  // null representa alcance nacional.
+  ubicacionId String?    @db.Uuid
+  usuario     Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  ubicacion   Ubicacion? @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@unique([usuarioId, rol, ubicacionId])
+  @@index([usuarioId])
+}
+
+model Ubicacion {
+  id                        String                             @id @default(uuid()) @db.Uuid
+  codigo                    String                             @unique @db.VarChar(80)
+  nombre                    String                             @db.VarChar(200)
+  tipo                      TipoUbicacion
+  /// BODEGA_DATOS.tbDimTiendas.dimID_Tienda: identidad común con CYSN QA y los agentes.
+  dimIdTienda               Int?                               @unique
+  /// tbDimTiendas.Codigo; puede repetirse entre sitios.
+  codigoCorporativo         String?                            @db.VarChar(80)
+  regionId                  String?                            @db.Uuid
+  region                    Ubicacion?                         @relation("RegionUbicaciones", fields: [regionId], references: [id], onDelete: Restrict)
+  ubicaciones               Ubicacion[]                        @relation("RegionUbicaciones")
+  bodega                    Bodega?
+  asignaciones              AsignacionAcceso[]
+  vinculos                  VinculoOperativo[]
+  perfiles                  PerfilLaboral[]
+  inconsistenciasReportadas Inconsistencia[]                   @relation("InconsistenciaTienda")
+  transferenciasReportadas  ReporteTransferenciaTienda[]       @relation("ReporteTransferenciaTiendaUbicacion")
+  codigosNoInventario       InconsistenciaCodigoNoInventario[] @relation("CodigoNoInventarioTienda")
+  transferenciasConsulta    TransferenciaConsulta[]            @relation("TransferenciaConsultaTienda")
+  transferenciasOrigen      TransferenciaConsulta[]            @relation("TransferenciaConsultaOrigen")
+  devolucionesConsulta     DevolucionConsulta[]               @relation("DevolucionConsultaTienda")
+  devolucionesOrigen       DevolucionConsulta[]               @relation("DevolucionConsultaOrigen")
+  pedidosTienda             PedidoTienda[]                     @relation("PedidoTiendaUbicacion")
+  tienda                    Tienda?
+
+  @@index([regionId])
+}
+
+// Catálogo empresarial importado desde la fuente maestra de tiendas.
+// La ubicación aporta territorio y permisos; esta tabla conserva el dato comercial.
+model Tienda {
+  id          String    @id @default(uuid()) @db.Uuid
+  codigo      String    @unique @db.VarChar(80)
+  nombre      String    @db.VarChar(200)
+  activa      Boolean   @default(true)
+  ubicacionId String    @unique @db.Uuid
+  ubicacion   Ubicacion @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([activa, nombre])
+}
+
+model Producto {
+  id                String                   @id @default(uuid()) @db.Uuid
+  codigoBarra       String                   @unique @db.VarChar(128)
+  referencia        String?                  @db.VarChar(200)
+  descripcion       String?                  @db.Text
+  marca             String?                  @db.VarChar(200)
+  codigoMarca       String?                  @db.VarChar(80)
+  talla             String?                  @db.VarChar(80)
+  categoria         String?                  @db.VarChar(200)
+  linea             String?                  @db.VarChar(200)
+  activo            Boolean                  @default(true)
+  createdAt         DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                 @updatedAt @db.Timestamptz(3)
+  negativos         Negativo[]
+  inventarios       InventarioActual[]
+  excepcionBodega   ExcepcionBodegaProducto?
+  inconsistencias   Inconsistencia[]
+  itemsPedidoTienda PedidoTiendaItem[]
+  fotosNegativos    FotoNegativoItem[]
+  detallesTransferencia TransferenciaConsultaDetalle[]
+  detallesDevolucion DevolucionConsultaDetalle[]
+
+  @@index([referencia])
+  @@index([linea, marca, activo])
+  @@index([marca, activo])
+}
+
+// Expediente estable por producto (código de barra único) y bodega.
+// No duplica existencias: la cantidad vigente pertenece a InventarioActual.
+model Negativo {
+  id                      String              @id @default(uuid()) @db.Uuid
+  productoId              String              @db.Uuid
+  bodegaId                String              @db.Uuid
+  responsableId           String?             @db.Uuid
+  estado                  EstadoNegativo      @default(NUEVO)
+  conteoFisico            Decimal?            @db.Decimal(18, 4)
+  existenciaSistemaConteo Decimal?            @db.Decimal(18, 4)
+  conteoRegistradoAt      DateTime?           @db.Timestamptz(3)
+  motivo                  String?             @db.Text
+  documentoRelacionado    String?             @db.VarChar(255)
+  veredicto               String?             @db.Text
+  numeroAjuste            String?             @db.VarChar(128)
+  observaciones           String?             @db.Text
+  bodegaProductoId        String?             @db.Uuid
+  bodegaProducto          BodegaProducto?     @relation(fields: [bodegaProductoId], references: [id], onDelete: Restrict)
+  fusionadoEnId           String?             @db.Uuid
+  expedientePrincipal     Negativo?           @relation("ExpedientesUnificados", fields: [fusionadoEnId], references: [id], onDelete: Restrict)
+  expedientesAnteriores   Negativo[]          @relation("ExpedientesUnificados")
+  primeraDeteccion        DateTime            @db.Timestamptz(3)
+  ultimaDeteccion         DateTime            @db.Timestamptz(3)
+  anuladoAt               DateTime?           @db.Timestamptz(3)
+  motivoAnulacion         String?             @db.Text
+  version                 Int                 @default(1)
+  createdAt               DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime            @updatedAt @db.Timestamptz(3)
+  producto                Producto            @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  bodega                  Bodega              @relation(fields: [bodegaId], references: [id], onDelete: Restrict)
+  responsable             Usuario?            @relation(fields: [responsableId], references: [id], onDelete: Restrict)
+  historial               HistorialNegativo[]
+
+  @@unique([productoId, bodegaId])
+  @@unique([id, bodegaId])
+  @@index([bodegaId, anuladoAt, estado])
+  @@index([responsableId, estado])
+  @@index([ultimaDeteccion])
+}
+
+// Ubicación física informativa. Nunca determina permisos ni separa consultas.
+model BodegaProducto {
+  id                  String                    @id @default(uuid()) @db.Uuid
+  nombre              String                    @unique @db.VarChar(200)
+  negativos           Negativo[]
+  inventarios         InventarioActual[]
+  lineasInventario    LineaInventario[]
+  excepcionesProducto ExcepcionBodegaProducto[]
+  casosInconsistencia Inconsistencia[]
+}
+
+model ExcepcionBodegaProducto {
+  id               String         @id @default(uuid()) @db.Uuid
+  productoId       String         @unique @db.Uuid
+  bodegaProductoId String         @db.Uuid
+  producto         Producto       @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  bodegaProducto   BodegaProducto @relation(fields: [bodegaProductoId], references: [id], onDelete: Restrict)
+  version          Int            @default(1)
+  updatedAt        DateTime       @updatedAt @db.Timestamptz(3)
+
+  @@index([bodegaProductoId])
+}
+
+// Asignación manual persistente. Las importaciones nunca cambian su bodega.
+model LineaInventario {
+  id               String          @id @default(uuid()) @db.Uuid
+  linea            String          @unique @db.VarChar(200)
+  bodegaProductoId String?         @db.Uuid
+  bodegaProducto   BodegaProducto? @relation(fields: [bodegaProductoId], references: [id], onDelete: Restrict)
+  version          Int             @default(1)
+  updatedAt        DateTime        @updatedAt @db.Timestamptz(3)
+}
+
+// Fotografía vigente del inventario importado desde una consulta SQL.
+model ConsultaInventario {
+  id               String             @id @default(uuid()) @db.Uuid
+  usuarioId        String             @db.Uuid
+  nombreArchivo    String             @db.VarChar(255)
+  fechaConsulta    DateTime           @db.Timestamptz(3)
+  fechaImportacion DateTime           @default(now()) @db.Timestamptz(3)
+  hashArchivo      String             @unique @db.VarChar(64)
+  totalFilas       Int
+  usuario          Usuario            @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  inventarioActual InventarioActual[]
+  fotoNegativos    FotoNegativos[]
+
+  @@index([fechaConsulta, fechaImportacion])
+}
+
+// Corte operativo de negativos. Se genera con las consultas de lunes y jueves.
+model FotoNegativos {
+  id            String             @id @default(uuid()) @db.Uuid
+  // Una misma carga puede originar varios cortes si el inventario no cambió
+  // entre una ventana y la siguiente.
+  consultaId    String             @db.Uuid
+  fechaCorte    DateTime           @unique @db.Date
+  tipoCorte     String             @db.VarChar(20)
+  totalCodigos  Int
+  totalUnidades Decimal            @db.Decimal(18, 4)
+  createdAt     DateTime           @default(now()) @db.Timestamptz(3)
+  consulta      ConsultaInventario @relation(fields: [consultaId], references: [id], onDelete: Restrict)
+  items         FotoNegativoItem[]
+
+  @@index([consultaId])
+  @@index([fechaCorte])
+}
+
+model FotoNegativoItem {
+  id         String        @id @default(uuid()) @db.Uuid
+  fotoId     String        @db.Uuid
+  productoId String        @db.Uuid
+  existencia Decimal       @db.Decimal(18, 4)
+  foto       FotoNegativos @relation(fields: [fotoId], references: [id], onDelete: Cascade)
+  producto   Producto      @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([fotoId, productoId])
+  @@index([productoId])
+}
+
+model InventarioActual {
+  id               String             @id @default(uuid()) @db.Uuid
+  consultaId       String             @db.Uuid
+  productoId       String             @db.Uuid
+  bodegaProductoId String?            @db.Uuid
+  existencia       Decimal            @db.Decimal(18, 4)
+  activo           Boolean
+  categoria        String?            @db.VarChar(200)
+  subcategoria     String?            @db.VarChar(200)
+  consulta         ConsultaInventario @relation(fields: [consultaId], references: [id], onDelete: Restrict)
+  producto         Producto           @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  bodegaProducto   BodegaProducto?    @relation(fields: [bodegaProductoId], references: [id], onDelete: Restrict)
+
+  @@unique([productoId, bodegaProductoId])
+  @@index([productoId])
+  @@index([bodegaProductoId])
+}
+
+// Expediente operativo reportado y gestionado completamente dentro de PDMC.
+model Inconsistencia {
+  id                      String                      @id @default(uuid()) @db.Uuid
+  sourceKey               String                      @unique @db.VarChar(64)
+  motivoReporte           MotivoReporteTienda?
+  submotivoReporte        SubmotivoReporteTienda?
+  detalleOtro             String?                     @db.VarChar(300)
+  tiendaId                String?                     @db.Uuid
+  reportadoPorId          String?                     @db.Uuid
+  grupoReporteId          String?                     @db.Uuid
+  reporteTiendaId         String?                     @db.Uuid
+  claveCruce              String?                     @db.Uuid
+  fecha                   DateTime?                   @db.Timestamptz(3)
+  sucursal                String                      @db.VarChar(250)
+  chofer                  String?                     @db.VarChar(200)
+  transferencia           String                      @db.VarChar(128)
+  codigoBarra             String                      @db.VarChar(128)
+  referencia              String?                     @db.VarChar(200)
+  tipoError               String                      @db.VarChar(120)
+  cantidadErrada          Int
+  conteoFisico            Int?
+  existenciaSistemaConteo Int?
+  conteoRegistradoAt      DateTime?                   @db.Timestamptz(3)
+  motivo                  String?                     @db.VarChar(300)
+  responsable             ResponsableInconsistencia  @default(SIN_DETERMINAR)
+  comentarioAdmin         String?                     @db.Text
+  formaCorreccion         String?                     @db.VarChar(200)
+  numeroCorreccion        String?                     @db.VarChar(100)
+  unidadesAjustadas       Int                         @default(0)
+  unidadesSinResolver     Int                         @default(0)
+  resuelto                Boolean                     @default(false)
+  claveUnica              String?                     @db.VarChar(300)
+  ajustar                 String?                     @db.VarChar(30)
+  cantidadAjuste          Int?
+  numeroAjuste            String?                     @db.VarChar(128)
+  veredicto               String?                     @db.VarChar(300)
+  ajustado                Boolean                     @default(false)
+  productoId              String?                     @db.Uuid
+  bodegaProductoId        String?                     @db.Uuid
+  actualizadoPorId        String?                     @db.Uuid
+  usuarioPdmc             String?                     @db.VarChar(254)
+  version                 Int                         @default(1)
+  createdAt               DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                    @updatedAt @db.Timestamptz(3)
+  producto                Producto?                   @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  bodegaProducto          BodegaProducto?             @relation(fields: [bodegaProductoId], references: [id], onDelete: Restrict)
+  actualizadoPor          Usuario?                    @relation("InconsistenciaActualizadaPor", fields: [actualizadoPorId], references: [id], onDelete: Restrict)
+  tienda                  Ubicacion?                  @relation("InconsistenciaTienda", fields: [tiendaId], references: [id], onDelete: Restrict)
+  reportadoPor            Usuario?                    @relation("InconsistenciaReportadaPor", fields: [reportadoPorId], references: [id], onDelete: Restrict)
+  reporteTienda           ReporteTransferenciaTienda? @relation(fields: [reporteTiendaId], references: [id], onDelete: Cascade)
+
+  @@index([resuelto, updatedAt])
+  @@index([transferencia])
+  @@index([codigoBarra])
+  @@index([sucursal])
+  @@index([bodegaProductoId])
+  @@index([tiendaId, resuelto, createdAt])
+  @@index([reportadoPorId, createdAt])
+  @@index([grupoReporteId])
+  @@index([reporteTiendaId])
+  @@index([claveCruce])
+  @@index([responsable, fecha])
+}
+
+model ReporteTransferenciaTienda {
+  id                  String                             @id @default(uuid()) @db.Uuid
+  solicitudId         String                             @unique @db.Uuid
+  tiendaId            String                             @db.Uuid
+  reportadoPorId      String                             @db.Uuid
+  transferencia       String                             @db.VarChar(128)
+  sinIncidencias      Boolean
+  createdAt           DateTime                           @default(now()) @db.Timestamptz(3)
+  tienda              Ubicacion                          @relation("ReporteTransferenciaTiendaUbicacion", fields: [tiendaId], references: [id], onDelete: Restrict)
+  reportadoPor        Usuario                            @relation("ReporteTransferenciaTiendaUsuario", fields: [reportadoPorId], references: [id], onDelete: Restrict)
+  inconsistencias     Inconsistencia[]
+  codigosNoInventario InconsistenciaCodigoNoInventario[]
+
+  @@unique([tiendaId, transferencia])
+  @@index([reportadoPorId, createdAt])
+}
+
+model InconsistenciaCodigoNoInventario {
+  id                         String                      @id @default(uuid()) @db.Uuid
+  solicitudId                String                      @unique @db.Uuid
+  tiendaId                   String                      @db.Uuid
+  reportadoPorId             String                      @db.Uuid
+  transferencia              String                      @db.VarChar(128)
+  reporteTiendaId            String?                     @db.Uuid
+  codigoBarraNoInventario    String                      @db.VarChar(128)
+  motivo                     MotivoCodigoNoInventario
+  codigoBarraTransferencia   String?                     @db.VarChar(128)
+  cantidadPaquete            Int?
+  cantidadCodigoNoInventario Int?
+  cantidad                   Int?
+  detalle                    String?                     @db.VarChar(500)
+  createdAt                  DateTime                    @default(now()) @db.Timestamptz(3)
+  tienda                     Ubicacion                   @relation("CodigoNoInventarioTienda", fields: [tiendaId], references: [id], onDelete: Restrict)
+  reportadoPor               Usuario                     @relation("CodigoNoInventarioUsuario", fields: [reportadoPorId], references: [id], onDelete: Restrict)
+  reporteTienda              ReporteTransferenciaTienda? @relation(fields: [reporteTiendaId], references: [id], onDelete: Cascade)
+
+  @@index([tiendaId, createdAt])
+  @@index([transferencia])
+  @@index([reporteTiendaId])
+  @@index([codigoBarraNoInventario])
+}
+
+model HistorialNegativo {
+  id            String   @id @default(uuid()) @db.Uuid
+  negativoId    String   @db.Uuid
+  usuarioId     String?  @db.Uuid
+  accion        String   @db.VarChar(80)
+  motivo        String   @db.Text
+  valorAnterior Json?
+  valorNuevo    Json?
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  negativo      Negativo @relation(fields: [negativoId], references: [id], onDelete: Restrict)
+  usuario       Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([negativoId, createdAt])
+  @@index([usuarioId])
+}
+
+model Auditoria {
+  id            String   @id @default(uuid()) @db.Uuid
+  usuarioId     String?  @db.Uuid
+  entidad       String   @db.VarChar(80)
+  entidadId     String   @db.Uuid
+  accion        String   @db.VarChar(80)
+  origen        String   @default("SERVIDOR") @db.VarChar(300)
+  motivo        String   @db.Text
+  valorAnterior Json?
+  valorNuevo    Json?
+  correlacionId String?  @db.Uuid
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  usuario       Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([entidad, entidadId, createdAt])
+  @@index([usuarioId, createdAt])
+  @@index([correlacionId])
+  @@index([createdAt, id])
+}
+
+model PerfilLaboral {
+  id          String             @id @default(uuid()) @db.Uuid
+  codigo      String             @unique @db.VarChar(80)
+  nombre      String             @db.VarChar(200)
+  tipo        String             @db.VarChar(20)
+  activo      Boolean            @default(true)
+  ubicacionId String?            @db.Uuid
+  ubicacion   Ubicacion?         @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
+  vinculos    VinculoOperativo[]
+  transferencias TransferenciaConsulta[]
+  devoluciones DevolucionConsulta[]
+  observaciones ObservacionFacturador[]
+}
+
+model ObservacionFacturador {
+  id            String         @id @default(uuid()) @db.Uuid
+  perfilId      String         @db.Uuid
+  autorId       String         @db.Uuid
+  titulo        String         @db.VarChar(160)
+  detalle       String         @db.Text
+  prioridad     String         @default("MEDIA") @db.VarChar(12)
+  estado        String         @default("PENDIENTE") @db.VarChar(16)
+  transferencia String?        @db.VarChar(128)
+  leidaAt       DateTime?      @db.Timestamptz(3)
+  atendidaAt    DateTime?      @db.Timestamptz(3)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
+  perfil        PerfilLaboral  @relation(fields: [perfilId], references: [id], onDelete: Restrict)
+  autor         Usuario        @relation("ObservacionFacturadorAutor", fields: [autorId], references: [id], onDelete: Restrict)
+
+  @@index([perfilId, estado, createdAt])
+  @@index([autorId, createdAt])
+  @@index([transferencia])
+}
+
+model TransferenciaConsultaImport {
+  id             String                  @id @default(uuid()) @db.Uuid
+  nombreArchivo  String                  @db.VarChar(255)
+  hashArchivo    String                  @unique @db.VarChar(64)
+  totalFilas     Int
+  resumen        Json
+  importedAt     DateTime                @default(now()) @db.Timestamptz(3)
+  importedById   String?                 @db.Uuid
+  importedBy     Usuario?                @relation(fields: [importedById], references: [id], onDelete: Restrict)
+  transferencias TransferenciaConsulta[]
+
+  @@index([importedAt])
+}
+
+model TransferenciaConsulta {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  numero               String                      @db.VarChar(128)
+  fecha                DateTime                    @db.Date
+  codigoFacturador     String                      @db.VarChar(80)
+  facturadorId         String?                     @db.Uuid
+  codigoTiendaConsulta String                      @db.VarChar(250)
+  tiendaId             String?                     @db.Uuid
+  estado               String                      @db.VarChar(20)
+  observacion          String?                     @db.Text
+  unidades             Int
+  cantidadCodigos      Int
+  ultimaImportacionId  String                      @db.Uuid
+  // La sincronización nunca borra transferencias que desaparecen del origen:
+  // las marca como inactivas para conservar la trazabilidad operativa.
+  bajaEn               DateTime?                   @db.Timestamptz(3)
+  createdAt            DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                    @updatedAt @db.Timestamptz(3)
+  tienda               Ubicacion?                  @relation("TransferenciaConsultaTienda", fields: [tiendaId], references: [id], onDelete: Restrict)
+  /// Bodega de la que viene (dimID_Tienda); los números se repiten entre bodegas.
+  origenId             String?                     @db.Uuid
+  origen               Ubicacion?                  @relation("TransferenciaConsultaOrigen", fields: [origenId], references: [id], onDelete: Restrict)
+  facturador            PerfilLaboral?              @relation(fields: [facturadorId], references: [id], onDelete: Restrict)
+  ultimaImportacion    TransferenciaConsultaImport @relation(fields: [ultimaImportacionId], references: [id], onDelete: Restrict)
+  detalles             TransferenciaConsultaDetalle[]
+
+  @@unique([origenId, numero])
+  @@index([numero])
+  @@index([tiendaId, estado, fecha])
+  @@index([codigoTiendaConsulta])
+  @@index([facturadorId, fecha])
+  @@index([codigoFacturador])
+  @@index([estado, fecha])
+  @@index([ultimaImportacionId])
+  @@index([bajaEn])
+}
+
+// Estado y trazabilidad del puente SQL Server -> PostgreSQL.  Son entidades
+// técnicas y no dependen de un usuario o de las cargas manuales anteriores.
+model SincronizacionEstado {
+  modulo          String    @id @db.VarChar(80)
+  ultimoIntentoEn DateTime? @db.Timestamptz(3)
+  ultimoExitoEn   DateTime? @db.Timestamptz(3)
+  ultimoError     String?   @db.VarChar(2000)
+  ultimoHash      String?   @db.VarChar(64)
+  bloqueoId       String?   @db.VarChar(64)
+  bloqueoHasta    DateTime? @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @db.Timestamptz(3)
+}
+
+model SincronizacionEjecucion {
+  id         String    @id @default(uuid()) @db.Uuid
+  modulo     String    @db.VarChar(80)
+  estado     String    @db.VarChar(20)
+  totalFilas Int?
+  error      String?   @db.VarChar(2000)
+  detalle    Json?
+  startedAt  DateTime  @default(now()) @db.Timestamptz(3)
+  finishedAt DateTime? @db.Timestamptz(3)
+
+  @@index([modulo, startedAt])
+  @@index([estado, startedAt])
+}
+
+model TransferenciaConsultaDetalle {
+  id              String                @id @default(uuid()) @db.Uuid
+  transferenciaId String                @db.Uuid
+  productoId      String?               @db.Uuid
+  codigoBarra     String                @db.VarChar(128)
+  cantidad        Int
+  numeroCaja      String                @db.VarChar(80)
+  transferencia   TransferenciaConsulta @relation(fields: [transferenciaId], references: [id], onDelete: Cascade)
+  producto        Producto?             @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([transferenciaId, codigoBarra, numeroCaja])
+  @@index([transferenciaId, numeroCaja])
+  @@index([codigoBarra])
+  @@index([productoId])
+}
+
+model DevolucionConsultaImport {
+  id            String               @id @default(uuid()) @db.Uuid
+  nombreArchivo String               @db.VarChar(255)
+  hashArchivo   String               @unique @db.VarChar(64)
+  totalFilas    Int
+  resumen       Json
+  importedAt    DateTime             @default(now()) @db.Timestamptz(3)
+  importedById  String?              @db.Uuid
+  importedBy    Usuario?             @relation(fields: [importedById], references: [id], onDelete: Restrict)
+  devoluciones  DevolucionConsulta[]
+
+  @@index([importedAt])
+}
+
+model DevolucionConsulta {
+  id                   String                    @id @default(uuid()) @db.Uuid
+  numero               String                    @db.VarChar(128)
+  fecha                DateTime                  @db.Date
+  codigoResponsable    String                    @db.VarChar(80)
+  /// NombreUsuario de SQL Server; se muestra si el código no está vinculado con un facturador.
+  nombreResponsable    String?                   @db.VarChar(200)
+  responsableId        String?                   @db.Uuid
+  codigoTiendaConsulta String                    @db.VarChar(250)
+  tiendaId             String?                   @db.Uuid
+  estado               String                    @db.VarChar(20)
+  observacion          String                    @db.Text
+  totalValor           Decimal?                  @db.Decimal(18, 8)
+  documentoOrigen      String?                   @db.VarChar(128)
+  unidades             Int                       @default(0)
+  cantidadCodigos      Int                       @default(0)
+  ultimaImportacionId  String                    @db.Uuid
+  // Baja lógica: ya no aparece en la consulta de SQL Server. Se oculta y se conserva.
+  bajaEn               DateTime?                 @db.Timestamptz(3)
+  createdAt            DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                  @updatedAt @db.Timestamptz(3)
+  responsable          PerfilLaboral?            @relation(fields: [responsableId], references: [id], onDelete: Restrict)
+  tienda               Ubicacion?                @relation("DevolucionConsultaTienda", fields: [tiendaId], references: [id], onDelete: Restrict)
+  /// Bodega de la que viene (dimID_Tienda); los números se repiten entre bodegas.
+  origenId             String?                   @db.Uuid
+  origen               Ubicacion?                @relation("DevolucionConsultaOrigen", fields: [origenId], references: [id], onDelete: Restrict)
+  ultimaImportacion    DevolucionConsultaImport  @relation(fields: [ultimaImportacionId], references: [id], onDelete: Restrict)
+  detalles             DevolucionConsultaDetalle[]
+
+  @@unique([origenId, numero])
+  @@index([numero])
+  @@index([tiendaId, estado, fecha])
+  @@index([responsableId, fecha])
+  @@index([codigoResponsable])
+  @@index([codigoTiendaConsulta])
+  @@index([estado, fecha])
+  @@index([ultimaImportacionId])
+}
+
+model DevolucionConsultaDetalle {
+  id           String              @id @default(uuid()) @db.Uuid
+  devolucionId String              @db.Uuid
+  productoId   String?             @db.Uuid
+  codigoBarra  String              @db.VarChar(128)
+  cantidad     Int
+  numeroCaja   String              @db.VarChar(80)
+  devolucion   DevolucionConsulta  @relation(fields: [devolucionId], references: [id], onDelete: Cascade)
+  producto     Producto?           @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([devolucionId, codigoBarra, numeroCaja])
+  @@index([devolucionId, numeroCaja])
+  @@index([codigoBarra])
+  @@index([productoId])
+}
+
+model VinculoOperativo {
+  id          String         @id @default(uuid()) @db.Uuid
+  usuarioId   String         @db.Uuid
+  ubicacionId String?        @db.Uuid
+  perfilId    String?        @db.Uuid
+  usuario     Usuario        @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  ubicacion   Ubicacion?     @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
+  perfil      PerfilLaboral? @relation(fields: [perfilId], references: [id], onDelete: Restrict)
+
+  @@unique([usuarioId, ubicacionId])
+  @@unique([usuarioId, perfilId])
+}
+
+model PedidoTienda {
+  id              String             @id @default(uuid()) @db.Uuid
+  codigo          String             @unique @db.VarChar(40)
+  tiendaId        String             @db.Uuid
+  solicitadoPorId String             @db.Uuid
+  estado          EstadoPedidoTienda @default(ENVIADO)
+  observaciones   String?            @db.VarChar(1000)
+  createdAt       DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @db.Timestamptz(3)
+  tienda          Ubicacion          @relation("PedidoTiendaUbicacion", fields: [tiendaId], references: [id], onDelete: Restrict)
+  solicitadoPor   Usuario            @relation("PedidoTiendaSolicitante", fields: [solicitadoPorId], references: [id], onDelete: Restrict)
+  items           PedidoTiendaItem[]
+
+  @@index([tiendaId, createdAt])
+  @@index([estado, createdAt])
+  @@index([solicitadoPorId, createdAt])
+}
+
+model PedidoTiendaItem {
+  id                 String       @id @default(uuid()) @db.Uuid
+  pedidoId           String       @db.Uuid
+  productoId         String       @db.Uuid
+  cantidadSolicitada Int
+  pedido             PedidoTienda @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  producto           Producto     @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@unique([pedidoId, productoId])
+  @@index([productoId])
+}

@@ -1,0 +1,2724 @@
+/* ============================================================
+   NEXO QA
+   LAYOUT PRINCIPAL
+   ============================================================ */
+
+
+/* ============================================================
+   VARIABLES
+   ============================================================ */
+
+:root {
+
+  /* ============================================================
+     IDENTIDAD NEXO QA
+     PALETA BORGOÑA / VINO
+     ============================================================ */
+
+    --nexo-primary: #70012B;
+    --nexo-primary-dark: #5D0124;
+    --nexo-primary-deep: #4B011D;
+
+    --nexo-accent: #70012B;
+    --nexo-accent-dark: #5D0124;
+
+  /* Sidebar */
+    --nexo-sidebar: #25000E;
+    --nexo-sidebar-hover: #380116;
+    --nexo-sidebar-active: #70012B;
+
+  /* Fondos */
+    --nexo-background: #F5F2F3;
+    --nexo-surface: #FFFFFF;
+    --nexo-surface-secondary: #FAF7F8;
+
+  /* Texto */
+    --nexo-text: #25000E;
+    --nexo-text-secondary: #725C66;
+    --nexo-text-soft: #9B8790;
+
+  /* Bordes */
+    --nexo-border: #E5DADD;
+    --nexo-border-soft: #EEE6E8;
+
+  /* Estados */
+    --nexo-success: #2E8B57;
+    --nexo-warning: #D08A00;
+    --nexo-danger: #B42318;
+
+}
+
+
+/* ============================================================
+   RESET
+   ============================================================ */
+
+* {
+    box-sizing: border-box;
+}
+
+
+html,
+body,
+#root {
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+}
+
+
+body {
+    margin: 0;
+
+    background:
+        var(--nexo-background);
+
+    color:
+        var(--nexo-text);
+
+    font-family:
+        Inter,
+        "Segoe UI",
+        system-ui,
+        sans-serif;
+
+    font-size: 14px;
+}
+
+
+/* ============================================================
+   APP
+   ============================================================ */
+
+.nexo-app {
+    display: grid;
+
+    grid-template-columns:
+        230px minmax(0, 1fr);
+
+    width: 100%;
+    min-height: 100vh;
+
+    background:
+        var(--nexo-background);
+}
+
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+
+.nexo-sidebar {
+    position: sticky;
+
+    top: 0;
+
+    display: flex;
+    flex-direction: column;
+
+    height: 100vh;
+
+    overflow-y: auto;
+
+    background:
+        var(--nexo-sidebar);
+
+    color:
+        #ffffff;
+
+    border-right:
+        1px solid
+        rgba(255, 255, 255, 0.08);
+}
+
+
+/* ============================================================
+   LOGO SIDEBAR
+   ============================================================ */
+
+.nexo-sidebar-brand {
+    display: flex;
+    align-items: center;
+
+    gap: 11px;
+
+    min-height: 72px;
+
+    padding:
+    14px 18px;
+
+    border-bottom:
+        1px solid
+        rgba(255, 255, 255, 0.09);
+}
+
+
+.nexo-sidebar-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 38px;
+    height: 38px;
+
+    flex-shrink: 0;
+
+    background:
+        var(--nexo-primary);
+
+    color:
+        #ffffff;
+
+    border-radius:
+        9px;
+
+    font-size:
+        13px;
+
+    font-weight:
+        800;
+
+    letter-spacing:
+        0.5px;
+
+    transition:
+        transform 0.22s ease,
+        background-color 0.22s ease;
+}
+
+
+.nexo-sidebar-brand strong {
+    display: block;
+
+    color:
+        #ffffff;
+
+    font-size:
+        14px;
+
+    line-height:
+        1.2;
+}
+
+
+.nexo-sidebar-brand span {
+    display: block;
+
+    margin-top:
+        3px;
+
+    color:
+        #94a3b8;
+
+    font-size:
+        10px;
+}
+
+
+/* ============================================================
+   NAVEGACIÓN
+   ============================================================ */
+
+.nexo-sidebar-nav {
+    flex: 1;
+
+    padding:
+        14px 10px 20px;
+}
+
+
+.nexo-sidebar-group {
+    margin:
+        18px 10px 7px;
+
+    color:
+        #7f91aa;
+
+    font-size:
+        9px;
+
+    font-weight:
+        800;
+
+    letter-spacing:
+        1.2px;
+}
+
+
+.nexo-sidebar-group:first-child {
+    margin-top:
+        4px;
+}
+
+
+.nexo-nav-item {
+    display: flex;
+    align-items: center;
+
+    gap:
+        11px;
+
+    min-height:
+        40px;
+
+    margin-bottom:
+        3px;
+
+    padding:
+        9px 12px;
+
+    color:
+        #cbd5e1;
+
+    border-radius:
+        7px;
+
+    font-size:
+        12px;
+
+    font-weight:
+        550;
+
+    cursor:
+        default;
+
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
+}
+
+
+.nexo-nav-item:hover {
+    background:
+    var(--nexo-sidebar-hover);
+
+    color:
+        #ffffff;
+}
+
+
+.nexo-nav-item.is-active {
+    position: relative;
+
+    background:
+    var(--nexo-sidebar-active);
+
+    color:
+    #ffffff;
+
+    font-weight:
+    650;
+}
+
+
+.nexo-nav-item.is-active::before {
+    content: "";
+
+    position: absolute;
+
+    left:
+        -10px;
+
+    width:
+        3px;
+
+    height:
+        22px;
+
+    background:
+        var(--nexo-accent);
+
+    border-radius:
+        0 4px 4px 0;
+}
+
+
+.nexo-nav-icon,
+.nexo-nav-letter {
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    width:
+        20px;
+
+    flex-shrink:
+        0;
+
+    color:
+        inherit;
+
+    font-size:
+        12px;
+
+    font-weight:
+    800;
+}
+
+
+.nexo-sidebar-footer {
+    padding:
+        13px 18px;
+
+    color:
+        #71829a;
+
+    border-top:
+        1px solid
+        rgba(255, 255, 255, 0.08);
+
+    font-size:
+        9px;
+}
+
+
+/* ============================================================
+   WORKSPACE
+   ============================================================ */
+
+.nexo-workspace {
+    min-width: 0;
+
+    background:
+        var(--nexo-background);
+}
+
+
+/* ============================================================
+   TOPBAR
+   ============================================================ */
+
+.nexo-topbar {
+    position: sticky;
+
+    top: 0;
+
+    z-index: 50;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    min-height:
+        72px;
+
+    padding:
+        0 22px;
+
+    background:
+        #ffffff;
+
+    border-bottom:
+        1px solid
+        var(--nexo-border);
+
+    box-shadow:
+        0 1px 4px
+        rgba(15, 23, 42, 0.04);
+}
+
+
+.nexo-topbar-left {
+    display: flex;
+    align-items: center;
+
+    gap:
+        14px;
+}
+
+
+.nexo-menu-symbol {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 36px;
+    height: 36px;
+
+    background: #F8E8EE;
+    color: var(--nexo-primary);
+
+    border-radius: 7px;
+
+    font-size: 17px;
+
+    cursor: pointer;
+}
+
+
+.nexo-topbar h1 {
+        margin:
+    0;
+
+    color:
+        var(--nexo-text);
+
+    font-size:
+        18px;
+
+    font-weight:
+        750;
+
+    letter-spacing:
+        -0.25px;
+}
+
+
+.nexo-topbar p {
+    margin:
+        2px 0 0;
+
+    color:
+        var(--nexo-text-secondary);
+
+    font-size:
+        11px;
+} 
+
+
+/* ============================================================
+   ESTADO TOPBAR
+   ============================================================ */
+
+.nexo-topbar-status {
+    display: flex;
+    align-items: center;
+
+    gap:
+        8px;
+}
+
+
+.nexo-status-item {
+    display: flex;
+    align-items: center;
+
+    gap:
+        6px;
+
+    height:
+        30px;
+
+    padding:
+        0 10px;
+
+    background:
+        var(--nexo-surface-secondary);
+
+    color:
+        var(--nexo-text-secondary);
+
+    border:
+        1px solid
+        var(--nexo-border-soft);
+
+    border-radius:
+        6px;
+
+    font-size:
+        10px;
+
+    font-weight:
+        600;
+}
+
+
+.nexo-status-dot {
+    width:
+        7px;
+
+    height:
+        7px;
+
+    background:
+        #cbd5e1;
+
+    border-radius:
+        50%;
+}
+
+
+.nexo-status-dot.is-online {
+    background:
+        var(--nexo-success);
+
+    box-shadow:
+        0 0 0 2px
+        rgba(22, 163, 74, 0.12);
+}
+
+
+/* ============================================================
+   CONTENIDO
+   ============================================================ */
+
+.nexo-content {
+    width: 100%;
+
+    min-width: 0;
+
+    padding:
+        18px 20px 30px;
+}
+
+
+/* ============================================================
+   SECCIONES PRINCIPALES
+   ============================================================ */
+
+.nexo-content > section {
+    margin-bottom:
+        16px;
+
+    padding:
+        18px;
+
+    background:
+        var(--nexo-surface);
+
+    border:
+        1px solid
+        var(--nexo-border);
+
+    border-radius:
+        6px;
+
+    box-shadow:
+        0 1px 2px
+        rgba(15, 23, 42, 0.03);
+}
+
+
+/* Evita el efecto de tarjeta dentro de tarjeta */
+
+.nexo-content section section {
+    margin:
+        14px 0 0;
+
+    padding:
+        14px 0 0;
+
+    background:
+        transparent;
+
+    border:
+        0;
+
+    border-top:
+        1px solid
+        var(--nexo-border-soft);
+
+    border-radius:
+        0;
+
+    box-shadow:
+        none;
+}
+
+
+/* ============================================================
+   TÍTULOS
+   ============================================================ */
+
+.nexo-content h2 {
+    margin:
+        0 0 15px;
+
+    color:
+        var(--nexo-text);
+
+    font-size:
+        16px;
+
+    font-weight:
+        750;
+}
+
+
+.nexo-content h2::before {
+    content: "";
+
+    display:
+        inline-block;
+
+    width:
+        3px;
+
+    height:
+        15px;
+
+    margin-right:
+        8px;
+
+    vertical-align:
+        -2px;
+
+    background:
+        var(--nexo-accent);
+
+    border-radius:
+        4px;
+}
+
+
+.nexo-content h3 {
+    margin:
+        13px 0 8px;
+
+    color:
+        #334155;
+
+    font-size:
+        12px;
+
+    font-weight:
+        700;
+}
+
+
+/* ============================================================
+   LABEL
+   ============================================================ */
+
+label {
+    display:
+        inline-block;
+
+    margin-bottom:
+        5px;
+
+    color:
+        #64748b;
+
+    font-size:
+        10px;
+
+    font-weight:
+        700;
+
+    text-transform:
+        uppercase;
+
+    letter-spacing:
+        0.35px;
+}
+
+
+/* ============================================================
+   CAMPOS
+   ============================================================ */
+
+input,
+select,
+textarea {
+    min-height:
+    36px;
+
+    padding:
+        7px 10px;
+
+    background:
+        #ffffff;
+
+    color:
+        var(--nexo-text);
+
+    border:
+        1px solid
+        var(--nexo-border);
+
+    border-radius:
+        5px;
+
+    font-family:
+        inherit;
+
+    font-size:
+        12px;
+
+    outline:
+        none;
+
+    transition:
+        border-color 0.15s ease,
+        box-shadow 0.15s ease;
+}
+
+
+input:focus,
+select:focus,
+textarea:focus {
+    border-color:
+        var(--nexo-primary);
+
+    box-shadow:
+        0 0 0 2px
+        rgba(37, 99, 235, 0.1);
+}
+
+
+input:disabled,
+select:disabled {
+    background:
+        #f1f5f9;
+
+    color:
+        #94a3b8;
+}
+
+
+/* ============================================================
+   BOTONES
+   ============================================================ */
+
+button {
+    min-height:
+        34px;
+
+    padding:
+        7px 12px;
+
+    background:
+        var(--nexo-primary);
+
+    color:
+        #ffffff;
+
+    border:
+        1px solid
+        var(--nexo-primary);
+
+    border-radius:
+        5px;
+
+    font-family:
+        inherit;
+
+    font-size:
+        11px;
+
+    font-weight:
+        650;
+
+    cursor:
+        pointer;
+
+    transition:
+        0.15s ease;
+}
+
+
+button:hover:not(:disabled) {
+    background:
+        var(--nexo-primary-dark);
+
+    border-color:
+        var(--nexo-primary-dark);
+}
+
+
+button:disabled {
+    opacity:
+        0.5;
+
+    cursor:
+        not-allowed;
+}
+
+
+/* ============================================================
+   INPUT FILE
+   ============================================================ */
+
+input[type="file"] {
+    background:
+        #f8fafc;
+
+    padding:
+        5px;
+}
+
+
+input[type="file"]::file-selector-button {
+    margin-right: 8px;
+
+    padding: 6px 10px;
+
+    background: #F8E8EE;
+    color: var(--nexo-primary);
+
+    border: 0;
+
+    border-radius: 4px;
+
+    font-weight: 650;
+
+    cursor: pointer;
+
+    transition:
+        background-color 0.18s ease;
+}
+
+
+input[type="file"]::file-selector-button:hover {
+    background:
+        #F1D2DD;
+}
+
+
+/* ============================================================
+    TABLAS
+   ============================================================ */
+
+table {
+    width:
+        100%;
+
+    background:
+    #ffffff;
+}
+
+
+thead th {
+    background:
+    #f1f5f9 !important;
+
+    color:
+    #334155;
+
+    border-color:
+    #dbe3ec !important;
+
+    font-size:
+    10px !important;
+
+    font-weight:
+    750 !important;
+}
+
+
+tbody td {
+    color:
+        #475569;
+
+    font-size:
+    11px;
+}
+
+
+tbody tr:hover {
+    background:
+    #eff6ff !important;
+}
+
+
+/* ============================================================
+   SCROLL
+   ============================================================ */
+
+::-webkit-scrollbar {
+    width:
+        8px;
+
+    height:
+        8px;
+}
+
+
+::-webkit-scrollbar-track {
+    background:
+        #edf1f6;
+}
+
+
+::-webkit-scrollbar-thumb {
+    background:
+        #bdc8d6;
+
+    border-radius:
+        999px;
+}
+
+
+::-webkit-scrollbar-thumb:hover {
+    background:
+        #94a3b8;
+}
+
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (
+    max-width: 1000px
+) {
+
+    .nexo-app {
+        grid-template-columns:
+            72px minmax(0, 1fr);
+    }
+
+
+    .nexo-sidebar-brand > div:last-child,
+    .nexo-nav-item span:last-child,
+    .nexo-sidebar-group,
+    .nexo-sidebar-footer {
+    display:
+        none;
+    }
+
+
+    .nexo-sidebar-brand {
+        justify-content:
+            center;
+
+    padding:
+        12px;
+    }
+
+
+    .nexo-nav-item {
+        justify-content:
+        center;
+
+    padding:
+        9px;
+    }
+
+
+    .nexo-topbar-status {
+    display:
+        none;
+    }
+
+}
+
+/* ============================================================
+   MICROANIMACIONES NEXO QA
+   ============================================================ */
+
+
+/* Entrada suave del contenido */
+
+@keyframes nexoFadeUp {
+
+    from {
+    opacity: 0;
+    transform:
+        translateY(8px);
+}
+
+    to {
+    opacity: 1;
+    transform:
+        translateY(0);
+}
+
+}
+
+
+.nexo-content > section {
+    animation:
+    nexoFadeUp
+    0.28s
+    ease-out;
+}
+
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+
+.nexo-nav-item {
+    transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+
+.nexo-nav-item:hover {
+    transform:
+    translateX(3px);
+}
+
+
+.nexo-nav-item.is-active {
+    box-shadow:
+    inset 3px 0 0
+    rgba(255, 255, 255, 0.85);
+}
+
+
+/* ============================================================
+   BOTONES
+   ============================================================ */
+
+button {
+    transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.12s ease;
+}
+
+
+button:hover:not(:disabled) {
+    transform:
+    translateY(-1px);
+
+    box-shadow:
+    0 4px 10px
+    rgba(112, 1, 43, 0.18);
+}
+
+
+button:active:not(:disabled) {
+    transform:
+    translateY(0);
+}
+
+
+/* ============================================================
+   INPUTS
+   ============================================================ */
+
+input,
+select,
+textarea {
+    transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease;
+}
+
+
+input:focus,
+select:focus,
+textarea:focus {
+    border-color:
+    var(--nexo-primary);
+
+    box-shadow:
+    0 0 0 3px
+    rgba(112, 1, 43, 0.10);
+}
+
+
+/* ============================================================
+   TABLAS
+   ============================================================ */
+
+tbody tr {
+    transition:
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+
+tbody tr:hover {
+    background:
+    #FBF3F6 !important;
+}
+
+
+/* ============================================================
+   TOPBAR
+   ============================================================ */
+
+.nexo-topbar {
+    transition:
+    box-shadow 0.2s ease;
+}
+
+
+.nexo-menu-symbol {
+    transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+
+.nexo-menu-symbol:hover {
+    background:
+        #F8E8EE;
+
+    color:
+        var(--nexo-primary);
+
+    transform:
+        rotate(3deg);
+}
+
+
+/* ============================================================
+   STATUS DOT
+   ============================================================ */
+
+@keyframes nexoPulse {
+
+0% {
+    box-shadow:
+        0 0 0 0
+        rgba(46, 139, 87, 0.35);
+    }
+
+    70% {
+    box-shadow:
+        0 0 0 6px
+        rgba(46, 139, 87, 0);
+}
+
+    100% {
+    box-shadow:
+        0 0 0 0
+        rgba(46, 139, 87, 0);
+}
+
+}
+
+
+.nexo-status-dot.is-online {
+    animation:
+        nexoPulse
+        2.2s
+        infinite;
+}
+
+/* ============================================================
+   SIDEBAR COLAPSABLE
+   ============================================================ */
+
+.nexo-app {
+    transition:
+        grid-template-columns 0.25s ease;
+}
+
+
+.nexo-app.is-collapsed {
+    grid-template-columns:
+        78px minmax(0, 1fr);
+}
+
+
+/* Sidebar */
+.nexo-sidebar {
+    transition:
+        width 0.25s ease,
+        padding 0.25s ease;
+}
+
+
+/* Brand */
+.nexo-sidebar-brand {
+    transition:
+        padding 0.25s ease,
+        justify-content 0.25s ease;
+}
+
+
+.nexo-sidebar-brand > div:last-child {
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease,
+        width 0.18s ease;
+}
+
+
+/* Grupos del sidebar */
+.nexo-sidebar-group {
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease;
+}
+
+
+/* Texto de ítems */
+.nexo-nav-item span:last-child {
+    transition:
+        opacity 0.18s ease,
+        transform 0.18s ease,
+        width 0.18s ease;
+    white-space: nowrap;
+}
+
+
+/* Footer */
+.nexo-sidebar-footer {
+    transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+
+/* Estado colapsado */
+.nexo-app.is-collapsed .nexo-sidebar-brand {
+    justify-content: center;
+    padding: 14px 10px;
+}
+
+
+.nexo-app.is-collapsed .nexo-sidebar-brand > div:last-child {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    transform: translateX(-8px);
+}
+
+
+.nexo-app.is-collapsed .nexo-sidebar-group {
+    opacity: 0;
+    height: 0;
+    margin: 0;
+    overflow: hidden;
+    transform: translateX(-8px);
+}
+
+
+.nexo-app.is-collapsed .nexo-nav-item {
+    justify-content: center;
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+
+.nexo-app.is-collapsed .nexo-nav-item span:last-child {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    transform: translateX(-8px);
+}
+
+
+.nexo-app.is-collapsed .nexo-sidebar-footer {
+    opacity: 0;
+    height: 0;
+    padding: 0;
+    overflow: hidden;
+    transform: translateY(8px);
+}
+
+
+/* Botón menú animado */
+.nexo-menu-symbol {
+    border: none;
+}
+
+
+.nexo-app.is-collapsed .nexo-menu-symbol {
+    transform: rotate(180deg);
+}
+
+.nexo-app.is-collapsed .nexo-sidebar-logo {
+    transform: scale(0.96);
+}
+
+/* ============================================================
+   NEXO QA
+   BARRA COMPACTA DE FILTROS
+   ============================================================ */
+
+
+/* ============================================================
+   PANEL
+   ============================================================ */
+
+.nexo-filter-panel {
+    margin:
+        14px 0 18px;
+
+    padding:
+        14px 16px;
+
+    background:
+        #ffffff;
+
+    border:
+        1px solid
+        var(--nexo-border);
+
+    border-radius:
+        8px;
+
+    box-shadow:
+        0 2px 8px
+        rgba(37, 0, 14, 0.04);
+
+    animation:
+        nexoFilterAppear
+        0.25s
+        ease-out;
+}
+
+
+@keyframes nexoFilterAppear {
+
+    from {
+    opacity: 0;
+
+    transform:
+        translateY(-4px);
+    }
+
+    to {
+    opacity: 1;
+
+    transform:
+        translateY(0);
+    }
+
+}
+
+
+/* ============================================================
+   CABECERA
+   ============================================================ */
+
+.nexo-filter-header {
+    display:
+    flex;
+
+    align-items:
+    center;
+
+    justify-content:
+    space-between;
+
+    gap:
+    16px;
+
+    margin-bottom:
+    12px;
+
+    padding-bottom:
+    10px;
+
+    border-bottom:
+    1px solid
+    var(--nexo-border-soft);
+}
+
+
+.nexo-filter-header h3 {
+    margin:
+    0;
+
+    color:
+    var(--nexo-text);
+
+    font-size:
+    12px;
+
+    font-weight:
+    750;
+}
+
+
+.nexo-filter-header span {
+    display:
+    block;
+
+    margin-top:
+    2px;
+
+    color:
+    var(--nexo-text-secondary);
+
+    font-size:
+    10px;
+}
+
+
+.nexo-filter-header-badge {
+    padding:
+    5px 9px;
+
+    background:
+    #f8e8ee;
+
+    color:
+    var(--nexo-primary);
+
+    border:
+    1px solid
+    #efd5df;
+
+    border-radius:
+    999px;
+
+    font-size:
+    10px;
+
+    font-weight:
+    700;
+
+    white-space:
+    nowrap;
+}
+
+
+/* ============================================================
+   GRID DE FILTROS
+   ============================================================ */
+
+.nexo-filter-grid {
+    display:
+    grid;
+
+    grid-template-columns:
+    minmax(170px, 1.35fr)
+    minmax(130px, 1fr)
+    minmax(130px, 1fr)
+    minmax(145px, 1fr)
+    minmax(160px, 1.2fr)
+    80px;
+
+    gap:
+    10px;
+
+    align-items:
+    end;
+}
+
+
+/* ============================================================
+   CAMPO
+   ============================================================ */
+
+.nexo-filter-field {
+    min-width:
+    0;
+}
+
+
+.nexo-filter-field label {
+    display:
+    block;
+
+    margin-bottom:
+    5px;
+}
+
+
+.nexo-filter-field input,
+.nexo-filter-field select {
+    width:
+    100%;
+
+    height:
+    34px;
+
+    min-height:
+    34px;
+}
+
+
+.nexo-filter-field-small {
+    min-width:
+    70px;
+}
+
+
+/* ============================================================
+   ACCIONES
+   ============================================================ */
+
+.nexo-filter-actions {
+    display:
+    flex;
+
+    align-items:
+    center;
+
+    justify-content:
+    flex-end;
+
+    gap:
+    8px;
+
+    margin-top:
+    12px;
+}
+
+
+/* ============================================================
+   BOTÓN PRINCIPAL
+   ============================================================ */
+
+.nexo-button-primary {
+    min-width:
+    110px;
+
+    background:
+    var(--nexo-primary);
+
+    border-color:
+    var(--nexo-primary);
+
+    color:
+    #ffffff;
+}
+
+
+.nexo-button-primary:hover:not(:disabled) {
+    background:
+    var(--nexo-primary-dark);
+
+    border-color:
+    var(--nexo-primary-dark);
+}
+
+
+/* ============================================================
+   BOTÓN SECUNDARIO
+   ============================================================ */
+
+.nexo-button-secondary {
+    background:
+    #ffffff;
+
+    color:
+    var(--nexo-text-secondary);
+
+    border-color:
+        var(--nexo-border);
+}
+
+
+.nexo-button-secondary:hover:not(:disabled) {
+    background:
+    #faf7f8;
+
+    color:
+    var(--nexo-primary);
+
+    border-color:
+    #d8bcc7;
+
+    box-shadow:
+    none;
+}
+
+
+/* ============================================================
+   MICROINTERACCIÓN EN LOS CAMPOS
+   ============================================================ */
+
+.nexo-filter-field input:hover,
+.nexo-filter-field select:hover {
+    border-color:
+    #c9afb9;
+}
+
+
+.nexo-filter-field input:focus,
+.nexo-filter-field select:focus {
+    transform:
+    translateY(-1px);
+}
+
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (
+    max-width: 1350px
+) {
+
+    .nexo-filter-grid {
+    grid-template-columns:
+        repeat(
+        3,
+        minmax(150px, 1fr)
+        );
+    }
+
+}
+
+
+@media (
+    max-width: 850px
+) {
+
+    .nexo-filter-grid {
+    grid-template-columns:
+        repeat(
+        2,
+        minmax(140px, 1fr)
+    );
+}
+
+
+    .nexo-filter-header {
+    align-items:
+        flex-start;
+
+    flex-direction:
+        column;
+    }
+
+}
+
+
+@media (
+    max-width: 560px
+) {
+
+    .nexo-filter-grid {
+    grid-template-columns:
+        1fr;
+    }
+
+
+    .nexo-filter-actions {
+    justify-content:
+        stretch;
+    }
+
+
+    .nexo-filter-actions button {
+    flex:
+        1;
+    }
+
+}
+
+/* ============================================================
+   NEXO QA
+   MÓDULO DIFERENCIAS
+   ============================================================ */
+
+
+/* ============================================================
+   PANEL PRINCIPAL
+   ============================================================ */
+
+.nexo-diff-panel {
+    margin:
+    12px 0 16px;
+
+    padding:
+    15px 16px;
+
+    background:
+    linear-gradient(
+        180deg,
+        #ffffff 0%,
+        #fdfafb 100%
+    );
+
+    border:
+        1px solid
+        var(--nexo-border);
+
+    border-radius:
+        9px;
+
+    box-shadow:
+        0 3px 12px
+        rgba(37, 0, 14, 0.045);
+
+    animation:
+        nexoDiffAppear
+        0.28s
+        ease-out;
+}
+
+
+@keyframes nexoDiffAppear {
+
+    from {
+    opacity: 0;
+
+    transform:
+        translateY(5px);
+    }
+
+    to {
+    opacity: 1;
+
+    transform:
+        translateY(0);
+    }
+
+}
+
+
+/* ============================================================
+   CABECERA
+   ============================================================ */
+
+.nexo-diff-header {
+    display:
+    flex;
+
+    align-items:
+    center;
+
+    justify-content:
+    space-between;
+
+    gap:
+    12px;
+
+    margin-bottom:
+    14px;
+
+    padding-bottom:
+    11px;
+
+    border-bottom:
+    1px solid
+    var(--nexo-border-soft);
+}
+
+
+.nexo-diff-header h3 {
+    margin:
+    0;
+
+    color:
+    var(--nexo-text);
+
+    font-size:
+    13px;
+
+    font-weight:
+        750;
+}
+
+
+.nexo-diff-header span {
+    display:
+        block;
+
+    margin-top:
+        2px;
+
+    color:
+        var(--nexo-text-secondary);
+
+    font-size:
+        10px;
+}
+
+
+.nexo-diff-counter {
+    padding:
+        5px 10px;
+
+    background:
+        #f8e8ee;
+
+    color:
+        var(--nexo-primary);
+
+    border:
+        1px solid
+        #ecd0db;
+
+    border-radius:
+        999px;
+
+    font-size:
+        10px;
+
+    font-weight:
+        750;
+
+    white-space:
+        nowrap;
+}
+
+
+/* ============================================================
+   GRUPOS
+   ============================================================ */
+
+.nexo-diff-group {
+    display:
+        grid;
+
+    grid-template-columns:
+        115px minmax(0, 1fr);
+
+    align-items:
+        center;
+
+    gap:
+        10px;
+
+    margin-bottom:
+        10px;
+}
+
+
+.nexo-diff-label {
+    color:
+        var(--nexo-text-secondary);
+
+    font-size:
+        10px;
+
+    font-weight:
+        750;
+
+    text-transform:
+        uppercase;
+
+    letter-spacing:
+        0.35px;
+}
+
+
+/* ============================================================
+   CHIPS
+   ============================================================ */
+
+.nexo-chip-container {
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    gap:
+        6px;
+
+    overflow-x:
+        auto;
+
+    padding:
+        2px 2px 5px;
+}
+
+
+.nexo-filter-chip {
+    min-height:
+        29px;
+
+    padding:
+        5px 10px;
+
+    flex-shrink:
+        0;
+
+    background:
+        #ffffff;
+
+    color:
+        var(--nexo-text-secondary);
+
+    border:
+        1px solid
+        var(--nexo-border);
+
+    border-radius:
+        999px;
+
+    box-shadow:
+        none;
+
+    font-size:
+        10px;
+
+    font-weight:
+        650;
+
+    transition:
+        background-color 0.16s ease,
+        color 0.16s ease,
+        border-color 0.16s ease,
+        transform 0.16s ease,
+        box-shadow 0.16s ease;
+}
+
+
+.nexo-filter-chip:hover:not(:disabled) {
+    background:
+        #fcf4f7;
+
+    color:
+        var(--nexo-primary);
+
+    border-color:
+        #d9aebf;
+
+    transform:
+        translateY(-1px);
+
+    box-shadow:
+        0 3px 7px
+        rgba(112, 1, 43, 0.08);
+} 
+
+
+.nexo-filter-chip.is-active {
+    background:
+        var(--nexo-primary);
+
+    color:
+        #ffffff;
+
+    border-color:
+        var(--nexo-primary);
+
+    box-shadow:
+        0 3px 9px
+        rgba(112, 1, 43, 0.16);
+}
+
+
+.nexo-filter-chip.is-active:hover {
+    background:
+        var(--nexo-primary-dark);
+
+    color:
+        #ffffff;
+}
+
+
+/* Pendiente */
+
+.nexo-filter-chip.is-active.is-warning {
+    background:
+        #f59e0b;
+
+    border-color:
+        #f59e0b;
+
+    color:
+        #ffffff;
+}
+
+
+/* Corregido */
+
+.nexo-filter-chip.is-active.is-success {
+    background:
+        var(--nexo-success);
+
+    border-color:
+        var(--nexo-success);
+
+    color:
+        #ffffff;
+}
+
+
+/* ============================================================
+   GRID DE FILTROS
+   ============================================================ */
+
+.nexo-diff-filter-grid {
+    display:
+    grid;
+
+    grid-template-columns:
+        minmax(190px, 1.3fr)
+        minmax(160px, 1fr)
+        minmax(190px, 1.2fr)
+        80px;
+
+    gap:
+        10px;
+
+    align-items:
+        end;
+
+    margin-top:
+        14px;
+
+    padding-top:
+        13px;
+
+    border-top:
+        1px solid
+        var(--nexo-border-soft);
+}
+
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (
+    max-width: 1100px
+) {
+
+    .nexo-diff-filter-grid {
+    grid-template-columns:
+        repeat(
+            2,
+            minmax(160px, 1fr)
+        );
+    }
+
+}
+
+
+@media (
+    max-width: 750px
+) {
+
+    .nexo-diff-group {
+        grid-template-columns:
+        1fr;
+    }
+
+
+    .nexo-diff-filter-grid {
+        grid-template-columns:
+            1fr;
+        }
+
+
+    .nexo-diff-header {
+        align-items:
+            flex-start;
+
+    flex-direction:
+        column;
+    }
+
+}
+
+/* ============================================================
+   SIDEBAR - BOTONES DE NAVEGACIÓN
+   ============================================================ */
+
+.nexo-sidebar .nexo-nav-item {
+    width: 100%;
+    background: transparent;
+    border: 0;
+    text-align: left;
+    box-shadow: none;
+}
+
+.nexo-sidebar .nexo-nav-item:hover:not(:disabled) {
+    background: var(--nexo-sidebar-hover);
+    color: #ffffff;
+    border: 0;
+    box-shadow: none;
+    transform: translateX(3px);
+}
+
+.nexo-sidebar .nexo-nav-item.is-active {
+    background: var(--nexo-sidebar-active);
+    color: #ffffff;
+}
+
+.nexo-sidebar .nexo-nav-item.is-disabled {
+    opacity: 0.42;
+    cursor: not-allowed;
+}
+
+#seccion-principal,
+#seccion-diferencias,
+#seccion-importaciones {
+    scroll-margin-top: 76px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+
+/* ============================================================
+   NEXO QA
+   COMPACTACIÓN DE VISTA DIFERENCIAS / CORREGIDOS
+   Agregar al FINAL del nexo.css actual.
+   ============================================================ */
+
+/* Cabecera de la vista: título + ejecución en una sola fila */
+.nexo-diff-view-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+
+.nexo-diff-view-title {
+  min-width: 0;
+}
+
+.nexo-diff-view-title h2 {
+  margin-bottom: 3px;
+}
+
+.nexo-diff-view-title > span {
+    display: block;
+    color: var(--nexo-text-secondary);
+    font-size: 10px;
+}
+
+.nexo-diff-execution {
+    width: min(340px, 38vw);
+    flex-shrink: 0;
+}
+
+.nexo-diff-execution label {
+    display: block;
+    margin-bottom: 4px;
+}
+
+.nexo-diff-execution select {
+    width: 100%;
+    height: 34px;
+    min-height: 34px;
+}
+
+/* Panel más compacto */
+.nexo-diff-panel {
+    margin: 8px 0 10px;
+    padding: 10px 12px;
+}
+
+.nexo-diff-header-compact {
+    min-height: 30px;
+    margin-bottom: 8px;
+    padding-bottom: 7px;
+}
+
+.nexo-diff-header-compact h3 {
+    margin: 0;
+    font-size: 11px;
+}
+
+.nexo-diff-counter {
+    padding: 4px 8px;
+}
+
+.nexo-diff-group {
+    margin-bottom: 7px;
+}
+
+.nexo-diff-filter-grid {
+    grid-template-columns:
+    minmax(185px, 1.25fr)
+    minmax(150px, 1fr)
+    minmax(180px, 1.15fr)
+    78px
+    auto;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 9px;
+}
+
+/* Limpiar + Aplicar en la misma fila de filtros */
+.nexo-diff-inline-actions {
+    display: flex;
+    align-items: end;
+    justify-content: flex-end;
+    gap: 7px;
+    min-width: 190px;
+}
+
+.nexo-diff-inline-actions button {
+    min-height: 34px;
+    white-space: nowrap;
+}
+
+/* Barra justo encima de la tabla */
+.nexo-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 7px 0 8px;
+}
+
+.nexo-table-count {
+    color: var(--nexo-text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.nexo-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nexo-pagination strong {
+    color: var(--nexo-text);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.nexo-pagination button {
+    min-height: 30px;
+    padding: 5px 10px;
+}
+
+@media (max-width: 1180px) {
+    .nexo-diff-filter-grid {
+        grid-template-columns:
+        repeat(2, minmax(160px, 1fr));
+    }
+
+    .nexo-diff-inline-actions {
+        min-width: 0;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 760px) {
+    .nexo-diff-view-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .nexo-diff-execution {
+        width: 100%;
+    }
+
+    .nexo-diff-filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nexo-diff-inline-actions {
+        justify-content: stretch;
+    }
+
+    .nexo-diff-inline-actions button {
+        flex: 1;
+    }
+
+    .nexo-table-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+/* ============================================================
+   CONSULTA GENERAL - CABECERA Y FILTROS ULTRA COMPACTOS
+   ============================================================ */
+
+/* Reduce únicamente la vista principal, sin tocar importaciones. */
+#seccion-principal {
+    padding: 10px 14px;
+}
+
+.nexo-query-compact {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Título y ejecución QA en una sola fila. */
+.nexo-query-topline {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 0 0 7px;
+    padding: 0;
+}
+
+.nexo-query-title {
+    min-width: 0;
+}
+
+.nexo-query-title h2 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.nexo-query-execution {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 360px;
+}
+
+.nexo-query-execution label {
+    margin: 0;
+    white-space: nowrap;
+}
+
+.nexo-query-execution select {
+    width: min(330px, 28vw);
+    height: 30px;
+    min-height: 30px;
+    padding: 4px 8px;
+}
+
+/* Panel sin cabecera redundante de "Filtros" y sin contador duplicado. */
+.nexo-query-filter-panel {
+    margin: 0 0 6px;
+    padding: 7px 9px;
+    background: #ffffff;
+    border: 1px solid var(--nexo-border);
+    border-radius: 7px;
+    box-shadow: 0 1px 4px rgba(37, 0, 14, 0.035);
+}
+
+.nexo-query-filter-grid {
+    display: grid;
+    grid-template-columns:
+        minmax(155px, 1.2fr)
+        minmax(120px, 0.9fr)
+        minmax(125px, 0.9fr)
+        minmax(140px, 1fr)
+        minmax(160px, 1.15fr)
+        72px
+        auto;
+    gap: 7px;
+    align-items: end;
+}
+
+.nexo-query-filter-panel .nexo-filter-field label {
+    margin-bottom: 3px;
+    font-size: 9px;
+}
+
+.nexo-query-filter-panel input,
+.nexo-query-filter-panel select {
+    width: 100%;
+    height: 30px;
+    min-height: 30px;
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.nexo-query-inline-actions {
+    display: flex;
+    align-items: end;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 176px;
+}
+
+.nexo-query-inline-actions button {
+    min-height: 30px;
+    padding: 4px 9px;
+    white-space: nowrap;
+}
+
+/* Acerca la barra de resultados a los filtros y la tabla. */
+.nexo-query-table-toolbar {
+    margin: 4px 0 6px;
+}
+
+/* La tabla empieza más arriba y aprovecha mejor el alto visible. */
+#seccion-principal .nexo-query-table-toolbar + div {
+    margin-top: 0;
+}
+
+@media (max-width: 1280px) {
+    .nexo-query-filter-grid {
+        grid-template-columns:
+            repeat(3, minmax(140px, 1fr));
+    }
+
+    .nexo-query-inline-actions {
+        min-width: 0;
+        justify-content: flex-end;
+    }
+}
+
+@media (max-width: 900px) {
+    .nexo-query-topline {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .nexo-query-execution {
+        justify-content: flex-start;
+        min-width: 0;
+    }
+
+    .nexo-query-execution select {
+        width: min(100%, 360px);
+    }
+
+    .nexo-query-filter-grid {
+        grid-template-columns:
+            repeat(2, minmax(140px, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    #seccion-principal {
+        padding: 8px;
+    }
+
+    .nexo-query-filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nexo-query-execution {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .nexo-query-execution select {
+        width: 100%;
+    }
+
+    .nexo-query-inline-actions {
+        justify-content: stretch;
+    }
+
+    .nexo-query-inline-actions button {
+        flex: 1;
+    }
+}
+
+/* ============================================================
+   HISTORIAL DE CORRECCIONES - VISTA COMPACTA
+   ============================================================ */
+
+
+/* ============================================================
+   CONTENEDOR GENERAL
+   ============================================================ */
+
+#seccion-historial {
+    width: 100%;
+    padding: 10px 14px;
+}
+
+
+/* ============================================================
+   CABECERA
+   ============================================================ */
+
+#seccion-historial .nexo-diff-view-header {
+    margin-bottom: 7px;
+}
+
+
+#seccion-historial .nexo-diff-view-title h2 {
+    margin: 0 0 2px;
+}
+
+
+#seccion-historial .nexo-diff-view-title > span {
+    font-size: 10px;
+}
+
+
+/* ============================================================
+   EJECUCIÓN QA
+   ============================================================ */
+
+#seccion-historial .nexo-diff-execution label {
+    margin-bottom: 3px;
+    font-size: 9px;
+}
+
+
+#seccion-historial .nexo-diff-execution select {
+    height: 30px;
+    min-height: 30px;
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+
+/* ============================================================
+   PANEL DE FILTROS
+   ============================================================ */
+
+#seccion-historial .nexo-diff-panel {
+    margin: 6px 0 8px;
+    padding: 8px 10px;
+}
+
+
+/* ============================================================
+   GRID ESPECÍFICO DEL HISTORIAL
+   ============================================================ */
+
+.nexo-history-filter-grid {
+    grid-template-columns:
+        minmax(180px, 1.25fr)
+        minmax(145px, 0.95fr)
+        minmax(155px, 1fr)
+        minmax(175px, 1.1fr)
+        70px
+        auto;
+
+    gap: 7px;
+
+    margin-top: 0;
+
+    padding-top: 0;
+
+    align-items: end;
+}
+
+
+/* ============================================================
+   CAMPOS
+   ============================================================ */
+
+#seccion-historial .nexo-filter-field label {
+    margin-bottom: 3px;
+    font-size: 9px;
+}
+
+
+#seccion-historial .nexo-filter-field input,
+#seccion-historial .nexo-filter-field select {
+    height: 30px;
+    min-height: 30px;
+
+    padding: 4px 8px;
+
+    font-size: 11px;
+}
+
+
+/* ============================================================
+   BOTONES
+   ============================================================ */
+
+#seccion-historial .nexo-diff-inline-actions {
+    min-width: 176px;
+    gap: 6px;
+}
+
+
+#seccion-historial .nexo-diff-inline-actions button {
+    min-height: 30px;
+
+    padding: 5px 9px;
+
+    font-size: 10px;
+}
+
+
+/* ============================================================
+   TOOLBAR DE RESULTADOS
+   ============================================================ */
+
+#seccion-historial .nexo-table-toolbar {
+    margin: 6px 0 7px;
+}
+
+
+/* ============================================================
+   TABLA
+   ============================================================ */
+
+#seccion-historial table {
+    font-size: 12px;
+}
+
+
+#seccion-historial th {
+    padding-top: 7px;
+    padding-bottom: 7px;
+}
+
+
+#seccion-historial td {
+    padding-top: 6px;
+    padding-bottom: 6px;
+}
+
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 1280px) {
+
+    .nexo-history-filter-grid {
+        grid-template-columns:
+            repeat(
+                3,
+                minmax(150px, 1fr)
+            );
+    }
+
+
+    #seccion-historial .nexo-diff-inline-actions {
+        min-width: 0;
+    }
+
+}
+
+
+@media (max-width: 800px) {
+
+    .nexo-history-filter-grid {
+        grid-template-columns:
+            1fr;
+    }
+
+
+    #seccion-historial .nexo-diff-inline-actions {
+        width: 100%;
+    }
+
+
+    #seccion-historial .nexo-diff-inline-actions button {
+        flex: 1;
+    }
+
+}
+
+/* ============================================================
+   ESTADOS DE VISTA
+   ============================================================ */
+
+.nexo-view-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    min-height: 76px;
+
+    margin: 8px 0;
+
+    padding: 14px 16px;
+
+    border:
+        1px solid
+        var(--nexo-border);
+
+    border-radius: 8px;
+
+    background: #ffffff;
+
+    color:
+        var(--nexo-text-secondary);
+
+    font-size: 12px;
+
+    text-align: center;
+}
+
+
+.nexo-view-state.is-error {
+    border-color: #fecaca;
+
+    background: #fff7f7;
+
+    color: #991b1b;
+}
+
+
+.nexo-view-state.is-empty {
+    background: #faf8f9;
+
+    color: var(--nexo-text-secondary);
+}

@@ -1,0 +1,40 @@
+name: Validar PDMC
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: pdmc_test
+          POSTGRES_USER: pdmc_test
+          POSTGRES_PASSWORD: pdmc_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pdmc_test -d pdmc_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://pdmc_test:pdmc_test@127.0.0.1:5432/pdmc_test?schema=public
+      TEST_DATABASE_URL: postgresql://pdmc_test:pdmc_test@127.0.0.1:5432/pdmc_test?schema=public
+      PDMC_AUTH_ORIGIN: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run build

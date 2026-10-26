@@ -1,0 +1,42 @@
+# Reemplaza el bloque apiqa.apipalacio.com del Caddyfile existente.
+# Un solo dominio para dos sistemas:
+#   - PDMC (Next.js, 127.0.0.1:5083) en la raíz.
+#   - API NEXO QA (FastAPI, 127.0.0.1:5082) bajo /qa, salvo agentes y salud,
+#     que conservan su ruta para no reconfigurar las tiendas.
+# Ambos sistemas usan /api/admin, /api/auth y /api/sincronizacion: por eso QA va con prefijo.
+
+apiqa.apipalacio.com {
+	encode zstd gzip
+
+	log {
+		output file C:/caddy/access-apiqa.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		format console
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	# NEXO QA: agentes de tienda y salud (PDMC no usa estas rutas)
+	handle /api/agente/* {
+		reverse_proxy 127.0.0.1:5082
+	}
+	handle /api/health {
+		reverse_proxy 127.0.0.1:5082
+	}
+
+	# NEXO QA: resto de la API. /qa/api/auth/login llega como /api/auth/login
+	handle_path /qa/* {
+		reverse_proxy 127.0.0.1:5082
+	}
+
+	# PDMC en la raíz
+	handle {
+		reverse_proxy 127.0.0.1:5083
+	}
+}

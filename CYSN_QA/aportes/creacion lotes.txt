@@ -1,0 +1,329 @@
+const BATCH_SIZE = 500;
+
+const items = $input.all();
+
+
+// ============================================================
+// CODIGO BARRA
+// Misma regla utilizada por NEXO QA:
+//
+// - Quita espacios.
+// - Quita comilla simple inicial.
+// - Mínimo 9 caracteres.
+// - Solamente números.
+// ============================================================
+
+function limpiarCodigoBarra(value) {
+
+  return String(value ?? '')
+    .trim()
+    .replace(/^'+/, '')
+    .trim();
+}
+
+
+function esCodigoBarraValido(codigo) {
+
+  if (codigo.length < 9) {
+    return false;
+  }
+
+  if (!/^\d+$/.test(codigo)) {
+    return false;
+  }
+
+  return true;
+}
+
+
+// ============================================================
+// SQL TEXT
+// ============================================================
+
+function sqlText(value) {
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return 'NULL';
+  }
+
+  const clean = String(value)
+    .replace(/'/g, "''");
+
+  return `'${clean}'`;
+}
+
+
+// ============================================================
+// SQL NUMBER
+// ============================================================
+
+function sqlNumber(value) {
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return 'NULL';
+  }
+
+  const num = Number(
+    String(value)
+      .trim()
+      .replace(',', '.')
+  );
+
+  if (!Number.isFinite(num)) {
+    return 'NULL';
+  }
+
+  return String(num);
+}
+
+
+// ============================================================
+// SQL TIMESTAMP
+// Entrada esperada:
+// YYYY-MM-DD HH:MM:SS
+// ============================================================
+
+function sqlTimestamp(value) {
+
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return 'NULL';
+  }
+
+  const clean = String(value)
+    .trim()
+    .replace(/'/g, "''");
+
+  return `'${clean}'::timestamp`;
+}
+
+
+// ============================================================
+// FILTRAR CODIGOS DE BARRA INVALIDOS
+// ============================================================
+
+const validos = [];
+
+let registrosFiltrados = 0;
+
+
+for (const item of items) {
+
+  const json = item.json || {};
+
+  const codigoBarra =
+    limpiarCodigoBarra(
+      json.CodigoBarra
+    );
+
+
+  if (
+    !esCodigoBarraValido(
+      codigoBarra
+    )
+  ) {
+
+    registrosFiltrados++;
+
+    continue;
+  }
+
+
+  validos.push({
+    ...json,
+    CodigoBarra: codigoBarra,
+  });
+}
+
+
+// ============================================================
+// CONSTRUIR FILA POSTGRESQL
+// ============================================================
+
+function buildValueRow(json) {
+
+  return `(
+    ${sqlText(json.SUCURSAL)},
+    ${sqlNumber(json.TasaCambio)},
+    ${sqlTimestamp(json.FECHA_TASA_CAMBIO)},
+
+    ${sqlText(json.CodigoBarra)},
+    ${sqlText(json.Referencia)},
+    ${sqlText(json.CodigoMarcaOrigen)},
+    ${sqlText(json.Concatenado)},
+
+    ${sqlText(json.Marca)},
+    ${sqlText(json.Descripcion)},
+
+    ${sqlText(json.CodigoCategoria)},
+    ${sqlText(json.NombreCategoria)},
+
+    ${sqlText(json.Status)},
+    ${sqlNumber(json.Existencia)},
+
+    ${sqlNumber(json.CostoDolar)},
+    ${sqlNumber(json.CostoInicial)},
+
+    ${sqlNumber(json.PrecioPromocion)},
+
+    ${sqlNumber(json.PrecioDetalUSDMasIVA)},
+    ${sqlNumber(json.PrecioDetalMasIVA)},
+
+    ${sqlNumber(json.PrecioMayorUSDMasIVA)},
+    ${sqlNumber(json.PrecioMayorMasIVA)}
+  )`;
+}
+
+
+// ============================================================
+// SIN REGISTROS VALIDOS
+// ============================================================
+
+if (validos.length === 0) {
+
+  return [
+    {
+      json: {
+
+        query:
+          "SELECT 'Sin registros validos para insertar' AS resultado;",
+
+        total_origen:
+          items.length,
+
+        total_validos:
+          0,
+
+        registros_filtrados:
+          registrosFiltrados,
+
+        lote:
+          0,
+
+        total_lotes:
+          0,
+      },
+    },
+  ];
+}
+
+
+// ============================================================
+// CREAR LOTES
+// ============================================================
+
+const batches = [];
+
+
+for (
+  let i = 0;
+  i < validos.length;
+  i += BATCH_SIZE
+) {
+
+  batches.push(
+    validos.slice(
+      i,
+      i + BATCH_SIZE
+    )
+  );
+}
+
+
+// ============================================================
+// GENERAR INSERTS
+// ============================================================
+
+const output = batches.map(
+  (batch, index) => {
+
+    const values = batch
+      .map(
+        json =>
+          buildValueRow(json)
+      )
+      .join(',\n');
+
+
+    const query = `
+
+INSERT INTO public.creacion
+(
+    sucursal_origen,
+
+    tasa_cambio,
+    fecha_tasa_cambio,
+
+    codigo_barra,
+    referencia,
+    codigo_marca_origen,
+    concatenado,
+
+    marca_origen,
+    descripcion,
+
+    codigo_categoria,
+    nombre_categoria,
+
+    status_origen,
+    existencia,
+
+    costo_dolar,
+    costo_inicial,
+
+    precio_promocion,
+
+    precio_detal_usd_mas_iva,
+    precio_detal_mas_iva,
+
+    precio_mayor_usd_mas_iva,
+    precio_mayor_mas_iva
+)
+VALUES
+
+${values};
+
+`;
+
+
+    return {
+
+      json: {
+
+        query,
+
+        lote:
+          index + 1,
+
+        total_lotes:
+          batches.length,
+
+        registros_lote:
+          batch.length,
+
+        total_origen:
+          items.length,
+
+        total_validos:
+          validos.length,
+
+        registros_filtrados:
+          registrosFiltrados,
+      },
+    };
+  }
+);
+
+
+return output;

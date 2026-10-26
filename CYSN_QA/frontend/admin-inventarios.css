@@ -1,0 +1,239 @@
+.admin-inventarios-page {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+}
+
+.admin-inventarios-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-inventarios-header h1,
+.admin-inventarios-card h2 {
+  margin: 0;
+  color: var(--color-text, #1e293b);
+}
+
+.admin-inventarios-header h1 {
+  margin-top: 4px;
+  font-size: 28px;
+}
+
+.admin-inventarios-header p,
+.admin-inventarios-card p,
+.admin-inventarios-card small {
+  color: var(--color-text-secondary, #64748b);
+}
+
+.admin-inventarios-header p {
+  margin: 8px 0 0;
+  max-width: 760px;
+}
+
+.admin-inventarios-eyebrow,
+.admin-inventarios-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.admin-inventarios-card {
+  border: 1px solid var(--color-border, #d7dee8);
+  border-radius: 14px;
+  background: var(--color-surface, #ffffff);
+  padding: 20px;
+}
+
+.admin-inventarios-alert {
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.admin-inventarios-alert.is-error {
+  border: 1px solid rgba(185, 28, 28, 0.25);
+  background: rgba(254, 226, 226, 0.7);
+  color: #991b1b;
+}
+
+.admin-inventarios-alert.is-success {
+  border: 1px solid rgba(21, 128, 61, 0.24);
+  background: rgba(220, 252, 231, 0.7);
+  color: #166534;
+}
+
+.admin-recepcion-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.admin-recepcion-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+}
+
+.admin-recepcion-card p {
+  margin: 8px 0;
+  max-width: 760px;
+}
+
+.admin-recepcion-badge,
+.admin-inventarios-admin-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-recepcion-badge.is-on {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.admin-recepcion-badge.is-off {
+  background: rgba(100, 116, 139, 0.14);
+  color: var(--color-text-secondary, #64748b);
+}
+
+.admin-inventarios-admin-chip {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.admin-recepcion-toggle,
+.admin-inventarios-primary {
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 16px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.admin-recepcion-toggle {
+  flex: 0 0 auto;
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.admin-recepcion-toggle.is-on {
+  background: #b91c1c;
+}
+
+.admin-inventarios-primary {
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+}
+
+.admin-recepcion-toggle:disabled,
+.admin-inventarios-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-recepcion-toggle:not(:disabled):active,
+.admin-inventarios-primary:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.admin-inventarios-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-inventarios-section-title h2 {
+  margin-top: 5px;
+}
+
+.admin-inventarios-help {
+  margin: 8px 0 18px;
+}
+
+.admin-inventarios-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-inventarios-form-grid label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text, #1e293b);
+}
+
+.admin-inventarios-form-grid select,
+.admin-inventarios-form-grid input[type="file"] {
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border, #d7dee8);
+  border-radius: 9px;
+  background: var(--color-surface-secondary, #f8fafc);
+  color: var(--color-text, #1e293b);
+  padding: 9px 10px;
+}
+
+.admin-inventarios-file-selected {
+  margin-top: 12px;
+  border-radius: 9px;
+  background: var(--color-surface-secondary, #f8fafc);
+  color: var(--color-text-secondary, #64748b);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.admin-inventarios-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.admin-inventarios-result {
+  margin-top: 16px;
+  border-top: 1px solid var(--color-border, #d7dee8);
+  padding-top: 15px;
+  color: var(--color-text, #1e293b);
+}
+
+.admin-inventarios-result > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .admin-recepcion-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-recepcion-toggle {
+    width: 100%;
+  }
+
+  .admin-inventarios-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,253 @@
+.nexo-profile-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.nexo-profile-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.nexo-profile-heading h2 {
+  margin: 4px 0 6px;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--color-text);
+}
+
+.nexo-profile-heading p {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.nexo-profile-eyebrow,
+.nexo-profile-card-header span,
+.nexo-profile-section-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+}
+
+.nexo-profile-role-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.nexo-profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.nexo-profile-card {
+  padding: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.nexo-profile-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.nexo-profile-card-header h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+  color: var(--color-text);
+}
+
+.nexo-profile-data-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.nexo-profile-data-list > div {
+  display: grid;
+  grid-template-columns: 145px minmax(0, 1fr);
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.nexo-profile-data-list > div:last-child {
+  border-bottom: 0;
+}
+
+.nexo-profile-data-list dt {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.nexo-profile-data-list dd {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.nexo-profile-branches {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--color-border);
+}
+
+.nexo-profile-branch-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.nexo-profile-branch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-secondary);
+}
+
+.nexo-profile-branch-item strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.nexo-profile-branch-item span,
+.nexo-profile-empty {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+
+.nexo-profile-empty {
+  margin: 12px 0 0;
+}
+
+.nexo-profile-password-form {
+  display: grid;
+  gap: 16px;
+}
+
+.nexo-profile-password-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.nexo-profile-password-form label > span {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.nexo-profile-password-form input {
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface-secondary);
+  color: var(--color-text);
+  outline: none;
+}
+
+.nexo-profile-password-form input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+.nexo-profile-password-form input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.nexo-profile-password-help {
+  margin: -2px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nexo-profile-message {
+  padding: 11px 13px;
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.nexo-profile-message.is-error {
+  border: 1px solid rgba(185, 28, 28, 0.25);
+  background: rgba(185, 28, 28, 0.07);
+  color: #b91c1c;
+}
+
+.nexo-profile-message.is-success {
+  border: 1px solid rgba(21, 128, 61, 0.25);
+  background: rgba(21, 128, 61, 0.07);
+  color: #15803d;
+}
+
+.nexo-profile-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.nexo-profile-primary-button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.nexo-profile-primary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 980px) {
+  .nexo-profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .nexo-profile-heading {
+    flex-direction: column;
+  }
+
+  .nexo-profile-data-list > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .nexo-profile-branch-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
