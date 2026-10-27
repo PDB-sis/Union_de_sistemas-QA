@@ -120,7 +120,7 @@ Cada fase se despliega y se valida antes de pasar a la siguiente.
 
 **Listo cuando:** PDMC muestra el inventario y los negativos de cada sitio piloto, y las cifras coinciden con su SQL Server.
 
-**2b-1, programada y probada en local (2026-10-26); pendiente de desplegar.** El inventario de PDMC deja de leer SQL Server:
+**2b-1, desplegada y en marcha (2026-10-27): 18.810 productos de MARACAIBO, iguales en el agente y en PDMC; la primera fotografía de negativos ya está publicada.** El inventario de PDMC deja de leer SQL Server:
 - **Módulo `INVENTARIO`:** tiene `fuente: AGENTE_INVENTARIO` y lee `cysn_qa.inventario_agente_actual` de **un solo sitio**, `PDMC_INVENTARIO_DIM_ID` (por defecto 2004, la bodega MARACAIBO), porque el inventario de PDMC sigue siendo uno solo. Así, el inventario de las tiendas no se mezcla con el de la bodega.
 - **Qué productos entran:** solo los **activos** y **con categoría**, como la consulta de SQL Server anterior. Antes de releer, se comprueba una firma barata (filas vigentes y último `recibido_at`).
 - **Negativos:** se calculan igual que antes, y la primera carga debe publicar la fotografía (`PRIMER_CORTE_REQUERIDO`).
@@ -145,7 +145,7 @@ Cada fase se despliega y se valida antes de pasar a la siguiente.
 
 **Listo cuando:** las transferencias y devoluciones de todas las bodegas se ven en PDMC, cada una con su origen, y una carga de una bodega no afecta a las demás.
 
-**3a, programada y probada en local (2026-10-26); pendiente de desplegar:**
+**3a, desplegada (2026-10-26):**
 - **Agente:** `TAREAS=` en `config.env` (por defecto `inventario`). Las tareas `transferencias`, `devoluciones` y `usuarios` ejecutan su consulta desde la carpeta `consultas` (junto a `config.env`, copias exactas de `consultaPDMC/`), comprueban que es de solo lectura y envían lo nuevo o cambiado y, en el mismo ciclo, lo que desapareció. Su estado va en `enviado_tarea` del SQLite del agente. Si una tarea falla, las demás siguen.
 - **API:** `POST /api/agente/v1/filas` → `cysn_qa.agente_fila` (por `dim_id_tienda`, tarea y clave; nunca borra) y `agente_fila_lote` (migración 006). Las claves son: transferencias `Numero + CodigoBarra + NumeroCaja`, devoluciones `Numero` y usuarios `CodUsuario`.
 - **Herramientas:** `python -m app.agentes filas --dim-id 2004` y `python -m app.comparar_sitio --dim-id 2004` (compara con `pdmc`: cabeceras y líneas de transferencias, devoluciones y facturadores).
