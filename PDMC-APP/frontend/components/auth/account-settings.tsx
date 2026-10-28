@@ -6,6 +6,7 @@ import { useTheme } from "next-themes";
 import type { UsuarioSesion } from "@shared/auth/model";
 import type { Permission } from "@shared/auth/permissions";
 import { PALETTES, applyPalette, readPalette, subscribePalette, type PaletteId } from "@frontend/lib/palette";
+import { PdmcMark } from "@frontend/components/brand/pdmc-mark";
 import { PermissionContext } from "./permissions";
 import { LogoutButton } from "./forms";
 
@@ -53,10 +54,11 @@ function Personalization() {
   </article>;
 }
 
-// Vista previa con los colores reales de la paleta: encabezado, botón y acento.
+// Vista previa con los colores reales de la paleta: encabezado, ícono de la app y acentos.
 function PalettePreview({id}:{id:PaletteId}) {
   return <span aria-hidden data-palette={id} className="relative block h-20 overflow-hidden rounded-lg bg-[linear-gradient(135deg,var(--brand-deep),var(--brand-ocean))] ring-1 ring-black/5">
     <span className="absolute -right-6 -top-8 size-24 rounded-full bg-brand-glow/40 blur-xl"/>
+    <PdmcMark className="absolute right-3 top-3 size-9 drop-shadow-md"/>
     <span className="absolute left-3 top-3 h-2 w-16 rounded-full bg-white/80"/>
     <span className="absolute left-3 top-7 h-1.5 w-10 rounded-full bg-white/45"/>
     <span className="absolute bottom-3 left-3 flex gap-1.5"><span className="size-4 rounded-full bg-brand-night ring-2 ring-white/70"/><span className="size-4 rounded-full bg-brand-ocean ring-2 ring-white/70"/><span className="size-4 rounded-full bg-brand-glow ring-2 ring-white/70"/><span className="size-4 rounded-full bg-brand-mist ring-2 ring-white/70"/></span>

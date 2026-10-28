@@ -1,0 +1,19 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>PDMC</title>
+<defs>
+<linearGradient id="pdmc-bg" x1="6" y1="2" x2="42" y2="46" gradientUnits="userSpaceOnUse">
+<stop stop-color="#2e7ba6"/>
+<stop offset="1" stop-color="#123c56"/>
+</linearGradient>
+<radialGradient id="pdmc-shine" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(38 6) rotate(135) scale(30)">
+<stop stop-color="#a9d0e4" stop-opacity=".38"/>
+<stop offset="1" stop-color="#a9d0e4" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="48" height="48" rx="13" fill="url(#pdmc-bg)"/>
+<rect width="48" height="48" rx="13" fill="url(#pdmc-shine)"/>
+<rect x=".75" y=".75" width="46.5" height="46.5" rx="12.25" stroke="#ffffff" stroke-opacity=".14" stroke-width="1.5"/>
+<path d="M31.71 14.81A12 12 0 1 1 21.92 12.18" stroke="#a9d0e4" stroke-width="4.2" stroke-linecap="round"/>
+<path d="M20.3 8.6L24.6 11.7L21.5 16" stroke="#a9d0e4" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M18.6 24.6L22.4 28.4L29.6 20.8" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

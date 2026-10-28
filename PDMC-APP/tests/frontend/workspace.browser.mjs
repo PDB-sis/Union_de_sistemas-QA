@@ -215,6 +215,7 @@ try {
   await palette("Carmín");
   assert.equal(await evaluate('document.documentElement.dataset.palette'),"carmin");
   assert.equal(await evaluate(`[...document.querySelectorAll('[role="radio"][aria-checked="true"]')].some(b=>b.textContent.startsWith("Carmín"))`),true);
+  assert.equal(await evaluate(`document.querySelector('link[rel~="icon"]')?.getAttribute("href")`),"/favicon-carmin.svg");
   await capture("ajustes-carmin-oscuro");
   await evaluate('document.documentElement.classList.remove("dark"); document.documentElement.style.colorScheme="light"');
   await capture("ajustes-carmin-claro");
@@ -222,6 +223,7 @@ try {
   await capture("ajustes-cielo-claro");
   await send("Page.reload");
   await until(()=>evaluate('document.documentElement.dataset.palette==="cielo"'),"La paleta no se conservó al recargar");
+  await until(()=>evaluate(`document.querySelector('link[rel~="icon"]')?.getAttribute("href")==="/favicon-cielo.svg"`),"El ícono no siguió la paleta al recargar");
   await evaluate('localStorage.removeItem("pdmc-paleta"); document.documentElement.removeAttribute("data-palette")');
   await role("RECTIFICACION");
   await contains("Tu jornada de trabajo");
