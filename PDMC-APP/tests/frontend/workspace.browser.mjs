@@ -203,8 +203,26 @@ try {
   await until(()=>evaluate('!document.querySelector(".workspace-explorer")'),"Escape no cierra selector");
   assert.equal(await evaluate('document.activeElement?.getAttribute("aria-label")'),"Explorar módulos");
   await evaluate(`document.querySelector('[aria-label="Abrir ajustes de cuenta"]').click()`);
-  await contains("Ajustes de cuenta"); await noOverflow();
+  await contains("Ajustes de cuenta"); await contains("Personalización"); await noOverflow();
+  await capture("ajustes-movil");
   await send("Emulation.setDeviceMetricsOverride",{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  // Personalización: la paleta se aplica al instante, en claro y oscuro, y se conserva al recargar.
+  const palette=async name=>{
+    await until(()=>evaluate(`[...document.querySelectorAll('[role="radio"]')].some(b=>b.textContent.startsWith(${JSON.stringify(name)})&&Object.keys(b).some(k=>k.startsWith('__reactProps$')))`),`Paleta no disponible: ${name}`);
+    await evaluate(`[...document.querySelectorAll('[role="radio"]')].find(b=>b.textContent.startsWith(${JSON.stringify(name)})).click()`);
+  };
+  await capture("ajustes-oscuro");
+  await palette("Carmín");
+  assert.equal(await evaluate('document.documentElement.dataset.palette'),"carmin");
+  assert.equal(await evaluate(`[...document.querySelectorAll('[role="radio"][aria-checked="true"]')].some(b=>b.textContent.startsWith("Carmín"))`),true);
+  await capture("ajustes-carmin-oscuro");
+  await evaluate('document.documentElement.classList.remove("dark"); document.documentElement.style.colorScheme="light"');
+  await capture("ajustes-carmin-claro");
+  await palette("Azul cielo");
+  await capture("ajustes-cielo-claro");
+  await send("Page.reload");
+  await until(()=>evaluate('document.documentElement.dataset.palette==="cielo"'),"La paleta no se conservó al recargar");
+  await evaluate('localStorage.removeItem("pdmc-paleta"); document.documentElement.removeAttribute("data-palette")');
   await role("RECTIFICACION");
   await contains("Tu jornada de trabajo");
   assert.equal(await evaluate('document.querySelectorAll(".workspace-tab").length'),3);

@@ -241,6 +241,115 @@
     --sidebar-ring: #87bad7;
 }
 
+/* Paletas de acento elegibles en Ajustes de cuenta (frontend/lib/palette.ts).
+   Azul real es la predeterminada (los valores de arriba). Las demás usan los otros colores de la
+   empresa sobre los mismos fondos crema; cada una trae sus valores para modo oscuro.
+   Las gráficas y los estados (éxito, advertencia, error, información) no cambian con la paleta.
+   Contrastes de texto verificados (WCAG AA) en claro y oscuro. */
+/* Valores fijos de la paleta predeterminada, para su vista previa en el selector. */
+[data-palette="real"] {
+  --brand-night: #0e1630;
+  --brand-deep: #18296a;
+  --brand-ocean: #436bdc;
+  --brand-glow: #87bad7;
+}
+[data-palette="cielo"] {
+  --primary: #22678c;
+  --primary-foreground: #ffffff;
+  --secondary-foreground: #123c56;
+  --accent: #e1eef5;
+  --accent-foreground: #164f6e;
+  --ring: #3484b0;
+  --brand-night: #0a1823;
+  --brand-deep: #123c56;
+  --brand-ocean: #2e7ba6;
+  --brand-glow: #a9d0e4;
+  --sidebar: #123c56;
+  --sidebar-accent: #1b5577;
+  --sidebar-border: #24668c;
+  --color-brand-50: var(--color-info-50);
+  --color-brand-100: var(--color-info-100);
+  --color-brand-200: var(--color-info-200);
+  --color-brand-300: var(--color-info-300);
+  --color-brand-400: var(--color-info-400);
+  --color-brand-500: var(--color-info-500);
+  --color-brand-600: var(--color-info-600);
+  --color-brand-700: var(--color-info-700);
+  --color-brand-800: var(--color-info-800);
+  --color-brand-900: var(--color-info-900);
+  --color-brand-950: var(--color-info-950);
+}
+.dark[data-palette="cielo"] {
+  --background: #0a1823;
+  --card: #112434;
+  --popover: #15293b;
+  --foreground: #eceee4;
+  --card-foreground: #eceee4;
+  --popover-foreground: #eceee4;
+  --primary: #87bad7;
+  --primary-foreground: #0a1823;
+  --secondary: #16303f;
+  --secondary-foreground: #e3eef4;
+  --muted: #132a3c;
+  --muted-foreground: #a3b6c3;
+  --accent: #173449;
+  --accent-foreground: #e6f3fa;
+  --border: #20394c;
+  --input: #2a4558;
+  --ring: #87bad7;
+  --sidebar: #08131c;
+  --sidebar-accent: #15303f;
+  --sidebar-border: #1d3546;
+}
+[data-palette="carmin"] {
+  --primary: #bc2337;
+  --primary-foreground: #ffffff;
+  --secondary-foreground: #5c1424;
+  --accent: #f8e5e7;
+  --accent-foreground: #8a1a2a;
+  --ring: #bc2337;
+  --brand-night: #170c12;
+  --brand-deep: #5c1424;
+  --brand-ocean: #bc2337;
+  --brand-glow: #ebb2ba;
+  --sidebar: #5c1424;
+  --sidebar-accent: #7a1c30;
+  --sidebar-border: #8c2a3c;
+  --color-brand-50: var(--color-danger-50);
+  --color-brand-100: var(--color-danger-100);
+  --color-brand-200: var(--color-danger-200);
+  --color-brand-300: var(--color-danger-300);
+  --color-brand-400: var(--color-danger-400);
+  --color-brand-500: var(--color-danger-500);
+  --color-brand-600: var(--color-danger-600);
+  --color-brand-700: var(--color-danger-700);
+  --color-brand-800: var(--color-danger-800);
+  --color-brand-900: var(--color-danger-900);
+  --color-brand-950: var(--color-danger-950);
+}
+.dark[data-palette="carmin"] {
+  --background: #170c12;
+  --card: #22131b;
+  --popover: #29171f;
+  --foreground: #f1ece6;
+  --card-foreground: #f1ece6;
+  --popover-foreground: #f1ece6;
+  --primary: #f08a98;
+  --primary-foreground: #170c12;
+  --secondary: #2f1922;
+  --secondary-foreground: #f5e6e9;
+  --muted: #2a1820;
+  --muted-foreground: #c0aab2;
+  --accent: #3a1a25;
+  --accent-foreground: #fde9ec;
+  --border: #3d2430;
+  --input: #4a2d3a;
+  --ring: #f08a98;
+  --sidebar: #12090e;
+  --sidebar-accent: #2f1922;
+  --sidebar-border: #3a2230;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -266,10 +375,10 @@ body::before {
   border: 1px solid rgba(255, 255, 255, .14);
   border-radius: 1.75rem;
   background:
-    radial-gradient(circle at 18% 0%, rgba(135, 186, 215, .22), transparent 18rem),
-    linear-gradient(155deg, rgba(24, 41, 106, .94), rgba(14, 22, 48, .88));
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--brand-glow) 22%, transparent), transparent 18rem),
+    linear-gradient(155deg, color-mix(in srgb, var(--brand-deep) 94%, transparent), color-mix(in srgb, var(--brand-night) 88%, transparent));
   box-shadow:
-    0 30px 80px -34px rgba(14, 22, 48, .9),
+    0 30px 80px -34px color-mix(in srgb, var(--brand-night) 90%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, .12),
     inset 0 -1px 0 rgba(0, 0, 0, .16);
   backdrop-filter: blur(28px) saturate(145%);
@@ -282,7 +391,7 @@ body::before {
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: linear-gradient(115deg, rgba(255,255,255,.08), transparent 28%, transparent 70%, rgba(135,186,215,.07));
+  background: linear-gradient(115deg, rgba(255,255,255,.08), transparent 28%, transparent 70%, color-mix(in srgb, var(--brand-glow) 7%, transparent));
   pointer-events: none;
 }
 
@@ -295,7 +404,7 @@ body::before {
   background:
     radial-gradient(circle at 8% 8%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 24rem),
     radial-gradient(circle at 92% 42%, color-mix(in srgb, var(--brand-glow) 10%, transparent), transparent 28rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--background) 82%, #e2edf6), var(--background) 35%);
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 82%, var(--accent)), var(--background) 35%);
 }
 
 .store-topbar {
@@ -325,9 +434,9 @@ body::before {
   padding: clamp(1.4rem, 4vw, 2.4rem);
   color: white;
   background:
-    radial-gradient(circle at 88% 0%, rgba(135,186,215,.24), transparent 19rem),
-    radial-gradient(circle at 4% 100%, rgba(67,107,220,.22), transparent 18rem),
-    linear-gradient(140deg, #18296a 0%, #22399a 58%, #436bdc 100%);
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--brand-glow) 24%, transparent), transparent 19rem),
+    radial-gradient(circle at 4% 100%, color-mix(in srgb, var(--brand-ocean) 22%, transparent), transparent 18rem),
+    linear-gradient(140deg, var(--brand-deep) 0%, color-mix(in srgb, var(--brand-deep) 55%, var(--brand-ocean)) 58%, var(--brand-ocean) 100%);
   box-shadow: 0 28px 70px -38px rgb(var(--shadow-ink) / .9), inset 0 1px 0 rgba(255,255,255,.12);
 }
 
@@ -374,8 +483,8 @@ body::before {
   border-radius: 1.75rem;
   padding: 1.25rem;
   background:
-    radial-gradient(circle at 92% 0%, rgba(135,186,215,.2), transparent 15rem),
-    linear-gradient(135deg, #18296a, #2a45a8);
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--brand-glow) 20%, transparent), transparent 15rem),
+    linear-gradient(135deg, var(--brand-deep), color-mix(in srgb, var(--brand-deep) 45%, var(--brand-ocean)));
   box-shadow: 0 22px 58px -38px rgb(var(--shadow-ink) / .9), inset 0 1px 0 rgba(255,255,255,.1);
 }
 
@@ -472,13 +581,13 @@ body::before {
 
 .module-liquid-dock::-webkit-scrollbar { display: none; }
 .module-dock-item.is-active {
-  background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 94%, #87bad7), var(--primary));
-  box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--primary) 75%, #0e1630), inset 0 1px 0 rgba(255,255,255,.25);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 94%, var(--brand-glow)), var(--primary));
+  box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--primary) 75%, var(--brand-night)), inset 0 1px 0 rgba(255,255,255,.25);
 }
 
 .dark .workspace-topbar,
 .dark .module-liquid-dock {
-  border-color: rgba(135, 186, 215, .16);
+  border-color: color-mix(in srgb, var(--brand-glow) 16%, transparent);
   box-shadow: 0 24px 65px -28px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.08);
 }
 
@@ -653,12 +762,12 @@ article.pdmc-surface:hover {
   border: 1px solid color-mix(in srgb, var(--brand-mist) 22%, transparent);
   border-radius: 1.5rem;
   background:
-    radial-gradient(circle at 92% 10%, rgba(135, 186, 215, .25), transparent 18rem),
-    radial-gradient(circle at 12% 115%, rgba(67, 107, 220, .18), transparent 16rem),
+    radial-gradient(circle at 92% 10%, color-mix(in srgb, var(--brand-glow) 25%, transparent), transparent 18rem),
+    radial-gradient(circle at 12% 115%, color-mix(in srgb, var(--brand-ocean) 18%, transparent), transparent 16rem),
     linear-gradient(135deg, var(--brand-deep) 0%, color-mix(in srgb, var(--brand-ocean) 92%, white) 100%);
   padding: clamp(1.35rem, 3vw, 2rem);
   color: white;
-  box-shadow: 0 28px 74px -40px rgba(14, 22, 48, .95), inset 0 1px 0 rgba(255,255,255,.12);
+  box-shadow: 0 28px 74px -40px color-mix(in srgb, var(--brand-night) 95%, transparent), inset 0 1px 0 rgba(255,255,255,.12);
 }
 
 .module-hero::after {
@@ -762,7 +871,7 @@ article.pdmc-surface:hover {
     radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 18rem),
     color-mix(in srgb, var(--card) 94%, transparent);
   padding: 1rem;
-  box-shadow: 0 22px 55px -42px color-mix(in srgb, var(--primary) 75%, #0e1630), inset 0 1px 0 rgba(255,255,255,.5);
+  box-shadow: 0 22px 55px -42px color-mix(in srgb, var(--primary) 75%, var(--brand-night)), inset 0 1px 0 rgba(255,255,255,.5);
 }
 
 .workflow-heading {
@@ -896,8 +1005,8 @@ article.pdmc-surface:hover {
 .dark .workspace-chrome {
   border-color: rgba(255, 255, 255, .12);
   background:
-    radial-gradient(120% 160% at 0% 0%, rgba(135, 186, 215, .14), transparent 52%),
-    radial-gradient(90% 140% at 100% 100%, rgba(67, 107, 220, .2), transparent 60%),
+    radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--brand-glow) 14%, transparent), transparent 52%),
+    radial-gradient(90% 140% at 100% 100%, color-mix(in srgb, var(--brand-ocean) 20%, transparent), transparent 60%),
     linear-gradient(135deg, color-mix(in srgb, var(--card) 86%, transparent), color-mix(in srgb, var(--brand-night) 82%, transparent));
   box-shadow: 0 26px 64px -30px rgba(0, 0, 0, .85), inset 0 1px 0 rgba(255, 255, 255, .12), inset 0 -1px 0 rgba(255, 255, 255, .04);
 }
@@ -954,9 +1063,9 @@ article.pdmc-surface:hover {
 .dark .workspace-tab:hover { background: rgba(255, 255, 255, .07); }
 .dark .workspace-tab[aria-current="page"] {
   color: var(--foreground);
-  border-color: rgba(135, 186, 215, .35);
-  background: linear-gradient(180deg, rgba(135, 186, 215, .26), rgba(67, 107, 220, .18));
-  box-shadow: 0 8px 20px -10px rgba(67, 107, 220, .8), inset 0 1px 0 rgba(255, 255, 255, .18);
+  border-color: color-mix(in srgb, var(--brand-glow) 35%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand-glow) 26%, transparent), color-mix(in srgb, var(--brand-ocean) 18%, transparent));
+  box-shadow: 0 8px 20px -10px color-mix(in srgb, var(--brand-ocean) 80%, transparent), inset 0 1px 0 rgba(255, 255, 255, .18);
 }
 .workspace-tab-count {
   border-radius: .4rem;

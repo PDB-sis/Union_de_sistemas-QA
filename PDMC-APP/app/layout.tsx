@@ -3,6 +3,7 @@ import "@fontsource-variable/manrope";
 import "@fontsource-variable/jetbrains-mono";
 import "../frontend/styles/globals.css";
 import { ThemeProvider } from "@frontend/components/theme-provider";
+import { paletteBootScript } from "@frontend/lib/palette";
 
 export const metadata: Metadata = {
   title: { default: "PDMC · Panel de Mejora Continua", template: "%s · PDMC" },
@@ -30,6 +31,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: paletteBootScript }} /></head>
       <body className="antialiased"><ThemeProvider>{children}</ThemeProvider></body>
     </html>
   );
