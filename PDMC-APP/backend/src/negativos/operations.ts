@@ -47,13 +47,14 @@ export async function verificacionesAjuste(tx: Prisma.TransactionClient, casos: 
   const result=new Map<string,VerificacionNegativo>();
   if(!casos.length)return result;
   const [vigente,sumas,ajustes]=await Promise.all([
-    tx.inventarioActual.findFirst({orderBy:{consulta:{fechaImportacion:"desc"}},select:{consulta:{select:{fechaConsulta:true}}}}),
+    // La carga vigente se busca entre las cargas (pocas filas), no ordenando todo InventarioActual.
+    tx.consultaInventario.findFirst({where:{inventarioActual:{some:{}}},orderBy:{fechaImportacion:"desc"},select:{fechaConsulta:true}}),
     tx.inventarioActual.groupBy({by:["productoId"],where:{productoId:{in:casos.map(c=>c.productoId)}},_sum:{existencia:true}}),
     tx.historialNegativo.findMany({where:{negativoId:{in:casos.map(c=>c.id)},valorNuevo:{path:["estado"],equals:"AJUSTE_REALIZADO"},NOT:{valorAnterior:{path:["estado"],equals:"AJUSTE_REALIZADO"}}},orderBy:{createdAt:"desc"},select:{negativoId:true,createdAt:true}}),
   ]);
   const existencia=new Map(sumas.map(row=>[row.productoId,row._sum.existencia?.toFixed(4)??null]));
   const ajusteAt=new Map<string,Date>();for(const row of ajustes)if(!ajusteAt.has(row.negativoId))ajusteAt.set(row.negativoId,row.createdAt);
-  for(const caso of casos)result.set(caso.id,verificarAjusteNegativo({ajusteAt:ajusteAt.get(caso.id)??null,inventarioAt:vigente?.consulta.fechaConsulta??null,existencia:existencia.get(caso.productoId)??null}));
+  for(const caso of casos)result.set(caso.id,verificarAjusteNegativo({ajusteAt:ajusteAt.get(caso.id)??null,inventarioAt:vigente?.fechaConsulta??null,existencia:existencia.get(caso.productoId)??null}));
   return result;
 }
 async function exigirVerificacion(tx: Prisma.TransactionClient, caso:{id:string;productoId:string}, etiqueta="") {
@@ -121,6 +122,8 @@ export class NegativeOperations {
         await this.access.warehouse("negativos.editar",id);
         await lockWarehouse(tx, id);
       }
+      // La evidencia de los ajustes a cerrar se calcula una vez para todo el lote, no caso por caso.
+      const verificaciones=input.estado==="SOLUCIONADO"?await verificacionesAjuste(tx,await tx.negativo.findMany({where:{id:{in:input.casos.map(c=>c.id)},bodegaId:input.bodegaId,estado:"AJUSTE_REALIZADO"},select:{id:true,productoId:true}})):new Map<string,VerificacionNegativo>();
       for (const item of input.casos) {
         const before = await tx.negativo.findFirst({ where: { id: item.id, bodegaId: input.bodegaId, anuladoAt: null, fusionadoEnId:null }, include:{producto:{select:{codigoBarra:true}}} });
         if (!before || before.version !== item.version) throw new NegativosError(409, "VERSION", "La selección cambió. Actualice; no se modificó ningún caso.");
@@ -130,7 +133,7 @@ export class NegativeOperations {
         if(input.motivo!==undefined){const motivoInvalido=validarMotivoNegativo(input.motivo,before.documentoRelacionado??"",before.motivo??"");if(motivoInvalido)throw new NegativosError(422,"MOTIVO_INVALIDO",etiqueta+motivoInvalido+" Edítelo individualmente.");}
         const cambio=validarCambioNegativo({antes:{estado:before.estado,conteoFisico:before.conteoFisico?.toFixed(4)??null},despues:{estado:input.estado??before.estado,conteoFisico:before.conteoFisico?.toFixed(4)??null,motivo:input.motivo??before.motivo??"",numeroAjuste:input.numeroAjuste??before.numeroAjuste??"",observaciones:before.observaciones??""}});
         if(cambio)throw new NegativosError(422,"CAMBIO_NO_PERMITIDO",etiqueta+cambio);
-        if(input.estado==="SOLUCIONADO"&&before.estado==="AJUSTE_REALIZADO")await exigirVerificacion(tx,before,etiqueta);
+        if(input.estado==="SOLUCIONADO"&&before.estado==="AJUSTE_REALIZADO"){const verificacion=verificaciones.get(before.id);if(!verificacion?.puedeCerrar)throw new NegativosError(422,"VERIFICACION_PENDIENTE",etiqueta+(verificacion?.mensaje??"Actualice la selección."));}
         if(input.estado&&["AJUSTE_AUTORIZADO","AJUSTE_REALIZADO"].includes(input.estado)&&before.conteoFisico===null)throw new NegativosError(422,"CONTEO_REQUERIDO","Todos los casos seleccionados deben tener conteo antes de aprobar el ajuste.");
         if(input.estado&&["SOLUCIONADO","CERRADO_SIN_AJUSTE"].includes(input.estado)&&!input.motivo&&!before.motivo&&!before.veredicto&&!before.observaciones)throw new NegativosError(422,"CIERRE_INCOMPLETO","Documente la solución de todos los casos antes de cerrar el lote.");
         if(input.estado==="AJUSTE_REALIZADO"&&!input.numeroAjuste&&!before.numeroAjuste)throw new NegativosError(422,"AJUSTE_REQUERIDO","Todos los casos ajustados deben tener un número de ajuste.");

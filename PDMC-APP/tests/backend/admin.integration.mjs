@@ -66,11 +66,61 @@ test("toda corrección pasa por verificación y las unidades pendientes las calc
   const base={id:row.id,conteoFisico:3,motivo:"Mercancía no incluida en la transferencia",responsable:"FACTURACION",comentarioAdmin:null,formaCorreccion:"Corrección de transferencia",numeroCorreccion:"81880",unidadesAjustadas:0,unidadesSinResolver:0,resuelto:false,ajustar:null,cantidadAjuste:null,numeroAjuste:null,veredicto:null,ajustado:false};
   await assert.rejects(service.update({...base,version:row.version,resuelto:true,unidadesAjustadas:2}),{status:422});
   let r=await service.update({...base,version:row.version,correccionEjecutada:true,unidadesAjustadas:1});
-  assert.ok(r.correccionEjecutadaAt);assert.equal(r.correccionEjecutadaPorId,a.id);assert.equal(r.unidadesSinResolver,1,"la pantalla no puede dejar las unidades en 0");
+  // Como el ajuste, registrar la corrección ejecutada cubre la diferencia del conteo; no lo decide la pantalla.
+  assert.ok(r.correccionEjecutadaAt);assert.equal(r.correccionEjecutadaPorId,a.id);assert.equal(r.unidadesAjustadas,2);assert.equal(r.unidadesSinResolver,0);
   const verify=await service.list({q:row.transferencia,estado:"pendientes",flujo:"trabajo",cola:"verificar"});assert.equal(verify.total,1);
   await assert.rejects(service.update({...base,version:r.version,correccionEjecutada:true,unidadesAjustadas:1,resuelto:true}),{status:422,code:"CIERRE_INCOMPLETO"});
   r=await service.update({...base,version:r.version,correccionEjecutada:true,unidadesAjustadas:2,resuelto:true});
   assert.equal(r.resuelto,true);assert.equal(r.unidadesSinResolver,0);
+});
+test("cambiar la forma de corrección anula la ejecución registrada para la anterior",async()=>{
+  const a=await user(),service=new InconsistencyService(db,a.access);
+  const row=await db.inconsistencia.create({data:{sourceKey:randomUUID(),fecha:new Date(),sucursal:"Prueba de cambio de forma",transferencia:randomUUID(),codigoBarra:randomUUID(),tipoError:"Faltante físico",cantidadErrada:2,conteoFisico:3,existenciaSistemaConteo:5,unidadesSinResolver:2}});
+  const base={id:row.id,conteoFisico:3,motivo:"Mercancía no incluida en la transferencia",responsable:"FACTURACION",comentarioAdmin:null,formaCorreccion:"Corrección de transferencia",numeroCorreccion:"81880",unidadesAjustadas:2,unidadesSinResolver:0,resuelto:false,ajustar:null,cantidadAjuste:null,numeroAjuste:null,veredicto:null,ajustado:false};
+  let r=await service.update({...base,version:row.version,correccionEjecutada:true});
+  assert.ok(r.correccionEjecutadaAt);
+  // La pantalla reenvía la marca anterior; con otra forma no puede conservarse ni servir para cerrar.
+  await assert.rejects(service.update({...base,version:r.version,formaCorreccion:"Envío de mercancía faltante",correccionEjecutada:true,resuelto:true}),{status:422,code:"CIERRE_INCOMPLETO"});
+  r=await service.update({...base,version:r.version,formaCorreccion:"Envío de mercancía faltante",correccionEjecutada:true});
+  assert.equal(r.correccionEjecutadaAt,null);assert.equal(r.correccionEjecutadaPorId,null);assert.equal(r.unidadesAjustadas,0,"la corrección anulada deja de cubrir la diferencia");
+  const queue=await service.list({q:row.transferencia,estado:"pendientes",flujo:"trabajo",cola:"corregir"});assert.equal(queue.total,1);
+  r=await service.update({...base,version:r.version,formaCorreccion:"Envío de mercancía faltante",correccionEjecutada:true});
+  assert.ok(r.correccionEjecutadaAt,"se registra de nuevo para la forma vigente");
+});
+test("sin corrección se rechaza si el conteo no coincide con el sistema",async()=>{
+  const a=await user(),service=new InconsistencyService(db,a.access);
+  const row=await db.inconsistencia.create({data:{sourceKey:randomUUID(),fecha:new Date(),sucursal:"Prueba sin corrección",transferencia:randomUUID(),codigoBarra:randomUUID(),tipoError:"Faltante físico",cantidadErrada:2,conteoFisico:3,existenciaSistemaConteo:5,unidadesSinResolver:2}});
+  const base={id:row.id,version:row.version,conteoFisico:3,motivo:null,responsable:"SIN_DETERMINAR",comentarioAdmin:null,formaCorreccion:"Sin corrección: inventario correcto",numeroCorreccion:null,unidadesAjustadas:0,unidadesSinResolver:0,resuelto:false,ajustar:null,cantidadAjuste:null,numeroAjuste:null,veredicto:null,ajustado:false};
+  await assert.rejects(service.update(base),{status:422,code:"SIN_CORRECCION",message:/2 unidades de diferencia/});
+  await assert.rejects(service.updateMany({cases:[{id:row.id,version:row.version}],action:"seguimiento",formaCorreccion:"Sin corrección: inventario correcto"}),{status:422,code:"SIN_CORRECCION"});
+  const igual=await db.inconsistencia.create({data:{sourceKey:randomUUID(),fecha:new Date(),sucursal:"Prueba sin corrección",transferencia:randomUUID(),codigoBarra:randomUUID(),tipoError:"Faltante físico",cantidadErrada:2,conteoFisico:5,existenciaSistemaConteo:5,unidadesSinResolver:0}});
+  const r=await service.update({...base,id:igual.id,version:igual.version,conteoFisico:5});
+  assert.equal(r.formaCorreccion,"Sin corrección: inventario correcto");assert.equal(r.unidadesSinResolver,0);
+  // Un caso ya guardado así puede seguir editándose (por ejemplo, un comentario), pero no cerrarse.
+  const antiguo=await db.inconsistencia.create({data:{sourceKey:randomUUID(),fecha:new Date(),sucursal:"Prueba sin corrección",transferencia:randomUUID(),codigoBarra:randomUUID(),tipoError:"Faltante físico",cantidadErrada:2,conteoFisico:3,existenciaSistemaConteo:5,unidadesSinResolver:2,formaCorreccion:"Sin corrección: inventario correcto"}});
+  const comentado=await service.update({...base,id:antiguo.id,version:antiguo.version,comentarioAdmin:"Revisar con la tienda"});
+  assert.equal(comentado.comentarioAdmin,"Revisar con la tienda");
+  await assert.rejects(service.update({...base,id:antiguo.id,version:comentado.version,resuelto:true}),{status:422,code:"SIN_CORRECCION"});
+});
+test("lo que envía la pantalla basta para corregir, verificar y cerrar; un ajuste no se cierra como sin corrección",async()=>{
+  const a=await user(),service=new InconsistencyService(db,a.access);
+  const crear=()=>db.inconsistencia.create({data:{sourceKey:randomUUID(),fecha:new Date(),sucursal:"Prueba de pantalla",transferencia:randomUUID(),codigoBarra:randomUUID(),tipoError:"Faltante físico",cantidadErrada:2,conteoFisico:3,existenciaSistemaConteo:5,unidadesSinResolver:2}});
+  // La pantalla reenvía los valores de la fila: unidadesAjustadas y unidadesSinResolver tal como están.
+  const pantalla=row=>({id:row.id,version:row.version,conteoFisico:row.conteoFisico,motivo:"Mercancía no incluida en la transferencia",responsable:"FACTURACION",comentarioAdmin:null,formaCorreccion:"Corrección de transferencia",numeroCorreccion:"81880",unidadesAjustadas:row.unidadesAjustadas,unidadesSinResolver:row.unidadesSinResolver,resuelto:false,ajustar:row.ajustar,cantidadAjuste:row.cantidadAjuste,numeroAjuste:row.numeroAjuste,veredicto:row.veredicto,ajustado:row.ajustado,correccionEjecutada:Boolean(row.correccionEjecutadaAt)});
+  let r=await service.update({...pantalla(await crear()),correccionEjecutada:true});
+  r=await service.update({...pantalla(r),resuelto:true});
+  assert.equal(r.resuelto,true);
+  // Con un ajuste registrado, cambiar a "Sin corrección" no puede cerrar el caso como inventario correcto.
+  r=await service.update({...pantalla(await crear()),formaCorreccion:"Ajuste de inventario",ajustado:true,ajustar:"Negativo",cantidadAjuste:2,numeroAjuste:"AJ-9",veredicto:"AJUSTE NEGATIVO POR FALTANTE FÍSICO CONFIRMADO",unidadesAjustadas:2});
+  await assert.rejects(service.update({...pantalla(r),formaCorreccion:"Sin corrección: inventario correcto",resuelto:true}),{status:422,code:"SIN_CORRECCION"});
+});
+test("en un caso cerrado se puede comentar, pero cambiar lo que justificó el cierre exige las reglas de cierre",async()=>{
+  const a=await user(),service=new InconsistencyService(db,a.access);
+  const row=await db.inconsistencia.create({data:{sourceKey:randomUUID(),fecha:new Date(),sucursal:"Prueba de caso cerrado",transferencia:randomUUID(),codigoBarra:randomUUID(),tipoError:"Faltante físico",cantidadErrada:2,conteoFisico:3,existenciaSistemaConteo:5,unidadesSinResolver:0,unidadesAjustadas:2,responsable:"BODEGA",formaCorreccion:"Ajuste de inventario",ajustado:true,ajustar:"Negativo",cantidadAjuste:2,numeroAjuste:"AJ-1",veredicto:"AJUSTE NEGATIVO POR FALTANTE FÍSICO CONFIRMADO",resuelto:true}});
+  const base={id:row.id,conteoFisico:3,motivo:null,responsable:"BODEGA",comentarioAdmin:null,formaCorreccion:"Ajuste de inventario",numeroCorreccion:null,unidadesAjustadas:2,unidadesSinResolver:0,resuelto:true,ajustar:"Negativo",cantidadAjuste:2,numeroAjuste:"AJ-1",veredicto:"AJUSTE NEGATIVO POR FALTANTE FÍSICO CONFIRMADO",ajustado:true};
+  const r=await service.update({...base,version:row.version,comentarioAdmin:"Cerrado con la tienda"});
+  assert.equal(r.comentarioAdmin,"Cerrado con la tienda");
+  await assert.rejects(service.update({...base,version:r.version,ajustado:false,ajustar:null,cantidadAjuste:null,numeroAjuste:null,veredicto:null}),{status:422,code:"CIERRE_INCOMPLETO"});
 });
 test("un negativo ajustado solo se soluciona con inventario posterior y sin existencia negativa",async()=>{
   const a=await user(),ops=new NegativeOperations(db,a.access),b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Verificación de ajuste"}});
@@ -86,6 +136,23 @@ test("un negativo ajustado solo se soluciona con inventario posterior y sin exis
   await assert.rejects(ops.editar(n.id,{bodegaId:b.id,version:n.version,estado:"SOLUCIONADO",conteoFisico:"0",motivo:"ROTACION",documentoRelacionado:"",veredicto:"",numeroAjuste:"AJ-1",observaciones:""}),{status:422,code:"VERIFICACION_PENDIENTE",message:/Sigue en/});
   await inventario(new Date(Date.now()+3_600_000),"0");
   assert.equal((await edit("SOLUCIONADO")).estado,"SOLUCIONADO");
+});
+test("el cierre masivo de ajustes verifica todo el lote y no modifica ninguno si uno falla",async()=>{
+  const a=await user(),ops=new NegativeOperations(db,a.access),b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Verificación masiva"}});
+  const casos=[];
+  for(const existencia of ["0","-1"]){
+    const product=await db.producto.create({data:{codigoBarra:randomUUID(),descripcion:"Producto en lote"}});
+    let n=await db.negativo.create({data:{bodegaId:b.id,productoId:product.id,primeraDeteccion:new Date(),ultimaDeteccion:new Date(),estado:"AJUSTE_AUTORIZADO",conteoFisico:"0",existenciaSistemaConteo:"-2",motivo:"ROTACION"}});
+    n=await ops.editar(n.id,{bodegaId:b.id,version:n.version,estado:"AJUSTE_REALIZADO",conteoFisico:"0",motivo:"ROTACION",documentoRelacionado:"",veredicto:"",numeroAjuste:"AJ-L",observaciones:""});
+    casos.push({n,product,existencia});
+  }
+  const consulta=await db.consultaInventario.create({data:{usuarioId:a.id,nombreArchivo:"lote.csv",fechaConsulta:new Date(Date.now()+3_600_000),fechaImportacion:new Date(Date.now()+2*86_400_000),hashArchivo:randomUUID().replaceAll("-","")+randomUUID().replaceAll("-",""),totalFilas:2}});
+  for(const c of casos)await db.inventarioActual.create({data:{consultaId:consulta.id,productoId:c.product.id,existencia:c.existencia,activo:true}});
+  const lote=()=>casos.map(c=>({id:c.n.id,version:c.n.version}));
+  await assert.rejects(ops.masivo({bodegaId:b.id,estado:"SOLUCIONADO",casos:lote()}),{status:422,code:"VERIFICACION_PENDIENTE",message:/Sigue en/});
+  assert.equal((await db.negativo.findUnique({where:{id:casos[0].n.id}})).estado,"AJUSTE_REALIZADO","ningún caso del lote cambia");
+  await db.inventarioActual.updateMany({where:{productoId:casos[1].product.id},data:{existencia:"0"}});
+  assert.deepEqual(await ops.masivo({bodegaId:b.id,estado:"SOLUCIONADO",casos:lote()}),{modificados:2});
 });
 test("API administrativa: todas las rutas protegidas, CSRF, solo lectura de auditoría y entrada estricta",async()=>{
   const viewer=await user([{rol:"AUDITORIA",ubicacionId:null}]);

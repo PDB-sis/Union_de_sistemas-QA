@@ -33,7 +33,7 @@ Eres el arquitecto del plan multisitio. Antes de proponer nada, lee `PLAN-agente
 - Fases 3 a 5 sin empezar. Riesgo abierto: `PerfilLaboral.codigo` es único y los permisos de PDMC pueden depender de él.
 
 ## Forma de trabajar
-- Cada cambio de datos lleva su migración (Prisma en `pdmc`; pareja `006_*_up/down.sql` y siguientes en `cysn_qa`) y sus pruebas (`tests/*.integration.mjs` en PDMC; `tests/agente/` en CYSN).
+- Cada cambio de datos lleva su migración (Prisma en `pdmc`; pareja `006_*_up/down.sql` y siguientes en `cysn_qa`) y sus pruebas (`tests/backend/*.integration.mjs` en PDMC; `tests/agente/` en CYSN).
 - Una versión nueva del agente se publica con fecha en el nombre (`NexoQAAgente-AAAAMMDD.zip`) y debe seguir funcionando con la API desplegada mientras haya agentes antiguos.
 - Al cerrar una fase o tomar una decisión, actualiza `PLAN-agente-multisitio.md` y el punto de `contexto.md`, con fecha absoluta.
 - Pide a `guardian-sql` que revise migraciones y consultas, y a `qa-pdmc` o `qa-cysn` que validen.

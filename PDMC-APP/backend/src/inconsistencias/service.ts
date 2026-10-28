@@ -2,7 +2,7 @@ import "server-only";
 import {z} from "zod";
 import type {Prisma,PrismaClient} from "../../../generated/prisma/client";
 import {INCONSISTENCY_OPTIONS,FORMAS_CORRECCION,MOTIVOS,RESPONSABLES,TIPOS_AJUSTE,VEREDICTOS} from "../../../shared/inconsistencias/options";
-import {AJUSTE_INVENTARIO,SIN_CORRECCION,closureIssue,requiereEjecucion,unidadesPendientes} from "../../../shared/inconsistencias/workflow";
+import {AJUSTE_INVENTARIO,SIN_CORRECCION,closureIssue,requiereEjecucion,sinCorreccionIssue,unidadesPendientes} from "../../../shared/inconsistencias/workflow";
 import {canonicalOption} from "../../../shared/inconsistencias/option-value";
 import {adjustmentFromCount,bulkInconsistencySchema} from "../../../shared/inconsistencias/bulk";
 import {countVisibility,countWorkflow} from "../../../shared/workflow/count-routing";
@@ -83,19 +83,28 @@ export class InconsistencyService{
     const countChanged=input.conteoFisico!==before.conteoFisico||Boolean(input.conteoFisico!==null&&before.existenciaSistemaConteo===null),inventory=before.producto?.inventarios[0];
     if(countChanged&&input.conteoFisico!==null&&!inventory)throw new NegativosError(422,"INVENTARIO_NO_DISPONIBLE","No se puede registrar el conteo porque el producto no está en el inventario vigente.");
     const existenciaSistemaConteo=countChanged?(input.conteoFisico===null?null:Number(inventory!.existencia)):before.existenciaSistemaConteo;
-    const correccionEjecutada=input.correccionEjecutada??Boolean(before.correccionEjecutadaAt);
+    // La ejecución registrada corresponde a una forma de corrección: si la forma cambia, se registra de nuevo.
+    const ejecucionVigente=Boolean(before.correccionEjecutadaAt)&&input.formaCorreccion===before.formaCorreccion;
+    const correccionEjecutada=before.correccionEjecutadaAt&&!ejecucionVigente?false:input.correccionEjecutada??ejecucionVigente;
     if(correccionEjecutada&&!before.correccionEjecutadaAt){
       if(!requiereEjecucion(input.formaCorreccion)||input.formaCorreccion===AJUSTE_INVENTARIO)throw new NegativosError(422,"CORRECCION","Elija la corrección realizada (envío, devolución, corrección de transferencia o reubicación). Los ajustes se registran con su número de ajuste.");
       if(!input.numeroCorreccion?.trim())throw new NegativosError(422,"CORRECCION","Indique el número del documento de la corrección ejecutada.");
     }
     // Las unidades sin resolver las calcula el servidor: conteo contra sistema menos lo corregido.
-    const unidadesSinResolver=unidadesPendientes({conteoFisico:input.conteoFisico,existenciaSistemaConteo,cantidadErrada:before.cantidadErrada,unidadesAjustadas:input.unidadesAjustadas,unidadesSinResolver:before.unidadesSinResolver});
-    // Las reglas de cierre se aplican al cerrar; editar un caso ya cerrado no lo vuelve a evaluar.
-    const issue=before.resuelto&&input.resuelto?null:closureIssue({...input,existenciaSistemaConteo,cantidadErrada:before.cantidadErrada,correccionEjecutada,unidadesSinResolver});if(issue)throw new NegativosError(422,"CIERRE_INCOMPLETO",issue);
+    const conteo={conteoFisico:input.conteoFisico,existenciaSistemaConteo,cantidadErrada:before.cantidadErrada,unidadesSinResolver:before.unidadesSinResolver};
+    const diferencia=unidadesPendientes({...conteo,unidadesAjustadas:0});
+    // Como el ajuste, la corrección ejecutada cubre la diferencia; si se anula, deja de cubrirla.
+    const unidadesAjustadas=correccionEjecutada&&!before.correccionEjecutadaAt?Math.max(input.unidadesAjustadas,diferencia):!correccionEjecutada&&before.correccionEjecutadaAt&&!input.ajustado?0:input.unidadesAjustadas;
+    const unidadesSinResolver=unidadesPendientes({...conteo,unidadesAjustadas});
+    // Las reglas de cierre se aplican al cerrar. Un caso cerrado se edita sin reevaluarse, salvo que cambie lo que justificó el cierre.
+    const cierreModificado=before.resuelto&&input.resuelto&&(input.formaCorreccion!==before.formaCorreccion||input.conteoFisico!==before.conteoFisico||input.responsable!==before.responsable||input.ajustado!==before.ajustado||(input.numeroAjuste||null)!==before.numeroAjuste||(input.numeroCorreccion||null)!==before.numeroCorreccion||unidadesAjustadas!==before.unidadesAjustadas);
+    const evaluarCierre=!(before.resuelto&&input.resuelto)||cierreModificado;
+    const sinCorreccion=(input.formaCorreccion!==before.formaCorreccion&&!before.resuelto)||evaluarCierre&&input.resuelto?sinCorreccionIssue(input.formaCorreccion,diferencia):null;if(sinCorreccion)throw new NegativosError(422,"SIN_CORRECCION",sinCorreccion);
+    const issue=evaluarCierre?closureIssue({...input,existenciaSistemaConteo,cantidadErrada:before.cantidadErrada,correccionEjecutada,unidadesAjustadas,unidadesSinResolver}):null;if(issue)throw new NegativosError(422,"CIERRE_INCOMPLETO",issue);
     // Registrar una corrección no la verifica: el cierre es un paso posterior.
     if(input.resuelto&&!before.resuelto&&requiereEjecucion(input.formaCorreccion)&&!(input.formaCorreccion===AJUSTE_INVENTARIO?before.ajustado:before.correccionEjecutadaAt))throw new NegativosError(422,"VERIFICACION","Primero registre la corrección ejecutada; después verifíquela y cierre el caso.");
     const ejecucion=correccionEjecutada&&!before.correccionEjecutadaAt?{correccionEjecutadaAt:new Date(),correccionEjecutadaPorId:this.access.userId}:!correccionEjecutada&&before.correccionEjecutadaAt?{correccionEjecutadaAt:null,correccionEjecutadaPorId:null}:{};
-    const values={conteoFisico:input.conteoFisico,...(countChanged?{existenciaSistemaConteo,conteoRegistradoAt:input.conteoFisico===null?null:new Date()}:{}),...ejecucion,motivo:input.motivo,responsable:input.responsable,comentarioAdmin:input.comentarioAdmin||null,formaCorreccion:input.formaCorreccion,numeroCorreccion:input.numeroCorreccion||null,unidadesAjustadas:input.unidadesAjustadas,unidadesSinResolver,resuelto:input.resuelto,ajustar:input.ajustar,cantidadAjuste:input.cantidadAjuste||null,numeroAjuste:input.numeroAjuste||null,veredicto:input.veredicto,ajustado:input.ajustado,actualizadoPorId:this.access.userId,usuarioPdmc:user.email,version:{increment:1}} as const;
+    const values={conteoFisico:input.conteoFisico,...(countChanged?{existenciaSistemaConteo,conteoRegistradoAt:input.conteoFisico===null?null:new Date()}:{}),...ejecucion,motivo:input.motivo,responsable:input.responsable,comentarioAdmin:input.comentarioAdmin||null,formaCorreccion:input.formaCorreccion,numeroCorreccion:input.numeroCorreccion||null,unidadesAjustadas,unidadesSinResolver,resuelto:input.resuelto,ajustar:input.ajustar,cantidadAjuste:input.cantidadAjuste||null,numeroAjuste:input.numeroAjuste||null,veredicto:input.veredicto,ajustado:input.ajustado,actualizadoPorId:this.access.userId,usuarioPdmc:user.email,version:{increment:1}} as const;
     const after=await this.db.$transaction(async tx=>{const changed=await tx.inconsistencia.updateMany({where:{id:input.id,version:input.version},data:values});if(!changed.count)throw new NegativosError(409,"VERSION","El caso cambió; actualice la vista.");const result=await tx.inconsistencia.findUniqueOrThrow({where:{id:input.id}});await tx.auditoria.create({data:{usuarioId:this.access.userId,entidad:"Inconsistencia",entidadId:input.id,accion:"EDITAR_SEGUIMIENTO",motivo:"Seguimiento editado desde PDMC",valorAnterior:{motivo:before.motivo,responsable:before.responsable,formaCorreccion:before.formaCorreccion,resuelto:before.resuelto,numeroAjuste:before.numeroAjuste,ajustado:before.ajustado,correccionEjecutadaAt:before.correccionEjecutadaAt,unidadesSinResolver:before.unidadesSinResolver},valorNuevo:{motivo:result.motivo,responsable:result.responsable,formaCorreccion:result.formaCorreccion,resuelto:result.resuelto,numeroAjuste:result.numeroAjuste,ajustado:result.ajustado,correccionEjecutadaAt:result.correccionEjecutadaAt,unidadesSinResolver:result.unidadesSinResolver}}});return result;});
     return after;
   }
@@ -129,11 +138,21 @@ export class InconsistencyService{
           actualizadoPorId:this.access.userId,usuarioPdmc:user.email,version:{increment:1},
         };
         // Mismas reglas que el caso individual: las unidades pendientes se calculan, nunca se ponen en 0.
-        const next={...before,responsable:input.responsable??before.responsable,formaCorreccion:changes.formaCorreccion as string|undefined??before.formaCorreccion,numeroCorreccion:input.numeroCorreccion??before.numeroCorreccion,unidadesAjustadas:adjustment?.quantity??before.unidadesAjustadas,correccionEjecutada:Boolean(before.correccionEjecutadaAt),resuelto:input.action==="resolver"};
+        const formaCorreccion=changes.formaCorreccion as string|undefined??before.formaCorreccion;
+        // Igual que en el caso individual: cambiar la forma anula la ejecución registrada para la anterior.
+        const ejecucionVigente=Boolean(before.correccionEjecutadaAt)&&formaCorreccion===before.formaCorreccion;
+        const anulada=Boolean(before.correccionEjecutadaAt)&&!ejecucionVigente;
+        if(anulada){changes.correccionEjecutadaAt=null;changes.correccionEjecutadaPorId=null;}
+        // Al anularse, la corrección deja de cubrir la diferencia (salvo un ajuste registrado).
+        const unidadesAjustadas=adjustment?.quantity??(anulada&&!before.ajustado?0:before.unidadesAjustadas);
+        if(anulada&&!adjustment)changes.unidadesAjustadas=unidadesAjustadas;
+        const next={...before,responsable:input.responsable??before.responsable,formaCorreccion,numeroCorreccion:input.numeroCorreccion??before.numeroCorreccion,unidadesAjustadas,correccionEjecutada:ejecucionVigente,resuelto:input.action==="resolver"};
         const unidadesSinResolver=unidadesPendientes(next);
         changes.unidadesSinResolver=unidadesSinResolver;
+        // "Sin corrección" se valida con la diferencia real al elegirla o al cerrar.
+        const sinCorreccion=formaCorreccion!==before.formaCorreccion||input.action==="resolver"?sinCorreccionIssue(formaCorreccion,unidadesPendientes({...next,unidadesAjustadas:0})):null;if(sinCorreccion)throw new NegativosError(422,"SIN_CORRECCION",`Código ${before.codigoBarra}: ${sinCorreccion}`);
         if(input.action==="resolver"){
-          if(requiereEjecucion(next.formaCorreccion)&&!(next.formaCorreccion===AJUSTE_INVENTARIO?before.ajustado:before.correccionEjecutadaAt))throw new NegativosError(422,"VERIFICACION",`Código ${before.codigoBarra}: registre primero la corrección ejecutada; después se verifica y se cierra.`);
+          if(requiereEjecucion(next.formaCorreccion)&&!(next.formaCorreccion===AJUSTE_INVENTARIO?before.ajustado:ejecucionVigente))throw new NegativosError(422,"VERIFICACION",`Código ${before.codigoBarra}: registre primero la corrección ejecutada; después se verifica y se cierra.`);
           changes.resuelto=true;
         }
         const issue=closureIssue({...next,unidadesSinResolver});if(issue)throw new NegativosError(422,"CIERRE_INCOMPLETO",`Código ${before.codigoBarra}: ${issue}`);

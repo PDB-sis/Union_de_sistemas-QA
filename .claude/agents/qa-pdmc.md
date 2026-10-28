@@ -40,7 +40,7 @@ La matriz rol → permisos está en `shared/auth/permissions.ts` (`permissionMat
 ```powershell
 npm run lint              # ESLint + check:architecture + check:texts
 npm run typecheck
-npm test                  # tests/*.test.mjs (PGlite en memoria)
+npm test                  # tests/**/*.test.mjs (PGlite en memoria)
 node --conditions=react-server --import tsx --test tests/<archivo>.test.mjs   # una sola prueba
 npm run test:integration  # solo con TEST_DATABASE_URL de una base local o descartable
 npm run build

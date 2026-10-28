@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {closureIssue,inconsistencyStage,unidadesPendientes} from "../../shared/inconsistencias/workflow.ts";
+import {closureIssue,inconsistencyStage,sinCorreccionIssue,unidadesPendientes} from "../../shared/inconsistencias/workflow.ts";
 const base={resuelto:false,conteoFisico:null,ajustado:false,formaCorreccion:null,numeroAjuste:null,unidadesSinResolver:0};
 test("cada inconsistencia tiene una siguiente acción inequívoca",()=>{
   assert.equal(inconsistencyStage(base),"pendientes");
@@ -14,6 +14,12 @@ test("toda corrección registrada pasa por verificación, no solo el ajuste",()=
   assert.equal(inconsistencyStage(corrigiendo),"corregir");
   assert.equal(inconsistencyStage({...corrigiendo,correccionEjecutada:true}),"verificar");
   assert.equal(inconsistencyStage({...base,conteoFisico:0,formaCorreccion:"Sin corrección: inventario correcto"}),"verificar");
+});
+test("sin corrección solo se admite si el conteo coincide con el sistema",()=>{
+  assert.equal(sinCorreccionIssue("Sin corrección: inventario correcto",0),null);
+  assert.match(sinCorreccionIssue("Sin corrección: inventario correcto",2),/2 unidades de diferencia/);
+  assert.equal(sinCorreccionIssue("Corrección de transferencia",2),null);
+  assert.equal(sinCorreccionIssue(null,2),null);
 });
 test("las unidades pendientes se calculan con el conteo y lo corregido",()=>{
   assert.equal(unidadesPendientes({conteoFisico:7,existenciaSistemaConteo:10,unidadesAjustadas:0,unidadesSinResolver:0}),3);

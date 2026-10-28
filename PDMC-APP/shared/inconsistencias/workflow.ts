@@ -21,6 +21,12 @@ export function unidadesPendientes(value:Pick<OperationalCase,"conteoFisico"|"ex
   return Math.max(0,base-(value.unidadesAjustadas??0));
 }
 
+/** "Sin corrección" afirma que el inventario está bien: exige que el conteo coincida con el sistema (diferencia sin descontar correcciones). */
+export function sinCorreccionIssue(forma:string|null,diferencia:number){
+  if(forma!==SIN_CORRECCION||diferencia<=0)return null;
+  return `"${SIN_CORRECCION}" solo aplica si el conteo coincide con el sistema; hay ${diferencia} unidad${diferencia===1?"":"es"} de diferencia. Elija cómo se corrige.`;
+}
+
 export function inconsistencyStage(value:OperationalCase){
   if(value.resuelto)return "cerrados";
   if(value.conteoFisico===null)return "pendientes";
