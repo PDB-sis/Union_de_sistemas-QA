@@ -128,19 +128,21 @@ Union de sistemas QA/
 │   ├── app/               Páginas y rutas /api de Next.js (adaptadores)
 │   ├── frontend/          Componentes, hooks y estilos
 │   ├── backend/http/      Controladores HTTP por módulo (incluye qa-sso/)
-│   ├── backend/src/       Servicios de negocio + db.ts
+│   ├── backend/src/       Servicios de negocio + db.ts (sync/ = sincronización)
+│   ├── backend/prisma/    schema.prisma y migraciones versionadas
+│   ├── backend/sqlserver/ Consultas de solo lectura y scripts para el DBA
+│   ├── backend/scripts/   Sincronizador, usuarios y comprobaciones de la base
 │   ├── shared/            Contratos y reglas puras
-│   ├── prisma/            schema.prisma y migraciones versionadas
-│   ├── sqlserver/         Consultas de solo lectura y scripts para el DBA
-│   ├── scripts/           Servidor, sincronizador, administración, verificadores
-│   ├── tests/             *.test.mjs (unitarias), *.integration.mjs, *.browser.mjs
+│   ├── scripts/           Arranque del servidor, red y verificadores del proyecto
+│   ├── tests/             backend/, shared/ y frontend/ (*.test, *.integration, *.browser)
+│   ├── docker/            Imagen y compose.yaml de PostgreSQL de PDMC
 │   └── docs/              ARQUITECTURA.md, sincronizacion-sqlserver.md, sesiones…
 ├── CYSN_QA/               ★ Repo de NEXO QA (github.com/adolfolinares2121-afk/CYSN_QA)
 │   ├── backend/           API FastAPI (app/, migrations/, scripts/, tests/, docs/)
 │   ├── frontend/          SPA React + Vite
 │   ├── agente_tienda/     Agente Windows por sucursal
 │   └── aportes/           Material de referencia (export de n8n, consultas originales)
-├── consultaPDMC/          Consultas SQL Server originales (fuente de verdad de sqlserver/consultas/)
+├── consultaPDMC/          Consultas SQL Server originales (fuente de verdad de backend/sqlserver/consultas/)
 ├── deployment/            Crear-Base-Unificada.ps1, Iniciar-Backend-QA.ps1, caddy/, requirements
 ├── backups/               Dumps de estructura y unificada/ (scripts 00–03 de la base unificada)
 ├── logs/                  Logs de ejecución de PDMC y CYSN
@@ -198,8 +200,8 @@ npm run dev                         # desarrollo
 ```powershell
 npm run lint              # ESLint + check:architecture + check:texts
 npm run typecheck
-npm test                  # tests/*.test.mjs
-npm run test:integration  # tests/*.integration.mjs (requiere PostgreSQL)
+npm test                  # tests/**/*.test.mjs
+npm run test:integration  # tests/**/*.integration.mjs (requiere PostgreSQL)
 npm run build
 ```
 
@@ -289,9 +291,9 @@ Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `pu
 - PDMC rechaza cualquier sentencia de escritura y ejecuta cada consulta en una transacción que siempre se revierte.
 - CYSN aborta si el usuario puede escribir (`CYSN_SQLSERVER_REQUIRE_READONLY=true`).
 - Los agentes de tienda usan un usuario SQL de solo lectura propio por sucursal y no abren puertos.
-- Las consultas de `PDMC-APP/sqlserver/consultas/` son **copias exactas** de `consultaPDMC/`: si se modifica una, actualizar la otra. Los nombres no coinciden; equivalencias:
+- Las consultas de `PDMC-APP/backend/sqlserver/consultas/` son **copias exactas** de `consultaPDMC/`: si se modifica una, actualizar la otra. Los nombres no coinciden; equivalencias:
 
-  | `consultaPDMC/` (original) | `PDMC-APP/sqlserver/consultas/` (copia) |
+  | `consultaPDMC/` (original) | `PDMC-APP/backend/sqlserver/consultas/` (copia) |
   |---|---|
   | `TRANSFERENCIAS NUEVAS.sql` | `transferencias.sql` |
   | `DEVOLUCIONES.sql` | `devoluciones.sql` |
@@ -337,8 +339,8 @@ Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `pu
 - **Despliegue al servidor:** nunca reemplazar las carpetas `PDMC-APP` ni `CYSN_QA` enteras, porque se pierden `node_modules`, `.next` y `.venv` (ocurrió 3 veces el 2026-10-21 y el 2026-10-22). Hay que copiar a `C:\temp\Servidor` y usar `robocopy … /E`.
 - **Regla de datos (2026-10-26):** PDMC y CYSN solo leen de PostgreSQL. Los datos de SQL Server llegan por los agentes; la única excepción es `BODEGA_DATOS.tbDimTiendas`, el catálogo de sitios. Hoy PDMC todavía saca transferencias, devoluciones, facturadores e inventario de `SERVERDOS\SERVERSQL_DOS`, que tiene una **copia de `GDC_CASA_MATRIZ` parada el 2026-08-14**. Por eso esos datos de PDMC están desactualizados hasta que se completen las fases 3b y 2b de `PLAN-agente-multisitio.md`.
 - **Fase 2b-1 (2026-10-26, pendiente de desplegar):** el inventario de PDMC sale del agente del sitio `PDMC_INVENTARIO_DIM_ID` (por defecto 2004). Solo entran los productos **activos** y con categoría; los **inactivos no se envían por decisión revisable** (cómo añadirlos: `PLAN-agente-multisitio.md`, fase 2). Al desplegarla, PDMC solo consulta SQL Server para `SUCURSALES` (`BODEGA_DATOS`).
-- **Fase 3b (desplegada el 2026-10-26):** el sincronizador de PDMC toma `FACTURADORES`, `TRANSFERENCIAS` y `DEVOLUCIONES` de `cysn_qa.agente_fila` (`PDMC_AGENTE_SCHEMA`), una carga por bodega. Las transferencias y devoluciones guardan `origenId` y su número es único por bodega (migración `20261026120000_origen_bodega`). El botón "Actualizar ahora" y el recuadro "Sincronizaciones automáticas" de Administración ya no dicen "SQL Server". Las copias de `PDMC-APP/sqlserver/consultas/` de esos tres módulos dejan de usarse; se conservan como referencia.
-- **Fase 3a (2026-10-26):** el agente tiene tareas de bodega (`TAREAS=inventario,transferencias,devoluciones,usuarios`). Las consultas van en `agente_tienda/consultas/`: es la **tercera copia** de `consultaPDMC/`, junto con `PDMC-APP/sqlserver/consultas/`. Los datos se reciben en `cysn_qa.agente_fila` (migración 006, endpoint `POST /api/agente/v1/filas`), y se comparan con PDMC con `python -m app.comparar_sitio --dim-id 2004`. Está pendiente de desplegar en el servidor y en la bodega Maracaibo.
+- **Fase 3b (desplegada el 2026-10-26):** el sincronizador de PDMC toma `FACTURADORES`, `TRANSFERENCIAS` y `DEVOLUCIONES` de `cysn_qa.agente_fila` (`PDMC_AGENTE_SCHEMA`), una carga por bodega. Las transferencias y devoluciones guardan `origenId` y su número es único por bodega (migración `20261026120000_origen_bodega`). El botón "Actualizar ahora" y el recuadro "Sincronizaciones automáticas" de Administración ya no dicen "SQL Server". Las copias de `PDMC-APP/backend/sqlserver/consultas/` de esos tres módulos dejan de usarse; se conservan como referencia.
+- **Fase 3a (2026-10-26):** el agente tiene tareas de bodega (`TAREAS=inventario,transferencias,devoluciones,usuarios`). Las consultas van en `agente_tienda/consultas/`: es la **tercera copia** de `consultaPDMC/`, junto con `PDMC-APP/backend/sqlserver/consultas/`. Los datos se reciben en `cysn_qa.agente_fila` (migración 006, endpoint `POST /api/agente/v1/filas`), y se comparan con PDMC con `python -m app.comparar_sitio --dim-id 2004`. Está pendiente de desplegar en el servidor y en la bodega Maracaibo.
 - **Agente por sitio (2026-10-22):** la migración 005 de CYSN permite agentes de bodega (solo con `dimID`, sin sucursal de CYSN) y añade la `linea` al inventario. La bodega MARACAIBO (2004) envía su inventario como `AGT-BODEGA-MARACAIBO`. El agente solo guarda los productos **activos**, mientras que el inventario central de PDMC incluye también los inactivos; hay que decidirlo en la fase 2b.
 - **Latido del agente (2026-10-21):** la API tiene un endpoint nuevo, `POST /api/agente/v1/latido`, y el agente lo llama en cada ciclo sin cambios. Así `ultimo_contacto_at` indica que el agente está vivo. El `.exe` nuevo está en `CYSN_QA/agente_tienda/dist/` y en `Servidor/NexoQAAgenteTienda-20261021.zip`. El agente `PRUEBA-CM` (sucursal 59) ya enviaba 7.442 productos con el `.exe` anterior.
 - **API QA en el servidor:** su `.venv` se creó el 2026-10-21 en `ServicioQA\CYSN_QA\backend`. Antes de esa fecha la API nunca había corrido en el servidor.

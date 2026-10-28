@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
 import { countWorkflow } from "../../../shared/workflow/count-routing";
 import { Authorization } from "../auth/authorization";
 import { NegativosError } from "./validation";
+import { verificacionesAjuste } from "./operations";
 
 export class NegativosService {
   constructor(private db: PrismaClient, private access = new Authorization(db)) {}
@@ -22,7 +23,9 @@ export class NegativosService {
       ]);
       const permissionWorkflow=countWorkflow(canCount,canEdit),workflow=negativo.conteoFisico===null?"conteo":permissionWorkflow;
       const current=inventario._sum.existencia;
-      return {workflow,negativo,inconsistencias,existenciaActual:current?.isNegative()?current.toFixed(4):null,existenciaAnterior:null,observacionesConsulta:[] as Prisma.JsonValue[],historial:{items:historial,total,skip,take}};
+      // Un ajuste registrado muestra si el inventario vigente ya permite cerrarlo.
+      const verificacion=negativo.estado==="AJUSTE_REALIZADO"?(await verificacionesAjuste(tx,[negativo])).get(negativo.id)??null:null;
+      return {workflow,negativo:{...negativo,verificacion},inconsistencias,existenciaActual:current?.isNegative()?current.toFixed(4):null,existenciaAnterior:null,observacionesConsulta:[] as Prisma.JsonValue[],historial:{items:historial,total,skip,take}};
     },{isolationLevel:"RepeatableRead"});
   }
 }

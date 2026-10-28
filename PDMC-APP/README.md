@@ -21,7 +21,7 @@ Copie `.env.example` como `.env.local` y complete `DATABASE_URL`. No use variabl
 
 El proyecto utiliza la imagen limpia `sistemaspdb/pdmc-postgres:2026.10.06`, publicada en Docker Hub. Incluye PostgreSQL 17, el esquema completo y el historial técnico de migraciones; no contiene usuarios, contraseñas ni datos operativos.
 
-Cree el secreto local requerido por `compose.yaml`:
+Cree el secreto local requerido por `docker/compose.yaml`:
 
 ```bash
 mkdir -p .secrets
@@ -31,7 +31,7 @@ printf "una-clave-segura" > .secrets/postgres-password
 Luego ejecute:
 
 ```bash
-docker compose up -d
+docker compose -f docker/compose.yaml up -d
 npm run db:migrate
 npm run db:seed
 ```
@@ -80,7 +80,7 @@ Cree el secreto local de PostgreSQL e inicie el contenedor:
 ```powershell
 New-Item -ItemType Directory -Force .secrets
 Set-Content -LiteralPath .secrets\postgres-password -Value "COLOQUE_UNA_CLAVE_SEGURA" -NoNewline
-docker compose up -d
+docker compose -f docker/compose.yaml up -d
 ```
 
 Copie `.env.example` como `.env.local`:

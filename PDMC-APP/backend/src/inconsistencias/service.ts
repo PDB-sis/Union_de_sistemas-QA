@@ -2,7 +2,7 @@ import "server-only";
 import {z} from "zod";
 import type {Prisma,PrismaClient} from "../../../generated/prisma/client";
 import {INCONSISTENCY_OPTIONS,FORMAS_CORRECCION,MOTIVOS,RESPONSABLES,TIPOS_AJUSTE,VEREDICTOS} from "../../../shared/inconsistencias/options";
-import {closureIssue} from "../../../shared/inconsistencias/workflow";
+import {AJUSTE_INVENTARIO,SIN_CORRECCION,closureIssue,requiereEjecucion,unidadesPendientes} from "../../../shared/inconsistencias/workflow";
 import {canonicalOption} from "../../../shared/inconsistencias/option-value";
 import {adjustmentFromCount,bulkInconsistencySchema} from "../../../shared/inconsistencias/bulk";
 import {countVisibility,countWorkflow} from "../../../shared/workflow/count-routing";
@@ -17,6 +17,8 @@ export const editSchema=z.object({
   unidadesAjustadas:z.number().int().min(0).max(10_000_000),unidadesSinResolver:z.number().int().min(0).max(10_000_000),
   resuelto:z.boolean(),ajustar:option(TIPOS_AJUSTE),cantidadAjuste:z.number().int().min(0).max(10_000_000).nullable(),
   numeroAjuste:z.string().trim().max(128).nullable(),veredicto:option(VEREDICTOS),ajustado:z.boolean(),
+  // Envíos, devoluciones, correcciones de transferencia y reubicaciones registran su ejecución.
+  correccionEjecutada:z.boolean().optional(),
 }).strict();
 
 export class InconsistencyService{
@@ -44,14 +46,20 @@ export class InconsistencyService{
     const source:Prisma.InconsistenciaWhereInput={};
     const territory:Prisma.InconsistenciaWhereInput=storeScope.national?{}:{OR:[{tiendaId:{in:storeScope.rows.map(store=>store.id)}},...storeScope.rows.map(store=>({tiendaId:null,sucursal:{equals:store.nombre,mode:"insensitive" as const}}))]};
     const summaryFlow:Prisma.InconsistenciaWhereInput={AND:[territory,...(input.bodegaProductoId?[{OR:[{bodegaProductoId:input.bodegaProductoId},{bodegaProductoId:null,producto:{inventarios:{some:{bodegaProductoId:input.bodegaProductoId}}}}]}]:[])],fecha:monthRange(input.mes),...(input.sucursal?{sucursal:input.sucursal}:{}),...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{})};
-    const queue:Prisma.InconsistenciaWhereInput=input.cola==="gestion"?{conteoFisico:{not:null},ajustado:false,formaCorreccion:null}:input.cola==="corregir"?{conteoFisico:{not:null},ajustado:false,formaCorreccion:{not:null}}:input.cola==="verificar"?{conteoFisico:{not:null},ajustado:true}:{};
-    const flow:Prisma.InconsistenciaWhereInput={...(input.flujo==="trabajo"?countVisibility(workflow):{}),...(input.flujo==="trabajo"&&canEdit?queue:{}),...source,fecha:monthRange(input.mes)};
+    // Toda corrección registrada (no solo el ajuste) pasa por Verificación antes de cerrarse.
+    const enGestion:Prisma.InconsistenciaWhereInput={conteoFisico:{not:null},ajustado:false,correccionEjecutadaAt:null,formaCorreccion:null};
+    const enCorreccion:Prisma.InconsistenciaWhereInput={conteoFisico:{not:null},ajustado:false,correccionEjecutadaAt:null,formaCorreccion:{not:null,notIn:[SIN_CORRECCION]}};
+    const enVerificacion:Prisma.InconsistenciaWhereInput={conteoFisico:{not:null},OR:[{ajustado:true},{correccionEjecutadaAt:{not:null}},{formaCorreccion:SIN_CORRECCION}]};
+    const queue:Prisma.InconsistenciaWhereInput=input.cola==="gestion"?enGestion:input.cola==="corregir"?enCorreccion:input.cola==="verificar"?enVerificacion:{};
+    const flow:Prisma.InconsistenciaWhereInput={...(input.flujo==="trabajo"?countVisibility(workflow):{}),...source,fecha:monthRange(input.mes)};
     const where:Prisma.InconsistenciaWhereInput={
       ...flow,
       ...(input.estado==="pendientes"?{resuelto:false}:input.estado==="resueltos"?{resuelto:true}:input.estado==="ajuste"?{OR:[{ajustar:{not:null}},{ajustado:true}]}:{}),
       ...(input.sucursal?{sucursal:input.sucursal}:{}),
       ...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{}),
       AND:[
+        // La cola va en AND para no pisar otros filtros con OR.
+        ...(input.flujo==="trabajo"&&canEdit?[queue]:[]),
         ...(!storeScope.national?[{OR:[{tiendaId:{in:storeScope.rows.map(store=>store.id)}},...storeScope.rows.map(store=>({tiendaId:null,sucursal:{equals:store.nombre,mode:"insensitive" as const}}))]}]:[]),
         ...(input.bodegaProductoId?[{OR:[{bodegaProductoId:input.bodegaProductoId},{bodegaProductoId:null,producto:{inventarios:{some:{bodegaProductoId:input.bodegaProductoId}}}}]}]:[]),
         ...(input.q?[{OR:[{transferencia:{contains:input.q,mode:"insensitive" as const}},{codigoBarra:{contains:input.q,mode:"insensitive" as const}},{referencia:{contains:input.q,mode:"insensitive" as const}},{comentarioAdmin:{contains:input.q,mode:"insensitive" as const}}]}]:[]),
@@ -60,7 +68,7 @@ export class InconsistencyService{
     const [rows,total,summary,stores,warehouses]=await Promise.all([
       this.db.inconsistencia.findMany({where,skip:input.skip,take:input.take,orderBy:[{resuelto:"asc"},{fecha:"asc"},{id:"asc"}],include:{bodegaProducto:true,producto:{include:{inventarios:{include:{bodegaProducto:true},take:5}}}}}),
       this.db.inconsistencia.count({where}),
-      Promise.all([this.db.inconsistencia.count({where:summaryFlow}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:true}}),this.db.inconsistencia.count({where:{...summaryFlow,ajustado:true}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false,conteoFisico:null}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false,conteoFisico:{not:null},ajustado:false,formaCorreccion:null}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false,conteoFisico:{not:null},ajustado:false,formaCorreccion:{not:null}}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false,conteoFisico:{not:null},ajustado:true}})]),
+      Promise.all([this.db.inconsistencia.count({where:summaryFlow}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:true}}),this.db.inconsistencia.count({where:{...summaryFlow,ajustado:true}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false,conteoFisico:null}}),this.db.inconsistencia.count({where:{AND:[summaryFlow,enGestion],resuelto:false}}),this.db.inconsistencia.count({where:{AND:[summaryFlow,enCorreccion],resuelto:false}}),this.db.inconsistencia.count({where:{AND:[summaryFlow,enVerificacion],resuelto:false}})]),
       this.db.inconsistencia.findMany({where:territory,distinct:["sucursal"],select:{sucursal:true},orderBy:{sucursal:"asc"}}),
       this.db.bodegaProducto.findMany({select:{id:true,nombre:true},orderBy:{nombre:"asc"}}),
     ]);
@@ -68,15 +76,27 @@ export class InconsistencyService{
   }
   async update(raw:unknown){
     await this.access.permitted("inconsistencias.editar");const input=editSchema.parse(raw);
-    const issue=closureIssue(input);if(issue)throw new NegativosError(422,"CIERRE_INCOMPLETO",issue);
     if(input.ajustado&&(!input.ajustar||!input.cantidadAjuste||!input.numeroAjuste||!input.veredicto))throw new NegativosError(422,"AJUSTE_INCOMPLETO","Para marcar Ajustado complete tipo, cantidad, número de ajuste y veredicto.");
     if(input.resuelto&&!input.motivo&&!input.formaCorreccion)throw new NegativosError(422,"CIERRE_INCOMPLETO","Para resolver el caso indique el motivo o cómo se corrigió.");
     const user=await this.db.usuario.findUniqueOrThrow({where:{id:this.access.userId},select:{email:true,nombre:true}}),before=await this.db.inconsistencia.findUnique({where:{id:input.id},include:{producto:{include:{inventarios:{take:1}}}}});if(!before)throw new NegativosError(404,"CASO","La inconsistencia no existe.");if(before.version!==input.version)throw new NegativosError(409,"VERSION","El caso cambió; actualice la vista.");if(before.conteoFisico===null)throw new NegativosError(409,"CONTEO_PENDIENTE","Rectificación debe registrar el conteo físico antes de gestionar este caso.");
     await this.assertCaseAccess("inconsistencias.editar",before);
     const countChanged=input.conteoFisico!==before.conteoFisico||Boolean(input.conteoFisico!==null&&before.existenciaSistemaConteo===null),inventory=before.producto?.inventarios[0];
     if(countChanged&&input.conteoFisico!==null&&!inventory)throw new NegativosError(422,"INVENTARIO_NO_DISPONIBLE","No se puede registrar el conteo porque el producto no está en el inventario vigente.");
-    const values={conteoFisico:input.conteoFisico,...(countChanged?{existenciaSistemaConteo:input.conteoFisico===null?null:Number(inventory!.existencia),conteoRegistradoAt:input.conteoFisico===null?null:new Date()}:{}),motivo:input.motivo,responsable:input.responsable,comentarioAdmin:input.comentarioAdmin||null,formaCorreccion:input.formaCorreccion,numeroCorreccion:input.numeroCorreccion||null,unidadesAjustadas:input.unidadesAjustadas,unidadesSinResolver:input.unidadesSinResolver,resuelto:input.resuelto,ajustar:input.ajustar,cantidadAjuste:input.cantidadAjuste||null,numeroAjuste:input.numeroAjuste||null,veredicto:input.veredicto,ajustado:input.ajustado,actualizadoPorId:this.access.userId,usuarioPdmc:user.email,version:{increment:1}} as const;
-    const after=await this.db.$transaction(async tx=>{const changed=await tx.inconsistencia.updateMany({where:{id:input.id,version:input.version},data:values});if(!changed.count)throw new NegativosError(409,"VERSION","El caso cambió; actualice la vista.");const result=await tx.inconsistencia.findUniqueOrThrow({where:{id:input.id}});await tx.auditoria.create({data:{usuarioId:this.access.userId,entidad:"Inconsistencia",entidadId:input.id,accion:"EDITAR_SEGUIMIENTO",motivo:"Seguimiento editado desde PDMC",valorAnterior:{motivo:before.motivo,responsable:before.responsable,formaCorreccion:before.formaCorreccion,resuelto:before.resuelto,numeroAjuste:before.numeroAjuste,ajustado:before.ajustado},valorNuevo:{motivo:result.motivo,responsable:result.responsable,formaCorreccion:result.formaCorreccion,resuelto:result.resuelto,numeroAjuste:result.numeroAjuste,ajustado:result.ajustado}}});return result;});
+    const existenciaSistemaConteo=countChanged?(input.conteoFisico===null?null:Number(inventory!.existencia)):before.existenciaSistemaConteo;
+    const correccionEjecutada=input.correccionEjecutada??Boolean(before.correccionEjecutadaAt);
+    if(correccionEjecutada&&!before.correccionEjecutadaAt){
+      if(!requiereEjecucion(input.formaCorreccion)||input.formaCorreccion===AJUSTE_INVENTARIO)throw new NegativosError(422,"CORRECCION","Elija la corrección realizada (envío, devolución, corrección de transferencia o reubicación). Los ajustes se registran con su número de ajuste.");
+      if(!input.numeroCorreccion?.trim())throw new NegativosError(422,"CORRECCION","Indique el número del documento de la corrección ejecutada.");
+    }
+    // Las unidades sin resolver las calcula el servidor: conteo contra sistema menos lo corregido.
+    const unidadesSinResolver=unidadesPendientes({conteoFisico:input.conteoFisico,existenciaSistemaConteo,cantidadErrada:before.cantidadErrada,unidadesAjustadas:input.unidadesAjustadas,unidadesSinResolver:before.unidadesSinResolver});
+    // Las reglas de cierre se aplican al cerrar; editar un caso ya cerrado no lo vuelve a evaluar.
+    const issue=before.resuelto&&input.resuelto?null:closureIssue({...input,existenciaSistemaConteo,cantidadErrada:before.cantidadErrada,correccionEjecutada,unidadesSinResolver});if(issue)throw new NegativosError(422,"CIERRE_INCOMPLETO",issue);
+    // Registrar una corrección no la verifica: el cierre es un paso posterior.
+    if(input.resuelto&&!before.resuelto&&requiereEjecucion(input.formaCorreccion)&&!(input.formaCorreccion===AJUSTE_INVENTARIO?before.ajustado:before.correccionEjecutadaAt))throw new NegativosError(422,"VERIFICACION","Primero registre la corrección ejecutada; después verifíquela y cierre el caso.");
+    const ejecucion=correccionEjecutada&&!before.correccionEjecutadaAt?{correccionEjecutadaAt:new Date(),correccionEjecutadaPorId:this.access.userId}:!correccionEjecutada&&before.correccionEjecutadaAt?{correccionEjecutadaAt:null,correccionEjecutadaPorId:null}:{};
+    const values={conteoFisico:input.conteoFisico,...(countChanged?{existenciaSistemaConteo,conteoRegistradoAt:input.conteoFisico===null?null:new Date()}:{}),...ejecucion,motivo:input.motivo,responsable:input.responsable,comentarioAdmin:input.comentarioAdmin||null,formaCorreccion:input.formaCorreccion,numeroCorreccion:input.numeroCorreccion||null,unidadesAjustadas:input.unidadesAjustadas,unidadesSinResolver,resuelto:input.resuelto,ajustar:input.ajustar,cantidadAjuste:input.cantidadAjuste||null,numeroAjuste:input.numeroAjuste||null,veredicto:input.veredicto,ajustado:input.ajustado,actualizadoPorId:this.access.userId,usuarioPdmc:user.email,version:{increment:1}} as const;
+    const after=await this.db.$transaction(async tx=>{const changed=await tx.inconsistencia.updateMany({where:{id:input.id,version:input.version},data:values});if(!changed.count)throw new NegativosError(409,"VERSION","El caso cambió; actualice la vista.");const result=await tx.inconsistencia.findUniqueOrThrow({where:{id:input.id}});await tx.auditoria.create({data:{usuarioId:this.access.userId,entidad:"Inconsistencia",entidadId:input.id,accion:"EDITAR_SEGUIMIENTO",motivo:"Seguimiento editado desde PDMC",valorAnterior:{motivo:before.motivo,responsable:before.responsable,formaCorreccion:before.formaCorreccion,resuelto:before.resuelto,numeroAjuste:before.numeroAjuste,ajustado:before.ajustado,correccionEjecutadaAt:before.correccionEjecutadaAt,unidadesSinResolver:before.unidadesSinResolver},valorNuevo:{motivo:result.motivo,responsable:result.responsable,formaCorreccion:result.formaCorreccion,resuelto:result.resuelto,numeroAjuste:result.numeroAjuste,ajustado:result.ajustado,correccionEjecutadaAt:result.correccionEjecutadaAt,unidadesSinResolver:result.unidadesSinResolver}}});return result;});
     return after;
   }
   async updateMany(raw:unknown){
@@ -105,11 +125,18 @@ export class InconsistencyService{
           ...(input.formaCorreccion?{formaCorreccion:input.formaCorreccion}:{}),
           ...(input.comentarioAdmin?{comentarioAdmin:input.comentarioAdmin}:{}),
           ...(input.numeroCorreccion?{numeroCorreccion:input.numeroCorreccion}:{}),
-          ...(input.action==="resolver"?{resuelto:true,unidadesSinResolver:0}:{}),
-          ...(adjustment?{formaCorreccion:"Ajuste de inventario",resuelto:false,ajustado:true,ajustar:adjustment.type,cantidadAjuste:adjustment.quantity,numeroAjuste:input.numeroAjuste,veredicto:adjustment.verdict,unidadesAjustadas:adjustment.quantity,unidadesSinResolver:0}:{}),
+          ...(adjustment?{formaCorreccion:AJUSTE_INVENTARIO,resuelto:false,ajustado:true,ajustar:adjustment.type,cantidadAjuste:adjustment.quantity,numeroAjuste:input.numeroAjuste,veredicto:adjustment.verdict,unidadesAjustadas:adjustment.quantity}:{}),
           actualizadoPorId:this.access.userId,usuarioPdmc:user.email,version:{increment:1},
         };
-        const issue=closureIssue({...before,resuelto:input.action==="resolver",formaCorreccion:input.formaCorreccion??before.formaCorreccion,unidadesSinResolver:input.action==="resolver"?0:before.unidadesSinResolver});if(issue)throw new NegativosError(422,"CIERRE_INCOMPLETO",issue);
+        // Mismas reglas que el caso individual: las unidades pendientes se calculan, nunca se ponen en 0.
+        const next={...before,responsable:input.responsable??before.responsable,formaCorreccion:changes.formaCorreccion as string|undefined??before.formaCorreccion,numeroCorreccion:input.numeroCorreccion??before.numeroCorreccion,unidadesAjustadas:adjustment?.quantity??before.unidadesAjustadas,correccionEjecutada:Boolean(before.correccionEjecutadaAt),resuelto:input.action==="resolver"};
+        const unidadesSinResolver=unidadesPendientes(next);
+        changes.unidadesSinResolver=unidadesSinResolver;
+        if(input.action==="resolver"){
+          if(requiereEjecucion(next.formaCorreccion)&&!(next.formaCorreccion===AJUSTE_INVENTARIO?before.ajustado:before.correccionEjecutadaAt))throw new NegativosError(422,"VERIFICACION",`Código ${before.codigoBarra}: registre primero la corrección ejecutada; después se verifica y se cierra.`);
+          changes.resuelto=true;
+        }
+        const issue=closureIssue({...next,unidadesSinResolver});if(issue)throw new NegativosError(422,"CIERRE_INCOMPLETO",`Código ${before.codigoBarra}: ${issue}`);
         const changed=await tx.inconsistencia.updateMany({where:{id:item.id,version:item.version},data:changes});
         if(!changed.count)throw new NegativosError(409,"VERSION","Algún caso cambió; actualice la lista y vuelva a seleccionarlo.");
         const after=await tx.inconsistencia.findUniqueOrThrow({where:{id:item.id}});

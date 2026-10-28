@@ -1,15 +1,26 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import "@fontsource-variable/manrope";
+import "@fontsource-variable/jetbrains-mono";
 import "../frontend/styles/globals.css";
 import { ThemeProvider } from "@frontend/components/theme-provider";
 
 export const metadata: Metadata = {
-  title: "Panel de Mejora Continua",
+  title: { default: "PDMC · Panel de Mejora Continua", template: "%s · PDMC" },
   description:
-    "Centro personal para priorizar transferencias, incidencias, negativos y proyectos de mejora.",
+    "Plataforma operativa para controlar transferencias, recepciones, inconsistencias, negativos, devoluciones y facturación.",
+  applicationName: "PDMC",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f4ea" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e1630" },
+  ],
 };
 
 export default function RootLayout({

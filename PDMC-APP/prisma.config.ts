@@ -5,10 +5,10 @@ import { defineConfig } from "prisma/config";
 loadEnvConfig(process.cwd());
 
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: "backend/prisma/schema.prisma",
   migrations: {
-    path: "prisma/migrations",
-    seed: "tsx prisma/seed.ts",
+    path: "backend/prisma/migrations",
+    seed: "tsx backend/prisma/seed.ts",
   },
   // Generate y build no requieren conexión. Migrate falla si no está configurada.
   datasource: { url: process.env.DATABASE_URL ?? "" },

@@ -6,7 +6,7 @@ Integración de dos sistemas internos sobre una sola base PostgreSQL (`sistemas_
 |---|---|
 | `PDMC-APP/` | **PDMC – Panel de Mejora Continua** (Next.js 16, Prisma, PostgreSQL): transferencias, devoluciones, inventario, negativos, facturación y reportes de tiendas. |
 | `CYSN_QA/` | **NEXO QA** (FastAPI + React/Vite) y el **agente de sitio** para Windows que envía a PostgreSQL los datos del SQL Server de cada tienda o bodega. |
-| `consultaPDMC/` | Consultas SQL Server originales (solo lectura). Las copias de `PDMC-APP/sqlserver/consultas/` y `CYSN_QA/agente_tienda/consultas/` deben ser idénticas. |
+| `consultaPDMC/` | Consultas SQL Server originales (solo lectura). Las copias de `PDMC-APP/backend/sqlserver/consultas/` y `CYSN_QA/agente_tienda/consultas/` deben ser idénticas. |
 | `deployment/` | Scripts de la base unificada, migraciones de CYSN y Caddy. |
 | `docker/`, `compose.yaml` | Imágenes de Docker (`sistemaspdb/*` en Docker Hub) y su orquestación. |
 

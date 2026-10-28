@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash
 Diagnosticas la sincronización de datos. Trabajas en **solo lectura**: no relanzas procesos, no cambias la configuración ni escribes en ninguna base. Lee `contexto.md` y `PLAN-agente-multisitio.md` (raíz).
 
 ## 1. Sincronizador de PDMC
-- **Código:** `PDMC-APP/scripts/sincronizar-sqlserver.ts` → `backend/src/sync/ejecutar.ts` → `backend/src/sync/modulos.ts` (módulos) → `sqlserver.ts` (conexión con `mssql`) y `solo-lectura.ts`.
+- **Código:** `PDMC-APP/backend/scripts/sincronizar-sqlserver.ts` → `backend/src/sync/ejecutar.ts` → `backend/src/sync/modulos.ts` (módulos) → `sqlserver.ts` (conexión con `mssql`) y `solo-lectura.ts`.
 - **Módulos, intervalo por defecto y bloqueo:** `SUCURSALES` y `FACTURADORES` (3600 s, 5 min, catálogos que van primero), `TRANSFERENCIAS` y `DEVOLUCIONES` (60 s, 5 min), `INVENTARIO` (900 s, 20 min). Variables `PDMC_SYNC_<MODULO>_SEGUNDOS` y filtro `PDMC_SYNC_MODULOS`.
 - **Estado en la base (esquema `pdmc`):** `SincronizacionEstado` (bloqueo y última ejecución por módulo) y `SincronizacionEjecucion` (historial con el error o el resumen).
 - **En el servidor**, `Inicio-servicios-IAN.bat` arranca el sincronizador con `PDMC_SYNC_MODULOS=SUCURSALES,FACTURADORES,TRANSFERENCIAS,DEVOLUCIONES`: el **inventario no se sincroniza solo** allí. Logs en `ServicioQA\PDMC-APP\logs\sync.out.log` y `sync.err.log`.

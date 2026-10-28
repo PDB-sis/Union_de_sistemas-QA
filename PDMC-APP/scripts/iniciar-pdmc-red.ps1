@@ -89,7 +89,7 @@ try {
             }
             if (!$dockerReady) { throw 'Docker no respondio. Termina de iniciarlo y vuelve a ejecutar el BAT.' }
         }
-        & docker.exe compose up -d --wait --wait-timeout 90 postgres
+        & docker.exe compose --file 'docker\compose.yaml' up -d --wait --wait-timeout 90 postgres
         if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL no esta listo. Revisa Docker Desktop. No se borraron volumenes ni datos.' }
     }
     Write-Host 'Comprobando esquema, conexion y configuracion de la API...'
@@ -146,7 +146,7 @@ try {
     if ($syncMode -eq 'on') {
         $syncLog = Join-Path $logDirectory "sync-sqlserver-$stamp.log"
         $syncErrorLog = Join-Path $logDirectory "sync-sqlserver-$stamp-error.log"
-        $syncProcess = Start-Process -FilePath $nodePath -ArgumentList '--conditions=react-server','--import','tsx','scripts/sincronizar-sqlserver.ts' -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput $syncLog -RedirectStandardError $syncErrorLog -PassThru
+        $syncProcess = Start-Process -FilePath $nodePath -ArgumentList '--conditions=react-server','--import','tsx','backend/scripts/sincronizar-sqlserver.ts' -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput $syncLog -RedirectStandardError $syncErrorLog -PassThru
         Write-Host "Consultas automaticas a SQL Server iniciadas. Registro: $syncLog"
     } else {
         Write-Host 'Consultas automaticas a SQL Server desactivadas (PDMC_SQLSERVER_ENABLED).'

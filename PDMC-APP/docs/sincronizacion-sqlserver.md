@@ -9,7 +9,7 @@ SQL Server → PDMC ejecuta la consulta (solo lectura) → PostgreSQL
 
 ## Qué se consulta
 
-| Módulo | Consulta (`sqlserver/consultas/`) | Origen en `consultaPDMC` | Cada |
+| Módulo | Consulta (`backend/sqlserver/consultas/`) | Origen en `consultaPDMC` | Cada |
 |---|---|---|---|
 | Tiendas | `sucursales.sql` | `Sucursal - Info.sql` | 1 hora |
 | Facturadores | `facturadores.sql` | `Usuarios Activos.sql` | 1 hora |
@@ -17,9 +17,9 @@ SQL Server → PDMC ejecuta la consulta (solo lectura) → PostgreSQL
 | Devoluciones | `devoluciones.sql` | `DEVOLUCIONES.sql` (detalle por producto y caja) | 1 minuto |
 | Inventario | `inventario.sql` | `INVENTARIO PDMC.SQL` | 15 minutos |
 
-Los archivos de `sqlserver/consultas/` son copias exactas de `consultaPDMC`.
+Los archivos de `backend/sqlserver/consultas/` son copias exactas de `consultaPDMC`.
 **Si se modifica una consulta (por ejemplo, la fecha de corte), hay que
-actualizar la copia en `sqlserver/consultas/`.** Las consultas solo pueden leer:
+actualizar la copia en `backend/sqlserver/consultas/`.** Las consultas solo pueden leer:
 PDMC rechaza cualquier instrucción que escriba y ejecuta cada consulta en una
 transacción que siempre se deshace.
 
@@ -71,8 +71,8 @@ botón avisa y no la duplica.
 
 ## Puesta en marcha
 
-1. **DBA:** ejecutar `sqlserver/01-diagnostico.sql` (solo lectura) y
-   `sqlserver/02-usuario-solo-lectura.sql`.
+1. **DBA:** ejecutar `backend/sqlserver/01-diagnostico.sql` (solo lectura) y
+   `backend/sqlserver/02-usuario-solo-lectura.sql`.
 2. **PDMC:** aplicar las migraciones con `npm run db:migrate`.
 3. Completar `PDMC_SQLSERVER_*` y `PDMC_SYNC_USUARIO_EMAIL` en `.env.local` y
    crear la cuenta de sistema: `npm run sync:crear-usuario`.

@@ -18,7 +18,7 @@ export function LoginForm() {
   return <form className="grid gap-5" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const data=new FormData(form);setBusy(true);setError("");try{const result=await submit("login",{email:data.get("email"),password:data.get("password")});form.reset();window.location.replace(result.destino);}catch(e){setError(e instanceof Error?e.message:"No se pudo iniciar sesión.");}finally{setBusy(false);}}}>
     <label className="grid gap-2">Usuario<Input aria-label="Usuario" name="email" autoComplete="username" required minLength={3} maxLength={254} disabled={busy}/></label>
     <label className="grid gap-2">Contraseña<PasswordInput aria-label="Contraseña" name="password" autoComplete="current-password" required maxLength={128} disabled={busy}/></label>
-    {error&&<p role="alert" className="text-sm text-red-600">{error}</p>}
+    {error&&<p role="alert" className="text-sm text-danger-600 dark:text-danger-300">{error}</p>}
     <Button type="submit" disabled={busy}>{busy?"Iniciando…":"Iniciar sesión"}</Button>
   </form>;
 }
@@ -33,7 +33,7 @@ export function PasswordForm({obligatorio}:{obligatorio:boolean}) {
     <label className="grid gap-2">Contraseña actual<PasswordInput aria-label="Contraseña actual" name="actual" autoComplete="current-password" required maxLength={128} disabled={busy}/></label>
     <label className="grid gap-2">Nueva contraseña<PasswordInput aria-label="Nueva contraseña" name="nueva" autoComplete="new-password" required minLength={12} maxLength={128} disabled={busy}/></label>
     <label className="grid gap-2">Confirmar contraseña<PasswordInput aria-label="Confirmar contraseña" name="confirmacion" autoComplete="new-password" required minLength={12} maxLength={128} disabled={busy}/></label>
-    {error&&<p role="alert" className="text-sm text-red-600">{error}</p>}
+    {error&&<p role="alert" className="text-sm text-danger-600 dark:text-danger-300">{error}</p>}
     <Button disabled={busy} type="submit">{busy?"Guardando…":"Cambiar contraseña"}</Button>
   </form>;
 }

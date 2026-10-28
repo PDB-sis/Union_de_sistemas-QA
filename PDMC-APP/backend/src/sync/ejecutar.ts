@@ -53,7 +53,7 @@ type Aplicado = { hash: string; totalFilas: number; result: { sinCambios: boolea
 /** Fuente SQL Server: ejecuta la consulta del módulo y entrega el resultado, como CSV, a su importación. */
 async function desdeSqlServer(db: PrismaClient, modulo: Modulo, consulta: string, ultimoHash: string | null, opciones: OpcionesEjecucion): Promise<Aplicado> {
   // Las consultas se copian tal cual de consultaPDMC; algunos editores de Windows les añaden BOM.
-  const sqlText = (await readFile(join(process.cwd(), "sqlserver", "consultas", consulta), "utf8")).replace(/^﻿/, "");
+  const sqlText = (await readFile(join(process.cwd(), "backend", "sqlserver", "consultas", consulta), "utf8")).replace(/^﻿/, "");
   const { columns, rows } = await runQuery(sqlText);
   const csv = toCsv(columns, rows);
   const hash = createHash("sha256").update(csv).digest("hex");

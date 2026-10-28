@@ -29,7 +29,7 @@ export type Modulo = {
    * el catálogo de sitios (BODEGA_DATOS), que se consulta en SQL Server.
    */
   fuente:
-    /** Archivo en sqlserver/consultas: copia de la consulta de consultaPDMC. */
+    /** Archivo en backend/sqlserver/consultas: copia de la consulta de consultaPDMC. */
     | { tipo: "SQLSERVER"; consulta: string }
     /** Lo que envían los agentes a agente_fila, convertido a CSV con estas columnas; una carga por bodega. */
     | { tipo: "AGENTE"; tarea: TareaAgente; columnas: readonly string[] }

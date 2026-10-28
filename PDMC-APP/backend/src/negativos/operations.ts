@@ -9,6 +9,7 @@ import {countWorkflow,type CountWorkflow} from "../../../shared/workflow/count-r
 import {currentMonth,monthRange} from "../../../shared/month";
 import {validarMotivoNegativo} from "../../../shared/negativos/reasons";
 import {photoComparison} from "./photo-comparison";
+import {validarCambioNegativo,verificarAjusteNegativo,type VerificacionNegativo} from "../../../shared/negativos/flujo";
 
 export const stateSchema = z.enum(Object.keys(estados) as [keyof typeof estados, ...(keyof typeof estados)[]]);
 const note = z.string().trim().max(10000);
@@ -41,6 +42,24 @@ export async function lockWarehouse(tx: Prisma.TransactionClient, id: string) {
   if (!rows.length) throw new NegativosError(404, "BODEGA_NO_DISPONIBLE", "Bodega inexistente o inactiva.");
 }
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
+// Evidencia para cerrar un ajuste: inventario vigente posterior al ajuste y sin existencia negativa.
+export async function verificacionesAjuste(tx: Prisma.TransactionClient, casos: {id:string;productoId:string}[]) {
+  const result=new Map<string,VerificacionNegativo>();
+  if(!casos.length)return result;
+  const [vigente,sumas,ajustes]=await Promise.all([
+    tx.inventarioActual.findFirst({orderBy:{consulta:{fechaImportacion:"desc"}},select:{consulta:{select:{fechaConsulta:true}}}}),
+    tx.inventarioActual.groupBy({by:["productoId"],where:{productoId:{in:casos.map(c=>c.productoId)}},_sum:{existencia:true}}),
+    tx.historialNegativo.findMany({where:{negativoId:{in:casos.map(c=>c.id)},valorNuevo:{path:["estado"],equals:"AJUSTE_REALIZADO"},NOT:{valorAnterior:{path:["estado"],equals:"AJUSTE_REALIZADO"}}},orderBy:{createdAt:"desc"},select:{negativoId:true,createdAt:true}}),
+  ]);
+  const existencia=new Map(sumas.map(row=>[row.productoId,row._sum.existencia?.toFixed(4)??null]));
+  const ajusteAt=new Map<string,Date>();for(const row of ajustes)if(!ajusteAt.has(row.negativoId))ajusteAt.set(row.negativoId,row.createdAt);
+  for(const caso of casos)result.set(caso.id,verificarAjusteNegativo({ajusteAt:ajusteAt.get(caso.id)??null,inventarioAt:vigente?.consulta.fechaConsulta??null,existencia:existencia.get(caso.productoId)??null}));
+  return result;
+}
+async function exigirVerificacion(tx: Prisma.TransactionClient, caso:{id:string;productoId:string}, etiqueta="") {
+  const verificacion=(await verificacionesAjuste(tx,[caso])).get(caso.id)!;
+  if(!verificacion.puedeCerrar)throw new NegativosError(422,"VERIFICACION_PENDIENTE",etiqueta+verificacion.mensaje);
+}
 export async function operationalHistory(tx: Prisma.TransactionClient, before: {id:string}, after: {id:string}, accion: string, motivo: string, usuarioId?:string, origen?:string) {
   const values = { accion, motivo, valorAnterior: json(before), valorNuevo: json(after) };
   const actor=auditActor(usuarioId,origen);
@@ -77,6 +96,9 @@ export class NegativeOperations {
       if(["AJUSTE_AUTORIZADO","AJUSTE_REALIZADO"].includes(input.estado)&&!input.conteoFisico)throw new NegativosError(422,"CONTEO_REQUERIDO","Registre el conteo físico antes de aprobar o ejecutar un ajuste.");
       if(["SOLUCIONADO","CERRADO_SIN_AJUSTE"].includes(input.estado)&&!input.motivo&&!input.veredicto&&!input.observaciones)throw new NegativosError(422,"CIERRE_INCOMPLETO","Documente la solución antes de cerrar el expediente.");
       if(input.estado==="AJUSTE_REALIZADO"&&!input.numeroAjuste)throw new NegativosError(422,"AJUSTE_REQUERIDO","Indique el número de ajuste antes de marcar el caso como ajustado.");
+      const cambio=validarCambioNegativo({antes:{estado:before.estado,conteoFisico:before.conteoFisico?.toFixed(4)??null},despues:{estado:input.estado,conteoFisico:input.conteoFisico||null,motivo:input.motivo,numeroAjuste:input.numeroAjuste,observaciones:input.observaciones}});
+      if(cambio)throw new NegativosError(422,"CAMBIO_NO_PERMITIDO",cambio);
+      if(input.estado==="SOLUCIONADO"&&before.estado==="AJUSTE_REALIZADO")await exigirVerificacion(tx,before);
       if (input.bodegaProductoId && !await tx.bodegaProducto.findUnique({where:{id:input.bodegaProductoId}})) throw new NegativosError(422,"BODEGA_PRODUCTO","Bodega no registrada.");
       const fields = editSchema.omit({ bodegaId: true, version: true }).parse(Object.fromEntries(Object.entries(input).filter(([key]) => !["bodegaId", "version"].includes(key))));
       const count=fields.conteoFisico?fields.conteoFisico.replace(",", "."):null;
@@ -100,14 +122,21 @@ export class NegativeOperations {
         await lockWarehouse(tx, id);
       }
       for (const item of input.casos) {
-        const before = await tx.negativo.findFirst({ where: { id: item.id, bodegaId: input.bodegaId, anuladoAt: null, fusionadoEnId:null } });
+        const before = await tx.negativo.findFirst({ where: { id: item.id, bodegaId: input.bodegaId, anuladoAt: null, fusionadoEnId:null }, include:{producto:{select:{codigoBarra:true}}} });
         if (!before || before.version !== item.version) throw new NegativosError(409, "VERSION", "La selección cambió. Actualice; no se modificó ningún caso.");
         await this.access.caseFields(before.bodegaId,before,input);
+        // Mismas reglas que el expediente individual; ningún caso se modifica si uno falla.
+        const etiqueta=`Código ${before.producto.codigoBarra}: `;
+        if(input.motivo!==undefined){const motivoInvalido=validarMotivoNegativo(input.motivo,before.documentoRelacionado??"",before.motivo??"");if(motivoInvalido)throw new NegativosError(422,"MOTIVO_INVALIDO",etiqueta+motivoInvalido+" Edítelo individualmente.");}
+        const cambio=validarCambioNegativo({antes:{estado:before.estado,conteoFisico:before.conteoFisico?.toFixed(4)??null},despues:{estado:input.estado??before.estado,conteoFisico:before.conteoFisico?.toFixed(4)??null,motivo:input.motivo??before.motivo??"",numeroAjuste:input.numeroAjuste??before.numeroAjuste??"",observaciones:before.observaciones??""}});
+        if(cambio)throw new NegativosError(422,"CAMBIO_NO_PERMITIDO",etiqueta+cambio);
+        if(input.estado==="SOLUCIONADO"&&before.estado==="AJUSTE_REALIZADO")await exigirVerificacion(tx,before,etiqueta);
         if(input.estado&&["AJUSTE_AUTORIZADO","AJUSTE_REALIZADO"].includes(input.estado)&&before.conteoFisico===null)throw new NegativosError(422,"CONTEO_REQUERIDO","Todos los casos seleccionados deben tener conteo antes de aprobar el ajuste.");
         if(input.estado&&["SOLUCIONADO","CERRADO_SIN_AJUSTE"].includes(input.estado)&&!input.motivo&&!before.motivo&&!before.veredicto&&!before.observaciones)throw new NegativosError(422,"CIERRE_INCOMPLETO","Documente la solución de todos los casos antes de cerrar el lote.");
         if(input.estado==="AJUSTE_REALIZADO"&&!input.numeroAjuste&&!before.numeroAjuste)throw new NegativosError(422,"AJUSTE_REQUERIDO","Todos los casos ajustados deben tener un número de ajuste.");
         const after = await tx.negativo.update({ where: { id: item.id }, data: { estado: input.estado, motivo: input.motivo, numeroAjuste: input.numeroAjuste, version: { increment: 1 } } });
-        await operationalHistory(tx, before, after, "ESTADO_MASIVO", "Edición masiva confirmada: " + [input.estado !== undefined && "estado", input.motivo !== undefined && "motivo", input.numeroAjuste !== undefined && "número de ajuste"].filter(Boolean).join(", "),this.access.userId);
+        const beforeCase:{id:string}={...before};delete (beforeCase as Partial<typeof before>).producto;
+        await operationalHistory(tx, beforeCase, after, "ESTADO_MASIVO", "Edición masiva confirmada: " + [input.estado !== undefined && "estado", input.motivo !== undefined && "motivo", input.numeroAjuste !== undefined && "número de ajuste"].filter(Boolean).join(", "),this.access.userId);
       }
       return { modificados: input.casos.length };
     }, { timeout: 30000 });
@@ -204,9 +233,10 @@ export class NegativeOperations {
       const listosEnFoto=await tx.negativo.count({where:{...summaryBase,estado:"AJUSTE_REALIZADO"}});
       const conConteo=Math.max(0,activos-sinConteo-aprobados-listosEnFoto),actuales=sinConteo+conConteo+aprobados+listosEnFoto;
       const pendientesVerificar = await tx.negativo.count({where:{AND:[{bodegaId:scopedId},period],fusionadoEnId:null,anuladoAt:null,estado:"PENDIENTE_VERIFICAR",...productWarehouse,productoId:{notIn:currentProductIds}}});
+      const verificaciones=await verificacionesAjuste(tx,items.filter(n=>n.estado==="AJUSTE_REALIZADO"));
       const workflow=p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?"desaparecidos":countIds.length&&managementIds.length?"mixto":countIds.length?"conteo":"gestion";
       return { total, skip: p.skip, take: p.take, workflow, resumen: { actuales, pendientesVerificar, activos, resueltos, sinConteo, conConteo, aprobados, listosCerrar, totalCasosActivos:allActiveCases.length, totalUnidadesActivas:allActiveUnits.abs().toFixed(4), grupos: { EN_INVESTIGACION: activos - aprobados - listosEnFoto, AJUSTE_AUTORIZADO: aprobados + listosEnFoto, SOLUCIONADO: resueltos }, unidades: units.abs().toFixed(4) }, ultimaConsulta: latest, corteNegativos:activePhoto?{fechaCorte:activePhoto.fechaCorte,tipoCorte:activePhoto.tipoCorte}:null,fotografiaAnterior:previousPhoto?{fechaCorte:previousPhoto.fechaCorte}:null,
-        items: items.map(n => ({ ...n, inconsistenciasActivas:inconsistencyCount.get(n.producto.codigoBarra)??0, workflow:p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?(n.conteoFisico===null?"conteo":"gestion"):workflows.get(n.bodegaId)??"gestion", existenciaActual: currentAmounts.get(n.productoId)?.toFixed(4)??null, existenciaAnterior:previousAmounts.get(n.productoId)?.toFixed(4)??null,comparacionFoto:photoComparison(previousAmounts.get(n.productoId)?.toFixed(4)??null,activePhoto?currentAmounts.get(n.productoId)?.toFixed(4)??null:null,Boolean(previousPhoto),Boolean(activePhoto)) })),
+        items: items.map(n => ({ ...n, inconsistenciasActivas:inconsistencyCount.get(n.producto.codigoBarra)??0, verificacion:verificaciones.get(n.id)??null, workflow:p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?(n.conteoFisico===null?"conteo":"gestion"):workflows.get(n.bodegaId)??"gestion", existenciaActual: currentAmounts.get(n.productoId)?.toFixed(4)??null, existenciaAnterior:previousAmounts.get(n.productoId)?.toFixed(4)??null,comparacionFoto:photoComparison(previousAmounts.get(n.productoId)?.toFixed(4)??null,activePhoto?currentAmounts.get(n.productoId)?.toFixed(4)??null:null,Boolean(previousPhoto),Boolean(activePhoto)) })),
       };
     }, { isolationLevel: "RepeatableRead" });
   }

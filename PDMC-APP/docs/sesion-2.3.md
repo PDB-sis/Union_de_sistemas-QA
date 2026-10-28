@@ -62,9 +62,9 @@ Se registra actor, origen, identificador y antes/después para importación, rec
 
 - Migración aditiva `202609140001_administracion`: `PerfilLaboral`, `VinculoOperativo`, columna `Auditoria.origen`, índice de paginación e inmutabilidad de auditoría. No elimina cuentas, consultas ni expedientes.
 - Página `/administracion`; API `/api/admin/[...path]`; servicio `backend/src/admin/service.ts`. Se reutilizan sesión segura, validación de origen, lectura JSON limitada y errores controlados.
-- `tests/admin.test.mjs`: delegación por permiso/territorio y esquemas estrictos.
-- `tests/admin.integration.mjs`: API protegida, duplicados, temporales y revocación, límites de delegación, versiones, entidades/vínculos, transferencia con rollback, último administrador/concurrencia, auditoría inmutable y operaciones de negativos.
-- `tests/admin.browser.mjs`, ejecutado desde `tests/interfaz.browser.mjs`: alta, edición, bloqueo, reactivación, restablecimiento, creación y vinculación de entidades, asignación territorial persistente y lectura de auditoría.
+- `tests/backend/admin.test.mjs`: delegación por permiso/territorio y esquemas estrictos.
+- `tests/backend/admin.integration.mjs`: API protegida, duplicados, temporales y revocación, límites de delegación, versiones, entidades/vínculos, transferencia con rollback, último administrador/concurrencia, auditoría inmutable y operaciones de negativos.
+- `tests/frontend/admin.browser.mjs`, ejecutado desde `tests/frontend/interfaz.browser.mjs`: alta, edición, bloqueo, reactivación, restablecimiento, creación y vinculación de entidades, asignación territorial persistente y lectura de auditoría.
 - Las pruebas PostgreSQL crean y eliminan esquemas exclusivos; el navegador usa un perfil temporal y cuentas sintéticas. No modifican datos operativos reales.
 
 Comprobaciones reproducibles desde la carpeta del proyecto:
@@ -74,7 +74,7 @@ npm test
 npm run test:integration
 npm run lint
 npm run build
-node tests/interfaz.browser.mjs
+node tests/frontend/interfaz.browser.mjs
 npm run db:status
 npm run db:check
 ```

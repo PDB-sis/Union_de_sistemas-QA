@@ -9,7 +9,7 @@ case "${1:-web}" in
     exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p "${PORT:-3000}"
     ;;
   sync)
-    exec node --conditions=react-server --import tsx scripts/sincronizar-sqlserver.ts
+    exec node --conditions=react-server --import tsx backend/scripts/sincronizar-sqlserver.ts
     ;;
   *)
     exec "$@"

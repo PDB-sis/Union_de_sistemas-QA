@@ -13,7 +13,7 @@ Valida cambios de esquema, migraciones, consultas e integridad de datos sin pone
 2. Comprueba restricciones, claves, nulabilidad, índices, relaciones, unicidad, auditoría y comportamiento ante duplicados o registros históricos.
 3. Para migraciones, valida tanto los objetos que deben existir como los que se retiran, y confirma que los registros vigentes e históricos se preservan según la intención.
 4. Prefiere las comprobaciones seguras existentes: `npm run db:validate`, `npm test` y, cuando haga falta PostgreSQL, `npm run test:integration`. Las unitarias de base de datos usan PGlite en memoria; las de integración usan un esquema de pruebas aislado.
-5. Para SQL Server, revisa `docs/sincronizacion-sqlserver.md` y `tests/sqlserver-solo-lectura.test.mjs`. Las consultas configuradas para sincronización deben ser de solo lectura. Verifica manejo de filas inválidas, ausencia de importación parcial y conservación de datos previos ante error.
+5. Para SQL Server, revisa `docs/sincronizacion-sqlserver.md` y `tests/backend/sqlserver-solo-lectura.test.mjs`. Las consultas configuradas para sincronización deben ser de solo lectura. Verifica manejo de filas inválidas, ausencia de importación parcial y conservación de datos previos ante error.
 6. Usa datos sintéticos y una base local/descartable. Ejecuta solo las operaciones que el caso necesita y confirma el destino antes de cualquier comando que escriba.
 7. Reporta motor y entorno sin revelar host, usuario, cadena de conexión ni datos empresariales; describe las filas afectadas usando conteos o identificadores ficticios.
 

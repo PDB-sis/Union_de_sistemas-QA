@@ -126,7 +126,7 @@ try {
             if (!(Test-Path -LiteralPath '.secrets\compose-desarrollo.yaml')) { throw 'Falta la configuración recuperable de la base de desarrollo.' }
             & docker.exe compose --project-name pdmc-desarrollo --file '.secrets\compose-desarrollo.yaml' up -d --wait --wait-timeout 90 postgres
         } else {
-            & docker.exe compose up -d --wait --wait-timeout 90 postgres
+            & docker.exe compose --file 'docker\compose.yaml' up -d --wait --wait-timeout 90 postgres
         }
         if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL no esta listo.' }
     }

@@ -1,6 +1,6 @@
 # Inventario desde SQL Server
 
-La sección **Carga de inventario** solo aparece al rol Administrador. El inventario ya no se carga con archivos: PDMC ejecuta `sqlserver/consultas/inventario.sql` (copia de `consultaPDMC/INVENTARIO PDMC.SQL`) directamente en SQL Server cada 15 minutos, y el botón **Actualizar desde SQL Server** lo hace en ese momento. Consulte `docs/sincronizacion-sqlserver.md`.
+La sección **Carga de inventario** solo aparece al rol Administrador. El inventario ya no se carga con archivos: PDMC ejecuta `backend/sqlserver/consultas/inventario.sql` (copia de `consultaPDMC/INVENTARIO PDMC.SQL`) directamente en SQL Server cada 15 minutos, y el botón **Actualizar desde SQL Server** lo hace en ese momento. Consulte `docs/sincronizacion-sqlserver.md`.
 
 Cada actualización reemplaza la fotografía vigente, actualiza los expedientes de negativos y, en la primera actualización de cada ventana (lunes a miércoles o jueves a domingo), genera el corte LUNES o JUEVES. Una fila inválida impide sustituir la fotografía vigente; el error se muestra en Administración.
 

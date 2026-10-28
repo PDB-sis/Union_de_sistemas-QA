@@ -52,8 +52,8 @@ No elimina ni transforma inconsistencias existentes. Estas conservan el origen p
 
 ## Verificación
 
-- `tests/tienda.test.mjs`: catálogo, normalización, fechas hábiles y permisos.
-- `tests/tienda.integration.mjs`: sesión, API, territorio, producto, alta simple, cruce atómico, auditoría, idempotencia y rollback.
-- `tests/interfaz.browser.mjs`: recorrido móvil de entrada, reporte guiado, persistencia y transferencias.
+- `tests/shared/tienda.test.mjs`: catálogo, normalización, fechas hábiles y permisos.
+- `tests/backend/tienda.integration.mjs`: sesión, API, territorio, producto, alta simple, cruce atómico, auditoría, idempotencia y rollback.
+- `tests/frontend/interfaz.browser.mjs`: recorrido móvil de entrada, reporte guiado, persistencia y transferencias.
 
 Para instalar esta versión en otro entorno, ejecutar `npm run db:migrate` antes de iniciar el servidor.

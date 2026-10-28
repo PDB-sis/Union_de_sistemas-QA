@@ -95,7 +95,7 @@ npm run test:integration
 npm run typecheck
 npm run lint
 npm run build
-node tests/interfaz.browser.mjs
+node tests/frontend/interfaz.browser.mjs
 npm run db:status
 npm run db:check
 ```

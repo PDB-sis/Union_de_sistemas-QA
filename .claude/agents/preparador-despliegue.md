@@ -24,7 +24,7 @@ Preparas los despliegues de "Unión de Sistemas QA". Lee `contexto.md` (raíz), 
 1. Busca en `Servidor/` `.env*` (salvo `.env.example`), `config.env`, `.secrets/`, `*.pfx`, `*.pem`, `*.key`, `*.dump`, `*.log`, `__pycache__` y `.pytest_cache`. Lista lo que aparezca; no lo envíes sin confirmación de la persona.
 2. Abre los zips del agente con `unzip -l` y comprueba que no contienen `config.env`.
 3. Compara con `diff -rq` `Servidor/PDMC-APP` con `PDMC-APP` y `Servidor/CYSN_QA/backend` con `CYSN_QA/backend`, excluyendo las carpetas anteriores, e informa de las diferencias.
-4. Lista las migraciones nuevas que habrá que aplicar: Prisma (`PDMC-APP/prisma/migrations/`) y CYSN (`CYSN_QA/backend/migrations/NNN_*_up.sql`).
+4. Lista las migraciones nuevas que habrá que aplicar: Prisma (`PDMC-APP/backend/prisma/migrations/`) y CYSN (`CYSN_QA/backend/migrations/NNN_*_up.sql`).
 5. `Servidor.rar` en la raíz es una copia del paquete que contiene secretos: no lo uses para desplegar ni lo envíes. Recomienda borrarlo o cifrarlo.
 6. Si cambió el Caddyfile, comprueba que el bloque `apiqa.apipalacio.com` se fusiona con el resto. `deployment/caddy/README.md` dice que se copie encima, y eso borraría los otros sitios.
 

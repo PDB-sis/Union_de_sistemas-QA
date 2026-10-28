@@ -10,8 +10,13 @@ Esta reorganización no modifica las tablas, los datos ni las rutas públicas.
 frontend/
   components/        Interfaz de cada módulo y componentes visuales
   hooks/             Estado e interacción del navegador
+  lib/               Utilidades del navegador (almacenamiento, imágenes compartibles)
   styles/            Estilos globales y temas
+    vendor/          Base de shadcn/Tailwind incluida sin cambios
 backend/
+  prisma/            Esquema, migraciones PostgreSQL versionadas y datos iniciales
+  scripts/           Usuarios, sincronización con SQL Server y comprobaciones de la base
+  sqlserver/         Consultas de solo lectura a SQL Server (copias de consultaPDMC)
   http/              Implementación de las rutas HTTP por módulo
   src/
     db.ts            Cliente PostgreSQL reutilizable y exclusivo del servidor
@@ -25,12 +30,21 @@ backend/
     facturacion/     Observaciones a los facturadores
     metrics/         Indicadores
     panel/           Preparación de datos para las páginas
+    sync/            Consultas automáticas a SQL Server y carga en PostgreSQL
 shared/              Contratos TypeScript, catálogos y reglas puras
 app/                 Adaptadores de Next.js: páginas, layout y rutas /api
-prisma/              Esquema y migraciones PostgreSQL versionadas
-scripts/             Administración, importadores y verificaciones
-tests/               Pruebas de reglas, integración y permisos
+public/              Archivos públicos (favicon)
+scripts/             Arranque del servidor, red (Tailscale, HTTPS) y verificaciones del proyecto
+tests/
+  backend/           Servicios, rutas API e integración con PostgreSQL
+  shared/            Reglas puras y catálogos
+  frontend/          Recorridos en el navegador
+docker/              Imagen y configuración de PostgreSQL
 ```
+
+`app/`, `public/` y los archivos de configuración (`package.json`, `next.config.ts`,
+`tsconfig.json`, `prisma.config.ts`) se quedan en la raíz porque Next.js y Prisma
+los buscan ahí.
 
 ## Recorrido de una operación
 
@@ -61,24 +75,23 @@ Las cookies, las comprobaciones CSRF y los alcances regionales se conservan.
 `npm run check:architecture` verifica estos límites; también se ejecuta en lint y build.
 `server-only` sigue protegiendo los módulos sensibles frente a importaciones cliente.
 
-## Conexión futura con la base principal
+## Conexión con SQL Server
 
-PostgreSQL sigue siendo la base operativa de PDMC. La lectura corporativa de SQL
-Server se implementará exclusivamente dentro del backend y se invocará desde los
-servicios; el navegador seguirá llamando a las mismas API.
+PostgreSQL sigue siendo la base operativa de PDMC. SQL Server se lee
+exclusivamente desde el backend y en solo lectura; el navegador sigue llamando a
+las mismas API. Los detalles de operación están en `docs/sincronizacion-sqlserver.md`.
 
-Los puntos actuales de entrada son:
+`backend/src/sync/` ejecuta las consultas de `backend/sqlserver/consultas/` y
+entrega las filas a los servicios de cada módulo, que aplican sus validaciones y
+transacciones:
 
-| Fuente | Servicio existente | Entrada actual |
+| Fuente | Servicio | Entrada |
 | --- | --- | --- |
 | Inventario | `backend/src/inventario/service.ts` | `InventoryService.import()` |
 | Transferencias | `backend/src/transferencias/consulta.ts` | `TransferQueryService.import()` |
 | Devoluciones | `backend/src/devoluciones/service.ts` | `ReturnsService.import()` |
-
-Actualmente estas entradas reciben archivos y aplican validaciones y transacciones.
-La integración corporativa deberá reutilizar las reglas del módulo al incorporar
-filas desde SQL Server. Esta reorganización no instala un controlador SQL Server,
-no abre conexiones corporativas y no necesita nuevas credenciales.
+| Tiendas | `backend/src/tienda/catalogo.ts` | `importStoreCatalog()` |
+| Facturadores | `backend/src/facturacion/catalogo.ts` | `importBillerCatalog()` |
 
 ## Ejecución y despliegue
 

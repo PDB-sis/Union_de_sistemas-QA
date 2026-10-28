@@ -84,7 +84,7 @@ No omita la validación del certificado ni utilice HTTP para enviar contraseñas
 - `app/login`, `app/cambiar-contrasena`, `app/api/auth/[action]`: interfaz y endpoints de sesión.
 - `app/page.tsx`: entrada de servidor protegida; `frontend/components/dashboard.tsx`: interfaz con datos autenticados.
 - `backend/src/negativos/http.ts`: sesión obligatoria en todas las rutas existentes.
-- `scripts/crear-usuarios-iniciales.ts`, `scripts/administrar-usuario.ts`: comandos privados.
+- `backend/scripts/crear-usuarios-iniciales.ts`, `backend/scripts/administrar-usuario.ts`: comandos privados.
 - `scripts/servidor-pdmc.mjs`, `scripts/preparar-https.ps1`: transporte HTTPS y certificado local.
 
 ## Verificación
@@ -95,7 +95,7 @@ npm run test:integration
 npm run lint
 npm run typecheck
 npm run build
-node tests/interfaz.browser.mjs
+node tests/frontend/interfaz.browser.mjs
 npm run db:check
 ```
 
