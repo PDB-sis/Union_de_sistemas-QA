@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { CircleAlert, LoaderCircle, LockKeyhole, UserRound } from "lucide-react";
 import { Button } from "@frontend/components/ui/button";
 import { Input } from "@frontend/components/ui/input";
 import { PasswordInput } from "@frontend/components/ui/password-input";
@@ -14,12 +15,19 @@ async function submit(action:string,data:unknown) {
   return result.data;
 }
 export function LoginForm() {
-  const [busy,setBusy]=useState(false),[error,setError]=useState("");
+  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[caps,setCaps]=useState(false);
+  // Campos de 48 px y texto de 16 px: cómodos al tacto y sin zoom automático en iPhone.
+  const field="h-12 rounded-xl pl-11 text-base";
   return <form className="grid gap-5" onSubmit={async e=>{e.preventDefault();const form=e.currentTarget;const data=new FormData(form);setBusy(true);setError("");try{const result=await submit("login",{email:data.get("email"),password:data.get("password")});form.reset();window.location.replace(result.destino);}catch(e){setError(e instanceof Error?e.message:"No se pudo iniciar sesión.");}finally{setBusy(false);}}}>
-    <label className="grid gap-2">Usuario<Input aria-label="Usuario" name="email" autoComplete="username" required minLength={3} maxLength={254} disabled={busy}/></label>
-    <label className="grid gap-2">Contraseña<PasswordInput aria-label="Contraseña" name="password" autoComplete="current-password" required maxLength={128} disabled={busy}/></label>
-    {error&&<p role="alert" className="text-sm text-danger-600 dark:text-danger-300">{error}</p>}
-    <Button type="submit" disabled={busy}>{busy?"Iniciando…":"Iniciar sesión"}</Button>
+    <label className="grid gap-2 text-sm font-semibold">Usuario
+      <span className="relative block"><UserRound aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground"/><Input aria-label="Usuario" name="email" autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="tu.usuario@empresa.com" required minLength={3} maxLength={254} disabled={busy} className={field}/></span>
+    </label>
+    <label className="grid gap-2 text-sm font-semibold">Contraseña
+      <span className="relative block"><LockKeyhole aria-hidden className="pointer-events-none absolute left-3.5 top-1/2 z-10 size-5 -translate-y-1/2 text-muted-foreground"/><PasswordInput aria-label="Contraseña" name="password" autoComplete="current-password" required maxLength={128} disabled={busy} className={field} onKeyUp={e=>setCaps(e.getModifierState("CapsLock"))} onBlur={()=>setCaps(false)}/></span>
+      {caps&&<span role="status" className="text-xs font-medium text-warning-700 dark:text-warning-300">Bloq Mayús está activado.</span>}
+    </label>
+    {error&&<p role="alert" className="flex items-start gap-2 rounded-xl border border-danger-200 bg-danger-50 p-3 text-sm text-danger-800 dark:border-danger-900 dark:bg-danger-950/40 dark:text-danger-200"><CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0"/>{error}</p>}
+    <Button type="submit" disabled={busy} className="h-12 rounded-xl text-base font-semibold">{busy?<><LoaderCircle aria-hidden className="size-5 animate-spin"/>Ingresando…</>:"Iniciar sesión"}</Button>
   </form>;
 }
 export function LogoutButton() {

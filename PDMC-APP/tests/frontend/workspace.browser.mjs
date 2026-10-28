@@ -113,6 +113,11 @@ try {
   await send("Page.addScriptToEvaluateOnNewDocument", {source:"localStorage.setItem('theme','light')"});
   await send("Page.navigate", {url:origin});
   await contains("Iniciar sesión");
+  // Inicio de sesión en PC y en celular, sin desbordes.
+  await capture("login-pc"); await noOverflow();
+  await send("Emulation.setDeviceMetricsOverride",{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await capture("login-movil"); await noOverflow();
+  await send("Emulation.setDeviceMetricsOverride",{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await fill("Usuario", authEmail); await fill("Contraseña",temporaryPassword); await click("Iniciar sesión");
   await contains("Administración nacional");
   await until(()=>evaluate('Boolean(document.querySelector(".workspace-navigation"))'), "No apareció navegación");

@@ -1,9 +1,32 @@
 import { LoginForm } from "@frontend/components/auth/forms";
 import { PdmcLogo, PdmcMark } from "@frontend/components/brand/pdmc-mark";
-import { ClipboardCheck, ScanSearch, Wrench } from "lucide-react";
+import { CircleCheck, LifeBuoy, ShieldCheck } from "lucide-react";
 export const dynamic="force-dynamic";
-const cycle=[["Detectar","Transferencias, negativos e inconsistencias en un solo lugar.",ScanSearch],["Corregir","Responsables, conteos y decisiones documentadas.",Wrench],["Verificar","Cada caso se cierra solo cuando el resultado se confirma.",ClipboardCheck]] as const;
+
+// Una sola composición para celular y PC: la marca arriba y el formulario en una tarjeta.
+// En el celular la tarjeta sube desde abajo y ocupa el resto de la pantalla.
 export default async function Login({searchParams}:{searchParams:Promise<{cambiada?:string}>}) {
   const changed=(await searchParams).cambiada==="1";
-  return <main className="relative grid min-h-screen overflow-hidden bg-background lg:grid-cols-[.95fr_1.05fr]"><section className="relative hidden overflow-hidden bg-[linear-gradient(145deg,var(--brand-deep),var(--brand-ocean))] p-12 text-white lg:flex lg:flex-col lg:justify-between xl:p-16"><div className="absolute -right-24 -top-24 size-96 rounded-full border border-white/10 bg-brand-glow/10"/><div className="absolute -bottom-44 -left-24 size-[30rem] rounded-full border border-white/10"/><PdmcMark className="pointer-events-none absolute -bottom-24 -right-20 size-[26rem] opacity-[.07]"/><PdmcLogo onDark subtitle="Panel de Mejora Continua" className="relative" markClassName="size-12"/><div className="relative max-w-lg"><h2 className="text-4xl font-extrabold leading-[1.08] tracking-[-.035em] xl:text-5xl">Cada caso, de la detección a la verificación.</h2><ol className="mt-10 space-y-5">{cycle.map(([title,text,Icon],index)=><li key={title} className="flex gap-4"><span className="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/12 bg-white/8 text-brand-mist"><Icon className="size-5"/></span><div><p className="font-bold"><span className="mr-2 text-brand-glow tabular-nums">0{index+1}</span>{title}</p><p className="mt-0.5 text-sm leading-6 text-white/60">{text}</p></div></li>)}</ol></div><p className="relative text-xs uppercase tracking-[.18em] text-white/35">Operación nacional · Regiones, bodegas y tiendas</p></section><section className="flex items-center justify-center p-5 sm:p-10"><div className="w-full max-w-md"><PdmcLogo subtitle="Panel de Mejora Continua" className="mb-8 lg:hidden"/><div className="pdmc-surface rounded-3xl border border-border/80 bg-card p-6 sm:p-9"><div className="mb-7"><p className="text-xs font-semibold uppercase tracking-[.14em] text-primary">Acceso</p><h1 className="mt-2 text-3xl font-bold tracking-tight">Iniciar sesión</h1><p className="mt-2 text-sm text-muted-foreground">Ingresa con la cuenta asignada a tu cargo.</p></div>{changed&&<p role="status" className="mb-5 rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800 dark:border-success-900 dark:bg-success-950/40 dark:text-success-200">Contraseña actualizada.</p>}<LoginForm/></div></div></section></main>;
+  return <main className="relative flex min-h-dvh flex-col overflow-hidden bg-[linear-gradient(160deg,var(--brand-night),var(--brand-deep)_45%,var(--brand-ocean))] text-white lg:items-center lg:justify-center lg:p-8">
+    <div aria-hidden className="pointer-events-none absolute inset-0">
+      <div className="absolute -right-32 -top-40 size-[28rem] rounded-full bg-brand-glow/25 blur-3xl"/>
+      <div className="absolute -bottom-48 -left-40 size-[32rem] rounded-full bg-brand-mist/10 blur-3xl"/>
+      <PdmcMark className="absolute -right-28 top-24 size-[22rem] opacity-[.07] lg:-left-32 lg:right-auto lg:top-auto lg:bottom-[-6rem] lg:size-[34rem]"/>
+    </div>
+    <div className="relative z-10 mx-auto flex w-full max-w-md flex-1 flex-col lg:max-w-[28rem] lg:flex-none">
+      <header className="px-6 pb-9 pt-[max(2.75rem,env(safe-area-inset-top))] lg:px-0 lg:pb-8 lg:pt-0 lg:text-center">
+        <PdmcLogo onDark subtitle="Panel de Mejora Continua" className="lg:justify-center lg:text-left" markClassName="size-12"/>
+        <h1 className="mt-9 text-[2rem] font-extrabold leading-tight tracking-[-.03em] text-balance sm:text-4xl">Te damos la bienvenida</h1>
+        <p className="mt-3 max-w-sm text-base leading-relaxed text-white/75 lg:mx-auto">Tiendas, bodegas y equipos de apoyo trabajando con la misma información, cada uno en lo que le corresponde.</p>
+      </header>
+      <section aria-labelledby="titulo-acceso" className="flex-1 rounded-t-[2rem] bg-card px-6 pb-[max(2rem,env(safe-area-inset-bottom))] pt-8 text-card-foreground shadow-[0_-24px_60px_-32px_rgba(0,0,0,.7)] sm:px-8 lg:flex-none lg:rounded-[2rem] lg:p-9 lg:shadow-[0_40px_90px_-40px_rgba(0,0,0,.75)]">
+        <h2 id="titulo-acceso" className="text-xl font-bold tracking-tight">Acceso a tu cuenta</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Usa el usuario y la contraseña asignados a tu cargo.</p>
+        {changed&&<p role="status" className="mt-5 flex items-center gap-2 rounded-xl border border-success-200 bg-success-50 p-3 text-sm text-success-800 dark:border-success-900 dark:bg-success-950/40 dark:text-success-200"><CircleCheck aria-hidden className="size-4 shrink-0"/>Contraseña actualizada. Ingresa con la nueva.</p>}
+        <div className="mt-6"><LoginForm/></div>
+        <p className="mt-7 flex items-start gap-2.5 border-t pt-5 text-xs leading-relaxed text-muted-foreground"><LifeBuoy aria-hidden className="mt-0.5 size-4 shrink-0"/>¿No puedes entrar? Pide ayuda al administrador de tu región o al encargado de tu tienda.</p>
+      </section>
+      <p className="mt-6 hidden items-center justify-center gap-2 text-xs text-white/55 lg:flex"><ShieldCheck aria-hidden className="size-4"/>Conexión segura · Solo para personal autorizado</p>
+    </div>
+  </main>;
 }
