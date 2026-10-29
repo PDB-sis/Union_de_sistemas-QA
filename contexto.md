@@ -392,7 +392,7 @@ robocopy 'C:\temp\Servidor' 'C:\Users\Administrator\Documents\servicios IAN\Serv
 - **GitHub y Docker Hub (2026-10-29):**
   - `PDMC-APP` `main` = `33f6d87` (alcance nacional de Mejora Continua), sobre la reorganización de otra persona (`deb4c3c`: Prisma en `backend/prisma`, pruebas en `tests/`). En el servidor, `npm ci` y las 47 migraciones están al día.
   - `CYSN_QA` `main` = `684a808` (fase 4, ciclos QA con el inventario del agente y mensaje cuando ninguna sucursal tiene inventario de agente).
-  - `PDB-sis/Union_de_sistemas-QA` `main`: la copia pública generada con `deployment/exportar_github.py`, con las Releases del agente `v2026.10.26` y `v2026.10.28` (`NexoQAAgente-20261028.zip`, con la tarea `creacion`).
+  - `PDB-sis/Union_de_sistemas-QA` `main`: la copia pública generada con `deployment/exportar_github.py`, con la Release del agente `v2026.10.26`. **Falta la Release `v2026.10.28`** con `Servidor/NexoQAAgente-20261028.zip` (tarea `creacion`).
   - Docker Hub: imágenes `sistemaspdb/*` en `2026.10.29` y `latest` (sección 5.5).
 - **Fin de línea:** con `core.autocrlf=true`, cambiar de rama reescribe los `.sql` con CRLF y la prueba de copias exactas falla. Si pasa, se vuelve a copiar el archivo desde `consultaPDMC/`.
 
