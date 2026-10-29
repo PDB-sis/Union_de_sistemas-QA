@@ -464,3 +464,113 @@ def test_ejecucion_huerfana_queda_abortada(db):
         )
     _sync(db, BASE)
     assert _ejecuciones(db)[0].estado == "ABORTADA"
+
+
+# ------------------------------------------------------------
+# Fuente AGENTE (fase 4): lo que envió el agente del PC de creación
+# ------------------------------------------------------------
+
+CONFIG_AGENTE = ConfigSync(**{**CONFIG.__dict__, "fuente": "AGENTE", "dim_id_creacion": 2010, "espera_agente_segundos": 120})
+
+DDL_AGENTE_FILA = """
+CREATE TABLE public.agente_fila (
+    id BIGSERIAL PRIMARY KEY, dim_id_tienda INTEGER NOT NULL, tarea VARCHAR(30) NOT NULL,
+    clave VARCHAR(400) NOT NULL, datos JSONB NOT NULL, fila_hash CHAR(64) NOT NULL,
+    activo BOOLEAN NOT NULL DEFAULT TRUE, ultimo_snapshot_id UUID NULL,
+    recibido_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT agente_fila_tarea_check CHECK (tarea IN ('transferencias', 'devoluciones', 'usuarios')),
+    UNIQUE (dim_id_tienda, tarea, clave)
+)
+"""
+
+
+def _como_agente(fila):
+    """Los datos como los envía qa_agent (task_value): todo texto, BIT como 'true'/'false'."""
+    def valor(v):
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return format(v.normalize(), "f") if isinstance(v, Decimal) else str(v)
+    return {k: valor(v) for k, v in fila.items()}
+
+
+@pytest.fixture()
+def db_agente(db):
+    with db.begin() as conn:
+        conn.exec_driver_sql("DROP TABLE IF EXISTS public.agente_fila")
+        conn.exec_driver_sql(DDL_AGENTE_FILA)
+    _ejecutar_sql(db, MIGRACIONES / "007_agente_creacion_up.sql")
+    return db
+
+
+def _enviar(engine, filas, *, dim=2010, hace="10 minutes", activo=True):
+    import json
+
+    with engine.begin() as conn:
+        for fila in filas:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO public.agente_fila (dim_id_tienda, tarea, clave, datos, fila_hash, activo, recibido_at)
+                    VALUES (:dim, 'creacion', :clave, CAST(:datos AS JSONB), repeat('a', 64), :activo, now() - CAST(:hace AS interval))
+                    ON CONFLICT (dim_id_tienda, tarea, clave) DO UPDATE SET
+                        datos = EXCLUDED.datos, activo = EXCLUDED.activo, recibido_at = EXCLUDED.recibido_at
+                    """
+                ),
+                {"dim": dim, "clave": fila["CodigoBarra"], "datos": json.dumps(_como_agente(fila)), "activo": activo, "hace": hace},
+            )
+
+
+def _sync_agente(engine, **kwargs):
+    return worker.ejecutar_sincronizacion(engine=engine, config=CONFIG_AGENTE, **kwargs)
+
+
+def test_agente_carga_lo_enviado_y_luego_no_repite(db_agente):
+    _enviar(db_agente, BASE)
+    _enviar(db_agente, [_origen("999999999")], dim=2004)  # otro sitio: no cuenta
+    r = _sync_agente(db_agente)
+    assert (r.estado, r.insertados, r.inactivados) == ("EXITOSA", 3, 0)
+    assert set(_vigentes(db_agente)) == {"111111111", "222222222", "333333333"}
+    assert _vigentes(db_agente)["111111111"].precio_detal_usd_mas_iva == Decimal("2.32")
+    assert _vigentes(db_agente)["111111111"].status_origen == "true"
+    # Sin envíos nuevos: no se registra otra ejecución.
+    antes = len(_ejecuciones(db_agente))
+    assert _sync_agente(db_agente).estado == "SIN_CAMBIOS"
+    assert len(_ejecuciones(db_agente)) == antes
+
+
+def test_agente_mismos_valores_que_sql_server_no_cuentan_cambios(db_agente):
+    assert _sync(db_agente, BASE).insertados == 3
+    _enviar(db_agente, BASE)
+    r = _sync_agente(db_agente)
+    assert (r.estado, r.insertados, r.actualizados, r.inactivados) == ("EXITOSA", 0, 0, 0)
+
+
+def test_agente_cambio_y_baja(db_agente):
+    _enviar(db_agente, BASE)
+    _sync_agente(db_agente)
+    _enviar(db_agente, [_origen("111111111", PrecioDetalUSDMasIVA=Decimal("3.00"))], hace="5 minutes")
+    _enviar(db_agente, [_origen("333333333")], hace="5 minutes", activo=False)
+    r = _sync_agente(db_agente)
+    assert (r.estado, r.actualizados, r.inactivados) == ("EXITOSA", 1, 1)
+    assert _vigentes(db_agente)["111111111"].precio_detal_usd_mas_iva == Decimal("3.00")
+    assert "333333333" not in _vigentes(db_agente)
+
+
+def test_agente_sin_datos_o_enviando_se_omite(db_agente):
+    r = _sync_agente(db_agente)
+    assert r.estado == "OMITIDA" and "todavía no ha enviado" in r.error
+    _enviar(db_agente, BASE, hace="10 seconds")
+    r = _sync_agente(db_agente)
+    assert r.estado == "OMITIDA" and "está enviando" in r.error
+    assert _vigentes(db_agente) == {}
+
+
+def test_agente_conserva_el_limite_de_bajas(db_agente):
+    _enviar(db_agente, BASE)
+    _sync_agente(db_agente)
+    _enviar(db_agente, BASE[1:], hace="5 minutes", activo=False)
+    with pytest.raises(worker.ControlSeguridadError):
+        _sync_agente(db_agente)
+    assert len(_vigentes(db_agente)) == 3

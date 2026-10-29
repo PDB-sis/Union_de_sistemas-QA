@@ -194,6 +194,20 @@ def test_consultas_son_copias_exactas_de_consultapdmc(original, copia):
     assert (CONSULTAS / copia).read_bytes() == (ORIGINALES / original).read_bytes()
 
 
+def test_consulta_creacion_es_copia_exacta_del_worker():
+    worker = Path(__file__).resolve().parents[2] / "app" / "sync" / "sql" / "creacion_origen.sql"
+    assert (CONSULTAS / "creacion.sql").read_bytes() == worker.read_bytes()
+
+
+def test_tarea_creacion_por_codigo_barra_y_de_solo_lectura(qa_agent):
+    assert qa_agent.tareas({"TAREAS": "creacion"}) == ["creacion"]
+    assert qa_agent.TAREAS["creacion"] == ("creacion.sql", ("CodigoBarra",))
+    # Empieza con comentarios y ";WITH": se acepta, pero sigue rechazando una segunda instrucción.
+    qa_agent.assert_read_only((CONSULTAS / "creacion.sql").read_text(encoding="utf-8-sig"))
+    with pytest.raises(RuntimeError):
+        qa_agent.assert_read_only(";WITH x AS (SELECT 1 AS a) SELECT a FROM x; DELETE FROM INVENTARIO")
+
+
 def test_consulta_se_busca_junto_a_config(qa_agent, tmp_path):
     (tmp_path / "consultas").mkdir()
     (tmp_path / "consultas" / "usuarios.sql").write_text("﻿SELECT CodUsuario, NombreUsuario FROM USUARIOS", encoding="utf-8")

@@ -1,7 +1,8 @@
-"""Recepción de las tareas de PDMC (transferencias, devoluciones y usuarios) que envían los agentes de bodega.
+"""Recepción de las tareas que envían los agentes: transferencias, devoluciones y usuarios (bodegas, para PDMC)
+y creacion (PC de creación, para CYSN).
 
 Las filas se guardan en bruto, por sitio (dimID_Tienda), tarea y clave, en agente_fila. PDMC las procesa
-después con sus propios importadores (fase 3b). Nunca se borra: lo que desaparece del origen queda inactivo.
+después con sus propios importadores (fase 3b) y CYSN con app.sync.creacion (fase 4). Nunca se borra: lo que desaparece del origen queda inactivo.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from app.routers.agente_tienda import _autenticar_agente
 
 router = APIRouter(prefix="/api/agente/v1", tags=["agente-tienda"])
 
-Tarea = Literal["transferencias", "devoluciones", "usuarios"]
+Tarea = Literal["transferencias", "devoluciones", "usuarios", "creacion"]
 
 
 class FilaAgente(BaseModel):
@@ -91,7 +92,7 @@ def recibir_filas(
     if dim_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="El agente no tiene sitio (dimID_Tienda): no puede enviar transferencias, devoluciones ni usuarios.",
+            detail="El agente no tiene sitio (dimID_Tienda): no puede enviar filas de tareas.",
         )
 
     def respuesta(**valores) -> FilasAgenteResponse:

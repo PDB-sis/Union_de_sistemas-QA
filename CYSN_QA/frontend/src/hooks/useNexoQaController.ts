@@ -481,18 +481,14 @@ async function cargarDatos() {
     setError(null);
 
 
-    const [
-        estado,
-        listaEjecuciones,
-    ] = await Promise.all([
-        obtenerEstadoSistema(),
-        obtenerEjecuciones(),
-    ]);
+    // El estado de API y PostgreSQL se muestra aunque fallen las ejecuciones.
+    obtenerEstadoSistema()
+        .then(setEstadoSistema)
+        .catch(() => setEstadoSistema(null));
 
 
-    setEstadoSistema(
-        estado
-    );
+    const listaEjecuciones =
+        await obtenerEjecuciones();
 
 
     setEjecuciones(

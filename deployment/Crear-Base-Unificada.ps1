@@ -101,7 +101,7 @@ try {
     $temporaryMigrationDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("nexoqamigrations-" + [guid]::NewGuid())
     New-Item -ItemType Directory -Path $temporaryMigrationDirectory -Force | Out-Null
     try {
-        foreach ($name in @('001_creacion_sync_up.sql', '002_creacion_corte_up.sql', '003_agentes_tienda_up.sql', '004_sitios_dim_tienda_up.sql', '005_agente_por_sitio_up.sql', '006_agente_filas_up.sql')) {
+        foreach ($name in @('001_creacion_sync_up.sql', '002_creacion_corte_up.sql', '003_agentes_tienda_up.sql', '004_sitios_dim_tienda_up.sql', '005_agente_por_sitio_up.sql', '006_agente_filas_up.sql', '007_agente_creacion_up.sql')) {
             $source = Join-Path $PSScriptRoot "..\CYSN_QA\backend\migrations\$name"
             if (-not (Test-Path -LiteralPath $source)) { throw "Falta la migración $source" }
             $sql = [System.IO.File]::ReadAllText($source)

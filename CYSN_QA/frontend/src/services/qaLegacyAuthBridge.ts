@@ -37,10 +37,13 @@ function esEndpointQaLegacy(
       window.location.origin
     );
 
+    // La API puede publicarse bajo un prefijo (p. ej. https://apiqa.apipalacio.com/qa).
+    const prefijo = apiBase.pathname.replace(/\/+$/, "");
+
     return (
       urlPeticion.origin === apiBase.origin
       && urlPeticion.pathname.startsWith(
-        "/api/qa/"
+        `${prefijo}/api/qa/`
       )
     );
   } catch {

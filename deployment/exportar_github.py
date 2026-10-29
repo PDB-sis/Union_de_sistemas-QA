@@ -61,7 +61,7 @@ def limpiar_documentacion(destino: Path) -> None:
     if inicio != -1 and fin != -1:
         texto = (texto[:inicio] + "\n## 7. Seguridad\n\n> La auditoría de seguridad y su plan de acción **no se publican** "
                  "en este repositorio público. Se mantienen en la copia interna de `contexto.md`.\n\n---\n" + texto[fin:])
-    texto = re.sub(r"\n- ⚠️ \*\*`CYSN_QA` tiene versionados[^\n]*\n", "\n", texto)
+    texto = re.sub(r"\r?\n- ⚠️ \*\*`CYSN_QA` (tiene versionados|dejó de versionar)[^\n]*\n", "\n", texto)
     texto = texto.replace("(auditoría de seguridad en la sección 7; agentes de Claude Code en la sección 8)",
                           "(agentes de Claude Code en la sección 8)")
     contexto.write_text(texto, encoding="utf-8")

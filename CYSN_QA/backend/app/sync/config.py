@@ -93,10 +93,20 @@ class ConfigSync:
     espera_reintento_segundos: int
     max_bajas_porcentaje: Decimal
     min_filas_validas: int
+    # SQLSERVER: lee CREACION directamente. AGENTE: lee lo que envió el agente del
+    # PC de creación (agente_fila, tarea creacion) del sitio dim_id_creacion.
+    fuente: str = "SQLSERVER"
+    dim_id_creacion: int = 2010
+    # Segundos sin envíos del agente antes de procesar (que termine de enviar).
+    espera_agente_segundos: int = 120
 
 
 def cargar_config() -> ConfigSync:
     port = os.getenv("CYSN_SQLSERVER_PORT")
+    fuente = os.getenv("CYSN_CREACION_FUENTE", "SQLSERVER").strip().upper()
+
+    if fuente not in ("SQLSERVER", "AGENTE"):
+        raise ValueError("CYSN_CREACION_FUENTE debe ser SQLSERVER o AGENTE.")
 
     sqlserver = ConfigSqlServer(
         enabled=_bool("CYSN_SQLSERVER_ENABLED", False),
@@ -129,4 +139,7 @@ def cargar_config() -> ConfigSync:
             os.getenv("CYSN_SYNC_MAX_BAJAS_PORCENTAJE", "20")
         ),
         min_filas_validas=_int("CYSN_SYNC_MIN_FILAS_VALIDAS", 1),
+        fuente=fuente,
+        dim_id_creacion=_int("CYSN_CREACION_DIM_ID", 2010),
+        espera_agente_segundos=_int("CYSN_CREACION_ESPERA_AGENTE_SEGUNDOS", 120),
     )

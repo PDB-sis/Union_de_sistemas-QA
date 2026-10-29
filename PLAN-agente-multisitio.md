@@ -136,6 +136,8 @@ Cada fase se despliega y se valida antes de pasar a la siguiente.
 
 **2b-2 (pendiente):** inventario y negativos por cada sitio en la pantalla, cuando haya más sitios con agente.
 
+**CYSN, ciclos QA desde el agente (2026-10-28, pendiente de desplegar):** al marcar un ciclo `LISTO_QA`, cada sucursal `PENDIENTE` toma su inventario de `inventario_agente_actual` como carga `VALIDADO` (`app/services/inventario_agente_service.py`, 3 pruebas de integración en `tests/qa/`). Sustituye a la carga de CSV, ya retirada. Si falta el inventario de alguna sucursal, no se cambia nada y se informa cuál.
+
 ### Fase 3: bodegas (transferencias, devoluciones, usuarios)
 1. El agente aprende las tareas `transferencias`, `devoluciones` y `usuarios`, con un endpoint `POST /api/agente/v1/filas` (por tarea, por lotes e idempotente, como el de inventario).
 2. Migraciones de PDMC: `origenId` y las claves únicas por sitio.
@@ -167,6 +169,14 @@ Cada fase se despliega y se valida antes de pasar a la siguiente.
 3. Se retira el worker central de CREACION, que nunca pudo conectar.
 
 **Listo cuando:** `cysn_qa.creacion` se actualiza sola desde el PC de creación.
+
+**Programada y probada en local (2026-10-28); pendiente de desplegar e instalar:**
+- **Sitio:** CREACION, dimID 2010, con `TAREAS=creacion` y `SQL_DATABASE=CREACION`.
+- **Agente:** tarea `creacion` con `consultas/creacion.sql`, copia exacta de `app/sync/sql/creacion_origen.sql`, y clave `CodigoBarra`. `assert_read_only` acepta el `;WITH` inicial.
+- **API y migración 007:** `agente_fila` acepta `tarea = 'creacion'`; la reversión se niega si ya hay filas.
+- **Worker:** `app.sync.creacion` con `CYSN_CREACION_FUENTE=AGENTE` lee `agente_fila` del sitio `CYSN_CREACION_DIM_ID` y aplica `normalizar_filas` y los mismos controles (0 filas y límite de bajas). Espera `CYSN_CREACION_ESPERA_AGENTE_SEGUNDOS` (120) sin envíos para no procesar uno a medias, y no registra ejecución si la firma (activas + último `recibido_at`) no cambió.
+- **`Inicio-servicios-IAN.bat`:** paso 12/12, el worker en bucle con la fuente `AGENTE`.
+- **Pruebas:** 2 del agente y 5 de integración del worker. Pasan 162 de 162, con las 21 de integración de CREACION, que antes se saltaban por falta de base de pruebas.
 
 ### Fase 5: despliegue a todos los sitios
 1. **Alta masiva:** `app.agentes crear-lote` genera, por cada sitio de `tbDimTiendas`, su `config.env` con código, token y tareas según el tipo.

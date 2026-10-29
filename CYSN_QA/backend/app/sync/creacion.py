@@ -13,6 +13,10 @@ Uso (desde la carpeta backend):
     python -m app.sync.creacion                      # una sincronización real
     python -m app.sync.creacion --loop               # servicio continuo
 
+Fuente (CYSN_CREACION_FUENTE): SQLSERVER lee CREACION directamente; AGENTE lee lo que
+envió el agente del PC de creación (agente_fila, tarea creacion, sitio CYSN_CREACION_DIM_ID)
+y aplica la misma normalización y los mismos controles (fase 4 de PLAN-agente-multisitio.md).
+
 Garantías:
 - Toda la escritura en __CYSN_SCHEMA__.creacion ocurre en UNA transacción; ante
   cualquier error se revierte y queda la fotografía anterior.
@@ -375,6 +379,62 @@ def _leer_origen_con_reintentos(
 
 
 # ============================================================
+# Fuente AGENTE: lo que envió el agente del PC de creación
+# ============================================================
+
+
+_SQL_ESTADO_AGENTE = text(
+    """
+    SELECT count(*) FILTER (WHERE activo) AS activas,
+           max(recibido_at) AS ultimo,
+           COALESCE(now() - max(recibido_at) < make_interval(secs => :espera), FALSE) AS enviando
+    FROM __CYSN_SCHEMA__.agente_fila
+    WHERE tarea = 'creacion' AND dim_id_tienda = :dim
+    """
+)
+
+_SQL_ULTIMA_FIRMA = text(
+    """
+    SELECT E.detalle ->> 'firma_agente'
+    FROM __CYSN_SCHEMA__.sincronizacion_estado S
+    JOIN __CYSN_SCHEMA__.sincronizacion_ejecucion E ON E.id = S.ultimo_exito_ejecucion_id
+    WHERE S.proceso = :proceso
+    """
+)
+
+
+def _estado_agente(conn: Connection, config: ConfigSync) -> tuple[int, str, bool]:
+    """Filas activas, firma barata (activas + último recibido) y si el agente sigue enviando."""
+    fila = conn.execute(
+        _SQL_ESTADO_AGENTE,
+        {"dim": config.dim_id_creacion, "espera": config.espera_agente_segundos},
+    ).one()
+    ultimo = fila.ultimo.isoformat() if fila.ultimo else ""
+    return int(fila.activas), f"{fila.activas}|{ultimo}", bool(fila.enviando)
+
+
+def leer_agente(
+    engine: Engine, config: ConfigSync
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Filas activas del agente con las columnas de creacion_origen.sql (texto)."""
+    with engine.connect() as conn:
+        filas = list(
+            conn.execute(
+                text(
+                    """
+                    SELECT datos FROM __CYSN_SCHEMA__.agente_fila
+                    WHERE tarea = 'creacion' AND dim_id_tienda = :dim AND activo
+                    ORDER BY id
+                    """
+                ),
+                {"dim": config.dim_id_creacion},
+            ).scalars()
+        )
+
+    return filas, {"fuente": "AGENTE", "dim_id_tienda": config.dim_id_creacion}
+
+
+# ============================================================
 # Carga en staging y aplicación de diferencias
 # ============================================================
 
@@ -644,7 +704,14 @@ def ejecutar_sincronizacion(
     config = config or cargar_config()
     engine = engine or crear_engine()
 
-    if leer_origen is None:
+    desde_agente = leer_origen is None and config.fuente == "AGENTE"
+
+    if desde_agente:
+
+        def leer_origen() -> tuple[list[dict[str, Any]], dict[str, Any]]:
+            return leer_agente(engine, config)
+
+    elif leer_origen is None:
         if not config.sqlserver.enabled:
             raise ConfiguracionError(
                 "CYSN_SQLSERVER_ENABLED=false: la sincronización está deshabilitada."
@@ -672,6 +739,28 @@ def ejecutar_sincronizacion(
         try:
             _verificar_esquema(conn, dry_run=dry_run)
             conn.commit()
+
+            if desde_agente:
+                activas, firma, enviando = _estado_agente(conn, config)
+                ultima_firma = conn.execute(_SQL_ULTIMA_FIRMA, {"proceso": PROCESO}).scalar()
+                conn.commit()
+
+                if activas == 0 or enviando:
+                    resumen.estado = "OMITIDA"
+                    resumen.error = (
+                        f"El agente del PC de creación (dimID {config.dim_id_creacion}) "
+                        + ("todavía no ha enviado datos." if activas == 0 else "está enviando; se procesa cuando termine.")
+                    )
+                    logger.info(resumen.error)
+                    return resumen
+
+                if not forzar and not dry_run and firma == ultima_firma:
+                    resumen.estado = "SIN_CAMBIOS"
+                    logger.debug("Sin envíos nuevos del agente desde la última sincronización.")
+                    return resumen
+
+                if not dry_run:
+                    resumen.detalle["firma_agente"] = firma
 
             resumen.ejecucion_id = _registrar_inicio(engine, resumen.modo)
             logger.info(

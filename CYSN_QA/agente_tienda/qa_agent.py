@@ -154,11 +154,13 @@ def run_once(c:dict[str,str]) -> dict:
 # consultaPDMC/) y envía a /api/agente/v1/filas las filas nuevas o cambiadas y las que desaparecieron.
 TAREAS={"transferencias":("transferencias.sql",("Numero","CodigoBarra","NumeroCaja")),
         "devoluciones":("devoluciones.sql",("Numero",)),
-        "usuarios":("usuarios.sql",("CodUsuario",))}
+        "usuarios":("usuarios.sql",("CodUsuario",)),
+        # PC de creación (fase 4): copia exacta de backend/app/sync/sql/creacion_origen.sql.
+        "creacion":("creacion.sql",("CodigoBarra",))}
 # Misma regla que PDMC (backend/src/sync/solo-lectura.ts): SQL Server solo se lee.
 WRITE_SQL=re.compile(r"\b(insert|update|delete|merge|truncate|drop|alter|create|exec|execute|grant|revoke|deny|backup|restore|dbcc|shutdown|kill|openrowset|opendatasource|openquery|bulk|into|waitfor)\b",re.I)
 def assert_read_only(text:str) -> None:
-    s=re.sub(r"/\*[\s\S]*?\*/"," ",text); s=re.sub(r"--[^\r\n]*"," ",s); s=re.sub(r"'(?:[^']|'')*'","''",s); s=re.sub(r"\[[^\]]*\]","[]",s).strip()
+    s=re.sub(r"/\*[\s\S]*?\*/"," ",text); s=re.sub(r"--[^\r\n]*"," ",s); s=re.sub(r"'(?:[^']|'')*'","''",s); s=re.sub(r"\[[^\]]*\]","[]",s).strip().lstrip(";").strip()
     if not re.match(r"(with|select)\b",s,re.I): raise RuntimeError("La consulta debe empezar con SELECT o WITH: SQL Server solo se lee.")
     m=WRITE_SQL.search(s)
     if m: raise RuntimeError(f'La consulta contiene "{m.group(1).upper()}": SQL Server solo se lee.')

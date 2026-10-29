@@ -33,6 +33,15 @@ GRANT SELECT ON dbo.DEVTRANSFERENCIAS TO nexoqa_agente;
 GRANT SELECT ON dbo.USUARIOS          TO nexoqa_agente;
 ```
 
+## Tarea del PC de creación: creacion
+
+En el PC de creación (sitio CREACION, dimID 2010), `config.env` lleva `TAREAS=creacion` y `SQL_DATABASE=CREACION`.
+
+- **Ejecuta `consultas/creacion.sql`,** copia exacta de `backend/app/sync/sql/creacion_origen.sql` (la consulta del antiguo flujo n8n). Si se cambia, hay que cambiarla en los dos sitios.
+- **Envía a `POST /api/agente/v1/filas`** una fila por `CodigoBarra`, solo lo nuevo o cambiado, y lo que desaparece como baja. Se guarda en `cysn_qa.agente_fila` con `tarea = 'creacion'`.
+- **En el servidor, el worker `python -m app.sync.creacion --loop`** con `CYSN_CREACION_FUENTE=AGENTE` lo pasa a `cysn_qa.creacion` con la misma limpieza y los mismos controles de antes: no hace nada con 0 filas y se detiene si se darían de baja más del 20 %. Espera a que el agente lleve 2 minutos sin enviar, para no procesar un envío a medias.
+- El usuario de solo lectura necesita `SELECT` sobre `INVENTARIO`, `MARCAS`, `CATEGORIAS`, `TASA_CAMBIO` y `PARAMETROS` de la base `CREACION`.
+
 ## Instalar en un sitio (tienda o bodega)
 
 Se usa la carpeta compilada `dist\NexoQAAgenteTienda` (no hace falta instalar Python):

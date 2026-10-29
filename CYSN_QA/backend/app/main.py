@@ -161,6 +161,9 @@ from app.services.inventario_csv_service import (
     analizar_csv_inventario,
     extraer_detalles_csv_inventario,
 )
+from app.services.inventario_agente_service import (
+    tomar_inventarios_pendientes,
+)
 
 from app.schemas.qa_correccion import (
     QACorreccionResponse,
@@ -2184,6 +2187,32 @@ def marcar_ciclo_listo_qa(
             detail=(
                 "Solo se puede marcar LISTO_QA un ciclo "
                 "que esté en estado RECEPCION."
+            ),
+        )
+
+    # Las sucursales sin carga toman ahora el inventario que envió su agente
+    # (la carga de CSV está retirada). Todo o nada: si falta alguna, no se cambia nada.
+    try:
+        sin_agente = tomar_inventarios_pendientes(
+            db,
+            ciclo_id=ciclo.id,
+            usuario_id=_acceso[0].id,
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible tomar el inventario de los agentes.",
+        )
+
+    if sin_agente:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "No se puede pasar el ciclo a LISTO_QA porque estas "
+                "sucursales no tienen inventario enviado por su agente: "
+                f"{', '.join(sin_agente)}. Instale el agente o quítelas del ciclo."
             ),
         )
 

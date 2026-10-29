@@ -48,7 +48,7 @@ SELECT a.codigo, a.activo,
   LEFT JOIN cysn_qa.sucursal s ON s.id = a.sucursal_id
  WHERE COALESCE(a.dim_id_tienda, s.dim_id_tienda) = $DimId;
 
-\echo '=== 2. Envíos recibidos por la API (lotes) ==='
+\echo '=== 2. Envios recibidos por la API (lotes) ==='
 WITH ag AS (
   SELECT a.id FROM cysn_qa.agente_sucursal a LEFT JOIN cysn_qa.sucursal s ON s.id = a.sucursal_id
    WHERE COALESCE(a.dim_id_tienda, s.dim_id_tienda) = $DimId),
@@ -115,7 +115,7 @@ SELECT (SELECT nombre FROM sitio), 'inventario',
                  (SELECT count(*) FROM cysn_qa.inventario_agente_actual WHERE dim_id_tienda = $DimId AND activo AND nombre_categoria IS NOT NULL) THEN 'OK'
             ELSE 'DIFERENTE' END;
 
-\echo '=== 5. Sincronizaciones automáticas de PDMC ==='
+\echo '=== 5. Sincronizaciones automaticas de PDMC ==='
 SELECT modulo,
        to_char("ultimoExitoEn", 'DD/MM/YYYY HH24:MI:SS') AS ultimo_exito,
        to_char("ultimoIntentoEn", 'DD/MM/YYYY HH24:MI:SS') AS ultimo_intento,

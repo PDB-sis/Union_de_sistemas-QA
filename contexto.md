@@ -1,7 +1,7 @@
 # Contexto del proyecto: Unión de Sistemas QA
 
 > Documento de referencia para personas y agentes que trabajen en este espacio.
-> Última revisión: 2026-10-23 (agentes de Claude Code en la sección 8).
+> Última revisión: 2026-10-28 (fases 1 a 4 del agente multisitio en marcha con MARACAIBO y CREACION; frontends en Netlify; auditoría de seguridad en la sección 7; agentes de Claude Code en la sección 8).
 
 ---
 
@@ -17,7 +17,7 @@
 Ambos sistemas comparten:
 - **Base unificada** con un esquema por sistema: `pdmc` y `cysn_qa`.
 - **Acceso único (SSO)**: PDMC emite un JWT de un solo uso que CYSN QA canjea (`/api/qa-sso` en PDMC → intercambio en CYSN).
-- **Origen corporativo** en SQL Server, siempre consultado en **solo lectura**.
+- **Origen corporativo** en SQL Server, siempre consultado en **solo lectura**. Desde el 2026-10-26 los datos llegan a PostgreSQL **solo por los agentes** de cada sitio; la única excepción es el catálogo de sitios (`BODEGA_DATOS`).
 
 ---
 
@@ -26,15 +26,21 @@ Ambos sistemas comparten:
 ### Vista general
 
 ```text
-SQL Server corporativo (GDC_CASA_MATRIZ, CREACION)        SQL Server de cada tienda (BD_SPDV)
-        │ solo lectura                                              │ solo lectura
-        ▼                                                           ▼
- PDMC (Next.js, sincronizador interno)        CYSN backend (worker app.sync.creacion)   Agente de tienda (servicio Windows)
-        │                                              │                                    │ HTTPS → apiqa.apipalacio.com
-        ▼                                              ▼                                    ▼
- PostgreSQL ── base `sistemas_unificados` ── esquema `pdmc`  |  esquema `cysn_qa`  ◄── API CYSN (FastAPI, 127.0.0.1:5082)
-                                                                                         ▲
-                                                                                    Caddy (HTTPS público)
+SQL Server de cada sitio (solo lectura)                          SQL Server central
+  Bodega       GDC_CASA_MATRIZ (MARACAIBO 2004, SERVERSQL\SQL2005)   BODEGA_DATOS.tbDimTiendas
+  PC creación  CREACION        (2010, SERVERSQL\SQLSERVER2005)            │ solo lectura
+  Tienda       BD_SPDV                                                    │
+        │                                                                ▼
+ Agente NexoQAAgenteTienda (servicio Windows por sitio)           Sincronizador PDMC (SUCURSALES)
+        │ HTTPS + token → apiqa.apipalacio.com/api/agente/v1              │
+        ▼                                                                ▼
+ API CYSN (127.0.0.1:5082) ─► cysn_qa.agente_fila / inventario_agente_actual
+                                   ├─► Sincronizador PDMC ─► esquema pdmc (transferencias, devoluciones,
+                                   │                          facturadores, inventario)
+                                   └─► Worker app.sync.creacion ─► cysn_qa.creacion
+ PostgreSQL 18 ── base `sistemas_unificados` (esquemas `pdmc` y `cysn_qa`)
+
+Navegador ─► Netlify: sistemaunionqa (reenvía a PDMC) · nexoqa-pdb (NEXO QA) ─► Caddy (HTTPS) ─► PDMC 5083 / API 5082
 ```
 
 ### PDMC-APP
@@ -66,18 +72,24 @@ SQL Server corporativo (GDC_CASA_MATRIZ, CREACION)        SQL Server de cada tie
 
 ### Infraestructura (`deployment/`)
 
-- **Servidor:** Windows, carpeta `C:\Users\Administrator\Documents\servicios IAN\ServicioQA\` (`PDMC-APP\` y `CYSN_QA\backend\`). Es un servidor **compartido**: `Inicio-servicios-IAN.bat` arranca 11 servicios (precio, precio Margarita, Exporter, ExporterCompras, Tasa, pdbStore, rotación, servicio China y, en los pasos 9 a 11, NEXO QA, PDMC y el sincronizador de PDMC). Al empezar detiene todos los procesos con PID guardado.
+- **Servidor:** Windows, carpeta `C:\Users\Administrator\Documents\servicios IAN\ServicioQA\` (`PDMC-APP\` y `CYSN_QA\backend\`). Es un servidor **compartido**: `Inicio-servicios-IAN.bat` arranca 12 servicios (precio, precio Margarita, Exporter, ExporterCompras, Tasa, pdbStore, rotación, servicio China y, en los pasos 9 a 12, NEXO QA, PDMC, el sincronizador de PDMC y el worker de CREACION). Al empezar detiene todos los procesos con PID guardado.
+  - ⚠️ El `.bat` con el que se arranca el servidor **no es** el de `ServicioQA\deployment\`, sino otra copia; el 2026-10-28 se le añadió a mano el paso 12. Si se cambia el `.bat` del proyecto, hay que copiarlo también sobre esa copia.
 - **Procesos de este proyecto en el servidor:**
   - API QA: Uvicorn en `127.0.0.1:5082`; logs en `CYSN_QA\backend\logs\qa-api.*.log`.
   - PDMC: `next start -H 127.0.0.1 -p 5083`; logs en `PDMC-APP\logs\pdmc.*.log`. No usa `npm start`, porque `servidor-pdmc.mjs` exige el 443, que es de Caddy.
-  - Sincronizador PDMC: módulos `SUCURSALES,FACTURADORES,TRANSFERENCIAS,DEVOLUCIONES`; el **inventario no se sincroniza solo** en el servidor. Logs en `PDMC-APP\logs\sync.*.log`.
+  - Sincronizador PDMC: módulos `SUCURSALES,FACTURADORES,TRANSFERENCIAS,DEVOLUCIONES,INVENTARIO`. Solo `SUCURSALES` lee SQL Server; el resto lee lo que envían los agentes. Logs en `PDMC-APP\logs\sync.*.log`.
+  - Worker CREACION (paso 12): `python -m app.sync.creacion --loop` con `CYSN_CREACION_FUENTE=AGENTE` y `CYSN_CREACION_DIM_ID=2010`, variables puestas en el propio `.bat`. PID en `pids\nexoqa-creacion.pid` y registro en `CYSN_QA\backend\logs\creacion.*.log`.
 - **Caddy** publica los dos sistemas en un solo dominio, `apiqa.apipalacio.com`:
   - `/api/agente/*` y `/api/health` → API QA (5082), sin prefijo, para no reconfigurar las tiendas.
   - `/qa/*` → API QA, quitando el prefijo (`/qa/api/auth/login` llega como `/api/auth/login`).
   - Todo lo demás → PDMC (5083).
   - El Caddyfile real (`Servidor/deployment/caddy/Caddyfile`) contiene también `api`, `api2`, `api3` y `api4`: el bloque `Caddyfile.apiqa` se **fusiona**, no se copia encima.
+- **Netlify** (desde el 2026-10-27). Los dos sitios están conectados a `PDB-sis/Union_de_sistemas-QA`, rama `main`:
+  - `https://sistemaunionqa.netlify.app` → **PDMC, la entrada principal**. Base directory `deployment/netlify-pdmc`, que solo tiene un `netlify.toml` que reenvía todo a `https://apiqa.apipalacio.com`. PDMC sigue ejecutándose en el servidor; no se puede separar porque sus páginas se generan en el servidor con Prisma. Límite: Netlify corta las peticiones reenviadas que tardan más de unos 26 s.
+  - `https://nexoqa-pdb.netlify.app` → **NEXO QA**. Base directory `CYSN_QA/frontend` (su `netlify.toml` fija Node 22, `dist` y la redirección de la SPA) y `VITE_API_URL=https://apiqa.apipalacio.com/qa`.
+  - En el servidor: `PDMC_AUTH_ADDITIONAL_ORIGINS=https://sistemaunionqa.netlify.app` y `PDMC_QA_SSO_DESTINATION=https://nexoqa-pdb.netlify.app` en `PDMC-APP\.env.local`, y `CYSN_CORS_ORIGINS=https://nexoqa-pdb.netlify.app` en `CYSN_QA\backend\.env`. Las tres líneas están también en `Servidor/`, para que coincidan. Si cambia una dirección de Netlify, hay que cambiarla en los dos sitios y reiniciar.
 - Scripts PowerShell para crear la base unificada y levantar el backend QA.
-- Docker solo para PostgreSQL local de PDMC (imagen `sistemaspdb/pdmc-postgres:2026.10.06`, basada en `postgres:17`).
+- Docker: instalación completa con `compose.yaml` e imágenes `sistemaspdb/*` (sección 5.5). PDMC local puede seguir usando su propio PostgreSQL 17 en Docker.
 
 ### Versiones de PostgreSQL
 
@@ -143,7 +155,9 @@ Union de sistemas QA/
 │   ├── agente_tienda/     Agente Windows por sucursal
 │   └── aportes/           Material de referencia (export de n8n, consultas originales)
 ├── consultaPDMC/          Consultas SQL Server originales (fuente de verdad de backend/sqlserver/consultas/)
-├── deployment/            Crear-Base-Unificada.ps1, Iniciar-Backend-QA.ps1, caddy/, requirements
+├── deployment/            Crear-Base-Unificada.ps1, Aplicar-Migracion-CYSN.ps1, Iniciar-Backend-QA.ps1,
+│                          Revisar-Datos-Bodega.ps1, exportar_github.py, caddy/, netlify-pdmc/, requirements
+├── docker/ + compose.yaml Imágenes de Docker Hub (sección 5.5)
 ├── backups/               Dumps de estructura y unificada/ (scripts 00–03 de la base unificada)
 ├── logs/                  Logs de ejecución de PDMC y CYSN
 └── Servidor/              Paquete que se despliega en el servidor (ver abajo)
@@ -182,7 +196,7 @@ npm ci
 # Secreto de PostgreSQL y contenedor (puerto local 127.0.0.1:55432)
 New-Item -ItemType Directory -Force .secrets
 Set-Content -LiteralPath .secrets\postgres-password -Value "CLAVE_SEGURA" -NoNewline
-docker compose up -d
+docker compose --file docker/compose.yaml up -d
 
 Copy-Item .env.example .env.local   # completar DATABASE_URL y PDMC_AUTH_ORIGIN
 npm run db:migrate                  # prisma migrate deploy (nunca migrate reset)
@@ -228,10 +242,12 @@ python -m venv .venv
 .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 5082 --reload
 # Salud: GET http://127.0.0.1:5082/api/health
 
-# Worker de sincronización CREACION
+# Worker de sincronización CREACION. Fuente: CYSN_CREACION_FUENTE=AGENTE (lo que envía el
+# agente del sitio CYSN_CREACION_DIM_ID, por defecto 2010) o SQLSERVER (conexión directa, la anterior)
 .venv\Scripts\python -m app.sync.creacion --loop --intervalo 60
 
-# Pruebas
+# Pruebas (162). Las 26 de integración de CREACION necesitan una base desechable cuyo nombre contenga "test":
+#   $env:CYSN_SYNC_POSTGRES_SCHEMA='public'; $env:CYSN_TEST_DATABASE_URL='postgresql+psycopg://postgres:CLAVE@127.0.0.1:PUERTO/cysn_qa_test'
 .venv\Scripts\python -m pytest tests
 
 # Frontend
@@ -256,22 +272,34 @@ Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `pu
 ### 5.5 Docker (instalación completa desde cero)
 
 - **Qué hay:** `compose.yaml` en la raíz levanta cuatro imágenes publicadas en Docker Hub (`sistemaspdb/*`, públicas, sin datos ni secretos):
-  - `postgres-unificada`: PostgreSQL 18 con los esquemas `pdmc` y `cysn_qa`, la estructura y las migraciones 001-006 de CYSN, y sus catálogos (roles y tipos de diferencia);
+  - `postgres-unificada`: PostgreSQL 18 con los esquemas `pdmc` y `cysn_qa`, la estructura y **todas** las migraciones `*_up.sql` de CYSN (el Dockerfile las toma solas), y sus catálogos (roles y tipos de diferencia);
   - `pdmc`: la web, que aplica las migraciones al arrancar, y también el sincronizador;
   - `nexoqa-api`;
   - `nexoqa-web`: nginx, que reenvía `/api/` a la API.
 - **Dónde está cada cosa:** los Dockerfiles en `docker/`, la guía en `DOCKER.md` y la configuración en `.env.example`, que se copia a `.env`.
-- **Cómo se publica una versión:** `docker compose build` y después `docker compose push`, con `VERSION` (la primera es `2026.10.26` y `latest`).
+- **Cómo se publica una versión:** desde el clon limpio de `Union_de_sistemas-QA`, `docker compose build` y después `docker compose push`, con `VERSION`. Para construir, `compose` exige `POSTGRES_PASSWORD`, `SSO_SECRET` y `NEXOQA_JWT_SECRET`; basta con valores de relleno, porque no quedan en las imágenes.
+  - **Versiones publicadas:** `2026.10.26` y `2026.10.27` (esta también como `latest`). La `2026.10.27` lleva la fusión de PDMC (restablecimiento y fotografías) y `CYSN_CORS_ORIGINS`, pero **no** la fase 4 (migración 007 y worker con fuente `AGENTE`), que es del 2026-10-28.
 - **Probado el 2026-10-26 desde cero:** migraciones, usuarios iniciales, inicio de sesión en los dos sistemas y una transferencia enviada por un agente hasta PDMC.
 - **Comandos nuevos para Docker:** `python -m app.crear_administrador` crea el primer administrador de NEXO QA. El sincronizador de PDMC corre aunque `PDMC_SQLSERVER_ENABLED=false`, porque ese valor solo afecta al catálogo de sitios. Y si todavía no hay datos de ningún agente, la carga queda `SIN_CAMBIOS` con un aviso, no `FALLIDA`.
 - **Hueco abierto:** sin acceso a `BODEGA_DATOS`, una instalación nueva no tiene catálogo de sitios, y no se pueden registrar agentes.
 
 ### 5.4 Despliegue en servidor
 
+**Copia del paquete (siempre así):** borrar `C:\temp\Servidor`, copiar la carpeta `Servidor/` (sin comprimir) a `C:\temp\Servidor` y ejecutar:
+
+```powershell
+robocopy 'C:\temp\Servidor' 'C:\Users\Administrator\Documents\servicios IAN\ServicioQA' /E /XD .git .secrets __pycache__ .pytest_cache generated /XF .env .env.local config.env /NFL /NDL /NP
+```
+
+- **`generated` excluido:** `Servidor/PDMC-APP/generated` era un cliente Prisma viejo, del 2026-10-19, que pisaba el del servidor. El sincronizador falló con «Unknown argument `dimIdTienda`». Tras un despliegue con cambios en `schema.prisma`, hay que ejecutar en el servidor `npx prisma generate` en `PDMC-APP`.
+- **`.env`, `.env.local` y `config.env` excluidos:** el 2026-10-27 el `robocopy` pisó los del servidor y se perdieron las líneas de Netlify. Los cambios de `.env` se hacen a mano en el servidor y también en `Servidor/`.
+- **Comprobación:** códigos SHA-256 de los archivos cambiados y la columna ERROR del resumen en 0. Después, reiniciar con el `.bat` (ver sección 2).
+- **Revisión de datos:** `deployment\Revisar-Datos-Bodega.ps1 [-DimId 2004]`. Solo lee. Muestra el último contacto del agente, los envíos, lo guardado en `cysn_qa`, la comparación con PDMC y el estado de las sincronizaciones de PDMC.
+
 1. **Backend QA:** `deployment\Iniciar-Backend-QA.ps1 [-SincronizarCreacion]` (crea venv, instala dependencias, levanta Uvicorn en `127.0.0.1:5082`, verifica `/api/health`).
 2. **Caddy:** añadir `deployment/caddy/Caddyfile.apiqa` al Caddyfile, `caddy validate` y `caddy reload`. Puertos 80/443 abiertos; backend solo en localhost.
 3. **PDMC:** `npm ci && npm run db:migrate && npm run build && npm start` con `.env.local` del servidor.
-4. **Agentes de tienda:** aplicar la migración 003 con `deployment\Aplicar-Migracion-CYSN.ps1 -Migracion 003_agentes_tienda_up.sql`, registrar cada tienda con `python -m app.agentes crear --sucursal-id <id>` (desde `CYSN_QA\backend`; muestra el token una sola vez) y seguir `CYSN_QA/agente_tienda/README.md`.
+4. **Agentes:** cada migración de CYSN se aplica con `deployment\Aplicar-Migracion-CYSN.ps1 -Migracion 00X_..._up.sql -PgBin 'C:\Program Files\PostgreSQL\18\bin'`. En el servidor están aplicadas de la 001 a la 007. Cada sitio se registra con `python -m app.agentes crear --dim-id <dimID> [--codigo ...]`, desde `CYSN_QA\backend`; muestra el token una sola vez. Después se sigue `CYSN_QA/agente_tienda/README.md`. El servicio del sitio se instala desde PowerShell **como administrador**; sin eso da «Acceso denegado (5)».
 
 ---
 
@@ -285,6 +313,7 @@ Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `pu
 - Contraseñas temporales: 12–128 caracteres, vencen en 48 h y deben cambiarse en el primer acceso.
 - **SSO PDMC → CYSN:** JWT HS256, `iss=pdmc-app`, `aud=cysn-qa`, `typ=pdmc_sso`, vigencia ≤ 60 s, `jti` de un solo uso; secreto ≥ 32 caracteres (`PDMC_QA_SSO_SECRET` = `CYSN_PDMC_SSO_SECRET`). Roles permitidos por defecto: `ADMINISTRADOR`, `MEJORA_CONTINUA`.
 - La API de CYSN escucha solo en `127.0.0.1`; la exposición pública es exclusivamente vía Caddy con HSTS.
+- **Orígenes permitidos:** la API de CYSN acepta `localhost:5173` y los orígenes de `CYSN_CORS_ORIGINS` (separados por comas). PDMC acepta `PDMC_AUTH_ORIGIN` y los de `PDMC_AUTH_ADDITIONAL_ORIGINS` (HTTPS, sin ruta). Sin ellos, Netlify recibe CORS 400 o `ORIGEN` 403.
 
 ### SQL Server: siempre solo lectura
 - Usuarios dedicados con únicamente `GRANT SELECT` (sin `db_datawriter`, `db_owner`, `EXECUTE` ni DDL).
@@ -332,22 +361,36 @@ Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `pu
 
 ### Puntos pendientes / a vigilar
 - Puerto del backend QA: el valor vigente es **`5082`** (`Caddyfile.apiqa`, `Iniciar-Backend-QA.ps1` y `deployment/caddy/README.md`, corregido el 2026-10-19; antes decía `8001`).
-- **Dominio público:** PDMC ya se sirve en la raíz de `https://apiqa.apipalacio.com` (ver sección 2). El frontend React de QA todavía no tiene hosting definido. Su `dist/` actual se compiló contra `http://127.0.0.1:8001`, así que hay que recompilarlo antes de publicarlo.
-- **SSO PDMC → QA en el servidor:** `PDMC_QA_SSO_DESTINATION` no está configurado en `Servidor/PDMC-APP/.env.local`, así que redirige a `http://localhost:5173` y en producción no funciona. Debe apuntar al origen HTTPS del frontend de QA cuando exista.
+- **Dominio público:** PDMC se sirve en la raíz de `https://apiqa.apipalacio.com` y en `https://sistemaunionqa.netlify.app`, y el frontend de QA en `https://nexoqa-pdb.netlify.app` (sección 2).
+- **SSO PDMC → QA:** `PDMC_QA_SSO_DESTINATION=https://nexoqa-pdb.netlify.app`, configurado el 2026-10-27. **Falta probar** el botón de QA con un usuario real.
+- **Usuarios de PDMC en el servidor (2026-10-27):** un administrador (estaba `INVITADO` con la contraseña temporal caducada) y la cuenta de sistema `sincronizacion@pdmc.local`. La contraseña temporal se repone con `npm run administrar-usuario` (`PDMC_ADMIN_ACTOR_EMAIL`, `PDMC_ADMIN_USUARIO_EMAIL`, `PDMC_ADMIN_MOTIVO`, `PDMC_ADMIN_PASSWORD_TEMPORAL`). `psql` no está en el PATH del servidor: está en `C:\Program Files\PostgreSQL\18\bin`.
 - **Migración 003 de CYSN (agentes de tienda):** aplicada en el servidor (ya estaba; confirmado el 2026-10-21) y en la base unificada local (Docker `postgres-unificada-local`, puerto 55434, aplicada el 2026-10-21).
 - **Multisitio (2026-10-21):** cada tienda (`BD_SPDV`, más de 60), cada bodega (`GDC_CASA_MATRIZ`, más de 2) y el PC de creación (`CREACION`) tienen su propio SQL Server. Lo único central es `BODEGA_DATOS` (catálogo de sitios; el identificador es `tbDimTiendas.dimID_Tienda`). Hoy PDMC solo lee una bodega. El plan está en `PLAN-agente-multisitio.md`. La fase 1 (catálogo de sitios por `dimID`) quedó desplegada el 2026-10-22: 59 sitios en PDMC y 47 sucursales de CYSN enlazadas. Feria de las Gorras y Giraldug no se enlazan porque no están en `tbDimTiendas`.
 - **Despliegue al servidor:** nunca reemplazar las carpetas `PDMC-APP` ni `CYSN_QA` enteras, porque se pierden `node_modules`, `.next` y `.venv` (ocurrió 3 veces el 2026-10-21 y el 2026-10-22). Hay que copiar a `C:\temp\Servidor` y usar `robocopy … /E`.
-- **Regla de datos (2026-10-26):** PDMC y CYSN solo leen de PostgreSQL. Los datos de SQL Server llegan por los agentes; la única excepción es `BODEGA_DATOS.tbDimTiendas`, el catálogo de sitios. Hoy PDMC todavía saca transferencias, devoluciones, facturadores e inventario de `SERVERDOS\SERVERSQL_DOS`, que tiene una **copia de `GDC_CASA_MATRIZ` parada el 2026-08-14**. Por eso esos datos de PDMC están desactualizados hasta que se completen las fases 3b y 2b de `PLAN-agente-multisitio.md`.
-- **Fase 2b-1 (2026-10-26, pendiente de desplegar):** el inventario de PDMC sale del agente del sitio `PDMC_INVENTARIO_DIM_ID` (por defecto 2004). Solo entran los productos **activos** y con categoría; los **inactivos no se envían por decisión revisable** (cómo añadirlos: `PLAN-agente-multisitio.md`, fase 2). Al desplegarla, PDMC solo consulta SQL Server para `SUCURSALES` (`BODEGA_DATOS`).
+- **Regla de datos (2026-10-26), cumplida desde el 2026-10-27:** PDMC y CYSN solo leen de PostgreSQL. Los datos de SQL Server llegan por los agentes; la única excepción es `BODEGA_DATOS.tbDimTiendas`, el catálogo de sitios. PDMC ya no lee `SERVERDOS\SERVERSQL_DOS`, que tiene una **copia de `GDC_CASA_MATRIZ` parada el 2026-08-14**; falta avisar a sistemas.
+- **Fase 2b-1 (desplegada el 2026-10-27):** el inventario de PDMC sale del agente del sitio `PDMC_INVENTARIO_DIM_ID` (por defecto 2004): 18.813 productos el 2026-10-28, los mismos en el agente y en PDMC. La primera fotografía de negativos ya está publicada. Solo entran los productos **activos** y con categoría; los **inactivos no se envían por decisión revisable** (cómo añadirlos: `PLAN-agente-multisitio.md`, fase 2).
 - **Fase 3b (desplegada el 2026-10-26):** el sincronizador de PDMC toma `FACTURADORES`, `TRANSFERENCIAS` y `DEVOLUCIONES` de `cysn_qa.agente_fila` (`PDMC_AGENTE_SCHEMA`), una carga por bodega. Las transferencias y devoluciones guardan `origenId` y su número es único por bodega (migración `20261026120000_origen_bodega`). El botón "Actualizar ahora" y el recuadro "Sincronizaciones automáticas" de Administración ya no dicen "SQL Server". Las copias de `PDMC-APP/backend/sqlserver/consultas/` de esos tres módulos dejan de usarse; se conservan como referencia.
-- **Fase 3a (2026-10-26):** el agente tiene tareas de bodega (`TAREAS=inventario,transferencias,devoluciones,usuarios`). Las consultas van en `agente_tienda/consultas/`: es la **tercera copia** de `consultaPDMC/`, junto con `PDMC-APP/backend/sqlserver/consultas/`. Los datos se reciben en `cysn_qa.agente_fila` (migración 006, endpoint `POST /api/agente/v1/filas`), y se comparan con PDMC con `python -m app.comparar_sitio --dim-id 2004`. Está pendiente de desplegar en el servidor y en la bodega Maracaibo.
+- **Fase 3a (2026-10-26):** el agente tiene tareas de bodega (`TAREAS=inventario,transferencias,devoluciones,usuarios`). Las consultas van en `agente_tienda/consultas/`: es la **tercera copia** de `consultaPDMC/`, junto con `PDMC-APP/backend/sqlserver/consultas/`. Los datos se reciben en `cysn_qa.agente_fila` (migración 006, endpoint `POST /api/agente/v1/filas`), y se comparan con PDMC con `python -m app.comparar_sitio --dim-id 2004`. Desplegada el 2026-10-26 en el servidor y en la bodega MARACAIBO. El 2026-10-28 coincidían 3.473 transferencias (hasta la 82220) y 387 devoluciones.
+- **Fase 4, CREACION (desplegada el 2026-10-28):**
+  - **Sitio:** CREACION (dimID 2010), agente `AGT-CREACION`, en el PC de creación. Lee `SERVERSQL\SQLSERVER2005`, base `CREACION`, con el usuario `nexoqa_agente`, y `TAREAS=creacion`. El servicio de SQL Server de ese PC (`MSSQL$SERVER`) es otro y no tiene esa base.
+  - **Agente:** la consulta es `agente_tienda/consultas/creacion.sql`, copia exacta de `backend/app/sync/sql/creacion_origen.sql`. Envía una fila por `CodigoBarra` a `agente_fila` (`tarea = 'creacion'`, migración 007).
+  - **Worker:** `app.sync.creacion` con la fuente `AGENTE` aplica la misma normalización y los mismos controles: aborta con 0 filas o si las bajas superan el 20 %. Espera 120 s sin envíos antes de procesar y no registra ejecución si no llegó nada nuevo.
+  - **Primera carga:** 210.593 filas → **169.029 vigentes** en `cysn_qa.creacion`. Se descartaron 41.564 por código de barras no válido (menos de 9 caracteres o con algo que no son dígitos), la misma regla que n8n; falta revisar una muestra.
+- **Bodega MARACAIBO:** el 26/10, de 16:10 a 12:27 del día siguiente, el agente no corrió porque el PC estaba apagado. Al volver, la reconciliación de transferencias dio `timeout` una vez y se recuperó en el siguiente ciclo. Los PC de los sitios deben estar siempre encendidos y sin suspensión. En CREACION se usa `HTTP_TIMEOUT=120`.
+- **Agente `SUC-015` (dimID 1017):** registrado pero nunca conectado; desactivarlo si no se va a usar.
+- **Ciclos QA con el inventario del agente (2026-10-28, pendiente de desplegar):** la carga de CSV de las sucursales ya estaba retirada en el código (responde 410) y nada ponía las sucursales en `VALIDADO`, así que ningún ciclo podía llegar a `LISTO_QA`. Ahora, al **marcar el ciclo «listo para QA»**, cada sucursal `PENDIENTE` toma una fotografía de su `inventario_agente_actual` (por `sucursal_id` o por su `dim_id_tienda`) como una carga `VALIDADO` más (`app/services/inventario_agente_service.py`). El motor QA no cambia. Es todo o nada: si una sucursal no tiene inventario de agente, responde 409 con su nombre y no cambia nada. Hoy solo hay agentes de tienda de prueba, así que la prueba real llega con la fase 5.
 - **Agente por sitio (2026-10-22):** la migración 005 de CYSN permite agentes de bodega (solo con `dimID`, sin sucursal de CYSN) y añade la `linea` al inventario. La bodega MARACAIBO (2004) envía su inventario como `AGT-BODEGA-MARACAIBO`. El agente solo guarda los productos **activos**, mientras que el inventario central de PDMC incluye también los inactivos; hay que decidirlo en la fase 2b.
 - **Latido del agente (2026-10-21):** la API tiene un endpoint nuevo, `POST /api/agente/v1/latido`, y el agente lo llama en cada ciclo sin cambios. Así `ultimo_contacto_at` indica que el agente está vivo. El `.exe` nuevo está en `CYSN_QA/agente_tienda/dist/` y en `Servidor/NexoQAAgenteTienda-20261021.zip`. El agente `PRUEBA-CM` (sucursal 59) ya enviaba 7.442 productos con el `.exe` anterior.
 - **API QA en el servidor:** su `.venv` se creó el 2026-10-21 en `ServicioQA\CYSN_QA\backend`. Antes de esa fecha la API nunca había corrido en el servidor.
 - En `CYSN_QA/backend/.env` local, `DATABASE_HOST=localhost` hace que la conexión se quede colgada: Docker solo escucha en IPv4. Hay que usar `127.0.0.1`.
 - Las sucursales de `cysn_qa.sucursal` no tienen `codigo`: se identifican por `id` o `nombre`.
 - Puede quedar la carpeta vacía `.integracion-pdmc/`, que pertenece a otro usuario de Windows: borrarla a mano con permisos de administrador.
-- `CYSN_QA` tiene un único commit (2026-10-06) y unos 67 cambios sin confirmar; `PDMC-APP` tiene cambios sin confirmar en devoluciones y la migración `20261019120000_devoluciones_estado_aprobada`. `Servidor/` ya incluye esos cambios.
+- **GitHub (2026-10-27):**
+  - `PDMC-APP` `main` = `5e263d7`: fusión de `integracion-version-nueva` con los cambios de otra persona (restablecimiento administrativo y comparación de fotografías). La migración `20261019150000_restablecimiento_protegido` **no está aún en el servidor**.
+  - `CYSN_QA` `main` = `76e7c45` (CORS para Netlify).
+  - `PDB-sis/Union_de_sistemas-QA` `main` = `a15fb17`, la copia pública generada con `deployment/exportar_github.py`, más la Release `v2026.10.26` del agente.
+  - **La fase 4 (2026-10-28) todavía no está subida** ni a GitHub ni a Docker Hub; el agente nuevo está en `Servidor/NexoQAAgente-20261028.zip`.
+- **Fin de línea:** con `core.autocrlf=true`, cambiar de rama reescribe los `.sql` con CRLF y la prueba de copias exactas falla. Si pasa, se vuelve a copiar el archivo desde `consultaPDMC/`.
 
 ---
 
