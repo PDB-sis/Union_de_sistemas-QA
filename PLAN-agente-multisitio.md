@@ -185,6 +185,8 @@ Cada fase se despliega y se valida antes de pasar a la siguiente.
 4. Una pantalla de estado de los agentes, en PDMC o en CYSN.
 5. Se instala por tandas: 5 sitios, revisión, el resto.
 
+**Primera tienda piloto (2026-10-29): LIBERTAD (CALIDOSO, dimID 1011),** agente `AGT-LIBERTAD`, `TAREAS=inventario` y usuario `nexoqa_agente` con `SELECT` sobre las 5 tablas del inventario de `BD_SPDV`. Envió 12.721 productos activos de 25.885. NEXO QA ya hace sus ciclos QA con ese inventario, sin CSV. Pasos de instalación: `contexto.md`, sección 5.4, y `CYSN_QA/agente_tienda/README.md`.
+
 ## 6. Riesgos y puntos abiertos
 
 | Riesgo | Mitigación |

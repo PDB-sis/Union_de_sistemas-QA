@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { roles, type Rol } from "@shared/auth/model";
+import { roles, rolesConAlcanceNacional, type Rol } from "@shared/auth/model";
 import { Button } from "@frontend/components/ui/button";
 import { SincronizacionEstado } from "@frontend/components/admin/sincronizacion";
 import { Input } from "@frontend/components/ui/input";
@@ -50,13 +50,17 @@ function GrantEditor({value,onChange,disabled}:{value:Grant[];onChange:(g:Grant[
   const [rol,setRol]=useState<Rol>("AUDITORIA"),[region,setRegion]=useState(""),[regionLabel,setRegionLabel]=useState(""),[store,setStore]=useState(""),[storeLabel,setStoreLabel]=useState("");
   const stores=useList<Entity>("entidades?clase=ubicaciones&tipo=TIENDA&take=1");
   const add=(next:Grant)=>{if(!value.some(g=>g.rol===next.rol&&g.ubicacionId===next.ubicacionId))onChange([...value,next])};
-  const isAdmin=rol==="ADMINISTRADOR";
+  const [nacional,setNacional]=useState(false);
+  const isAdmin=rol==="ADMINISTRADOR",puedeNacional=rolesConAlcanceNacional.includes(rol),sinRegion=isAdmin||(puedeNacional&&nacional);
   return <fieldset disabled={disabled} className="space-y-4 rounded-xl border p-4"><legend className="px-1 font-medium">Roles y región operativa</legend>{disabled&&<p className="text-sm text-muted-foreground">Otro administrador debe autorizar cambios en sus propios accesos.</p>}
     {value.length===0&&<p className="text-sm">Sin accesos asignados.</p>}
     {value.map((g,i)=><div key={`${g.rol}:${g.ubicacionId}`} className="flex items-center justify-between gap-2 rounded-lg bg-muted p-2 text-sm"><span>{g.rol==="TIENDA"?"Cuenta de tienda":roles[g.rol]} · {g.ubicacionId?(g.ubicacion?.nombre??g.ubicacionId):"Nacional"}</span><Button type="button" variant="ghost" onClick={()=>onChange(value.filter((_,n)=>n!==i))}>Quitar</Button></div>)}
-    <div className="rounded-xl border bg-card p-3"><p className="mb-3 text-sm font-semibold">Acceso administrativo u operativo</p><select aria-label="Rol a asignar" className={selectClass} value={rol} onChange={e=>{setRol(e.target.value as Rol);setRegion("")}}>{operationalRoles.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
-      {isAdmin?<p className="mt-2 text-xs text-muted-foreground">El administrador general tiene alcance nacional.</p>:<div className="mt-3"><Picker label="Región obligatoria" path="entidades?clase=ubicaciones&tipo=REGION" value={region} onChange={(id,label)=>{setRegion(id);setRegionLabel(label)}}/></div>}
-      <Button className="mt-3" type="button" variant="outline" disabled={disabled||(!isAdmin&&!region)} onClick={()=>add({rol,ubicacionId:isAdmin?null:region,ubicacion:isAdmin?null:{nombre:regionLabel,codigo:"",tipo:"REGION"}})}>Agregar rol</Button>
+    <div className="rounded-xl border bg-card p-3"><p className="mb-3 text-sm font-semibold">Acceso administrativo u operativo</p><select aria-label="Rol a asignar" className={selectClass} value={rol} onChange={e=>{setRol(e.target.value as Rol);setRegion("");setNacional(false)}}>{operationalRoles.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
+      {isAdmin?<p className="mt-2 text-xs text-muted-foreground">El administrador general tiene alcance nacional.</p>:<>
+        {puedeNacional&&<label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={nacional} onChange={e=>{setNacional(e.target.checked);setRegion("")}}/>Alcance nacional (todas las regiones)</label>}
+        {!nacional&&<div className="mt-3"><Picker label={puedeNacional?"Región":"Región obligatoria"} path="entidades?clase=ubicaciones&tipo=REGION" value={region} onChange={(id,label)=>{setRegion(id);setRegionLabel(label)}}/></div>}
+      </>}
+      <Button className="mt-3" type="button" variant="outline" disabled={disabled||(!sinRegion&&!region)} onClick={()=>add({rol,ubicacionId:sinRegion?null:region,ubicacion:sinRegion?null:{nombre:regionLabel,codigo:"",tipo:"REGION"}})}>Agregar rol</Button>
     </div>
     {!stores.loading&&stores.data.total>0&&<div className="rounded-xl border border-primary/20 bg-primary/5 p-3"><p className="font-semibold">Cuenta vinculada a tienda</p><p className="mb-3 text-xs text-muted-foreground">El acceso queda limitado a una tienda registrada y hereda su región.</p><Picker label="Tienda" path="entidades?clase=ubicaciones&tipo=TIENDA" value={store} onChange={(id,label)=>{setStore(id);setStoreLabel(label)}}/><Button className="mt-3" type="button" variant="outline" disabled={disabled||!store} onClick={()=>add({rol:"TIENDA",ubicacionId:store,ubicacion:{nombre:storeLabel,codigo:"",tipo:"TIENDA"}})}>Vincular cuenta de tienda</Button></div>}
   </fieldset>;

@@ -170,7 +170,10 @@ test("cuenta temporal: hash, unicidad sin distinción de mayúsculas, cambio obl
   const a=await user(),password=secret(),email=`${randomUUID()}@example.test`;
   const region=await a.service.createEntity({codigo:randomUUID(),nombre:"Región de cuenta",tipo:"REGION",motivo});
   const store=await a.service.createEntity({codigo:randomUUID(),nombre:"Tienda de cuenta",tipo:"TIENDA",ubicacionId:region.id,motivo});
-  await assert.rejects(a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Sin región",passwordTemporal:secret(),asignaciones:[{rol:"MEJORA_CONTINUA",ubicacionId:null}],motivo}),{status:422,code:"REGION"});
+  // Mejora Continua puede tener alcance nacional; el resto de roles operativos exige región.
+  await assert.rejects(a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Sin región",passwordTemporal:secret(),asignaciones:[{rol:"JEFE_BODEGA",ubicacionId:null}],motivo}),{status:422,code:"REGION"});
+  const nacional=await a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Mejora Continua nacional",passwordTemporal:secret(),asignaciones:[{rol:"MEJORA_CONTINUA",ubicacionId:null}],motivo});
+  assert.deepEqual(nacional.asignaciones.map(g=>[g.rol,g.ubicacionId]),[["MEJORA_CONTINUA",null]]);
   await assert.rejects(a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Tienda mal enlazada",passwordTemporal:secret(),asignaciones:[{rol:"TIENDA",ubicacionId:region.id}],motivo}),{status:422,code:"TIENDA"});
   const input={email,nombre:"Temporal",passwordTemporal:password,asignaciones:[{rol:"TIENDA",ubicacionId:store.id}],motivo};
   const response=await api("usuarios",a,input);assert.equal(response.status,200);const created=(await response.json()).data;

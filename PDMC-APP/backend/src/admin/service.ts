@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
-import { roles, type Rol } from "../../../shared/auth/model";
+import { roles, rolesConAlcanceNacional, type Rol } from "../../../shared/auth/model";
 import { allows, hasPermission, permissionMatrix, type Permission, type Grant } from "../../../shared/auth/permissions";
 import { AuthError, emailSchema } from "../auth/service";
 import { hashPassword, passwordSchema, verifyPassword } from "../auth/password";
@@ -64,7 +64,8 @@ export class Administration {
       if(g.ubicacionId&&!location)throw new AuthError(422,"UBICACION","La ubicación no existe.");
       if(g.rol==="ADMINISTRADOR"&&location)throw new AuthError(422,"ALCANCE","El administrador general debe tener alcance nacional.");
       if(g.rol==="TIENDA"&&location?.tipo!=="TIENDA")throw new AuthError(422,"TIENDA","La cuenta de tienda debe enlazarse directamente con una tienda registrada.");
-      if(g.rol!=="ADMINISTRADOR"&&g.rol!=="TIENDA"&&location?.tipo!=="REGION")throw new AuthError(422,"REGION","Cada rol operativo debe enlazarse con una región.");
+      const nacional=!location&&rolesConAlcanceNacional.includes(g.rol);
+      if(g.rol!=="ADMINISTRADOR"&&g.rol!=="TIENDA"&&!nacional&&location?.tipo!=="REGION")throw new AuthError(422,"REGION","Cada rol operativo debe enlazarse con una región.");
       result.push({...g,ubicacion:location});
     }
     return result;

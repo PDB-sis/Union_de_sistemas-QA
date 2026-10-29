@@ -3653,9 +3653,16 @@ def ejecutar_qa_ciclo_admin(
         return resultado
 
     except ValueError as error:
+        detalle = str(error)
+        if "no tiene sucursales participantes" in detalle:
+            detalle = (
+                "Ninguna sucursal activa tiene todavía inventario enviado por su "
+                "agente, así que no hay nada que comparar contra CREACION. "
+                "Instale el agente en la sucursal y espere su primer envío."
+            )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(error),
+            detail=detalle,
         )
 
     except SQLAlchemyError as error:

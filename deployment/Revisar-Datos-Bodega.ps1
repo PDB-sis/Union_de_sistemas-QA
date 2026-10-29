@@ -15,9 +15,12 @@
 .EXAMPLE
   .\Revisar-Datos-Bodega.ps1                 # MARACAIBO (2004)
   .\Revisar-Datos-Bodega.ps1 -DimId 2005     # otra bodega
+  .\Revisar-Datos-Bodega.ps1 -DimId 1011     # una tienda (solo envía inventario)
 #>
 param(
   [int]$DimId = 2004,
+  # Sitio del que PDMC toma su único inventario (PDMC_INVENTARIO_DIM_ID).
+  [int]$DimInventarioPdmc = 2004,
   [string]$PgHost = '127.0.0.1',
   [int]$Puerto = 5432,
   [string]$Base = 'sistemas_unificados',
@@ -110,7 +113,8 @@ SELECT (SELECT nombre FROM sitio), 'inventario',
        (SELECT count(*) FROM pdmc."InventarioActual" WHERE activo),
        NULL, NULL,
        (SELECT to_char(max("fechaImportacion"), 'DD/MM/YYYY HH24:MI:SS') FROM pdmc."ConsultaInventario"),
-       CASE WHEN (SELECT count(*) FROM pdmc."InventarioActual" WHERE activo) = 0 THEN 'PDMC SIN INVENTARIO'
+       CASE WHEN $DimId <> $DimInventarioPdmc THEN 'NO APLICA'
+            WHEN (SELECT count(*) FROM pdmc."InventarioActual" WHERE activo) = 0 THEN 'PDMC SIN INVENTARIO'
             WHEN (SELECT count(*) FROM pdmc."InventarioActual" WHERE activo) =
                  (SELECT count(*) FROM cysn_qa.inventario_agente_actual WHERE dim_id_tienda = $DimId AND activo AND nombre_categoria IS NOT NULL) THEN 'OK'
             ELSE 'DIFERENTE' END;
@@ -136,7 +140,8 @@ try {
   Write-Host ' - 1: el agente debe estar OK (contacto en los últimos 15 minutos).'
   Write-Host ' - 2: ultimo_envio solo cambia cuando hay datos nuevos; sin cambios el agente solo envía latidos.'
   Write-Host ' - 4: docs_agente y docs_pdmc deben coincidir. Si difieren, pulse "Actualizar ahora" en PDMC y repita.'
-  Write-Host '   En inventario, docs_pdmc es el inventario vigente de PDMC (de PDMC_INVENTARIO_DIM_ID).'
+  Write-Host '   En inventario, docs_pdmc es el inventario vigente de PDMC, que sale de un solo sitio'
+  Write-Host '   (PDMC_INVENTARIO_DIM_ID, por defecto 2004). En los demás sitios sale NO APLICA.'
 }
 finally {
   Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
