@@ -162,6 +162,9 @@ from app.services.inventario_csv_service import (
     extraer_detalles_csv_inventario,
 )
 from app.services.inventario_agente_service import (
+    agregar_sucursales_con_agente,
+    asegurar_ciclo_operativo,
+    tomar_inventario_agente,
     tomar_inventarios_pendientes,
 )
 
@@ -1891,6 +1894,31 @@ def listar_ciclos_qa(
 
 
 @app.post(
+    "/api/admin/ciclos/operativo",
+    response_model=QACicloResponse,
+)
+def asegurar_ciclo_operativo_admin(
+    _acceso: tuple[User, Rol] = Depends(
+        require_role("ADMINISTRADOR")
+    ),
+    db: Session = Depends(get_db),
+):
+    """Ciclo abierto para trabajar con el inventario de los agentes; lo crea si no hay ninguno."""
+    try:
+        ciclo = asegurar_ciclo_operativo(db, usuario_id=_acceso[0].id)
+        db.commit()
+        db.refresh(ciclo)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible preparar el ciclo QA.",
+        )
+
+    return _ciclo_response_admin_simple(ciclo)
+
+
+@app.post(
     "/api/admin/ciclos/{ciclo_id}/sucursales",
     response_model=QACicloSucursalesAddResponse,
 )
@@ -3187,12 +3215,28 @@ def visualizar_inventario_vs_creacion_admin(
         )
     )
 
+    if carga is None and participacion.estado_recepcion == "PENDIENTE":
+        # Sin carga todavía: se toma el inventario que envió el agente de la sucursal.
+        try:
+            carga = tomar_inventario_agente(
+                db,
+                participacion,
+                usuario_id=_acceso[0].id,
+            )
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="No fue posible tomar el inventario del agente.",
+            )
+
     if carga is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=(
-                "La sucursal todavía no tiene una carga de inventario "
-                "actual dentro de este ciclo."
+                "La sucursal todavía no tiene inventario en este ciclo: "
+                "su agente no ha enviado inventario."
             ),
         )
 
@@ -3570,6 +3614,25 @@ def ejecutar_qa_ciclo_admin(
             ),
         )
 
+    # En un ciclo abierto entran todas las sucursales con inventario de agente. Las que
+    # no tienen carga toman ese inventario; las que no tienen agente se omiten, igual
+    # que el motor omite las que no están VALIDADO.
+    try:
+        if ciclo.estado in ("PREPARANDO", "RECEPCION"):
+            agregar_sucursales_con_agente(db, ciclo.id)
+        sin_agente = tomar_inventarios_pendientes(
+            db,
+            ciclo_id=ciclo.id,
+            usuario_id=_acceso[0].id,
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No fue posible tomar el inventario de los agentes.",
+        )
+
     try:
         resultado = ejecutar_qa_ciclo(
             db=db,
@@ -3583,6 +3646,9 @@ def ejecutar_qa_ciclo_admin(
                 "inventario_detalle vs creacion."
             ),
         )
+
+        if isinstance(resultado, dict):
+            resultado["sucursales_sin_inventario_agente"] = sin_agente
 
         return resultado
 

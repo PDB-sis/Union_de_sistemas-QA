@@ -30,7 +30,11 @@ from app.models.qa_ciclo_sucursal import QACicloSucursal
 from app.models.rol import Rol
 from app.models.sucursal import Sucursal
 from app.models.user import User
-from app.services.inventario_agente_service import tomar_inventarios_pendientes
+from app.services.inventario_agente_service import (
+    agregar_sucursales_con_agente,
+    asegurar_ciclo_operativo,
+    tomar_inventarios_pendientes,
+)
 
 
 URL = os.getenv("CYSN_TEST_DATABASE_URL")
@@ -151,3 +155,21 @@ def test_sucursal_ya_validada_no_se_toca(db):
     _enviar(db, "111111111", sucursal_id=norte.id)
     assert tomar_inventarios_pendientes(db, ciclo.id, usuario.id) == []
     assert db.scalar(select(func.count(InventarioCarga.id))) == 0
+
+
+def test_sin_ciclo_abierto_se_crea_uno_con_las_sucursales_que_tienen_agente(db):
+    usuario, ciclo_viejo, [(norte, _), (sur, _)] = _escenario(db, sucursales=("TIENDA NORTE", "TIENDA SUR"))
+    ciclo_viejo.estado = "COMPLETADO"
+    db.commit()
+    _enviar(db, "111111111", sucursal_id=norte.id)
+
+    ciclo = asegurar_ciclo_operativo(db, usuario.id)
+    assert ciclo.id != ciclo_viejo.id and ciclo.nombre.startswith("QA ")
+    assert agregar_sucursales_con_agente(db, ciclo.id) == 1  # solo la que tiene agente
+    assert agregar_sucursales_con_agente(db, ciclo.id) == 0  # no se repite
+    assert tomar_inventarios_pendientes(db, ciclo.id, usuario.id) == []
+    db.commit()
+    participaciones = db.scalars(select(QACicloSucursal).where(QACicloSucursal.qa_ciclo_id == ciclo.id)).all()
+    assert [(p.sucursal_id, p.estado_recepcion) for p in participaciones] == [(norte.id, "VALIDADO")]
+    # Con un ciclo abierto se reutiliza.
+    assert asegurar_ciclo_operativo(db, usuario.id).id == ciclo.id

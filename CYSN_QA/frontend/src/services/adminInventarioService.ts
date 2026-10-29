@@ -217,6 +217,14 @@ export async function desactivarRecepcionSimple(
   );
 }
 
+/** Ciclo abierto (RECEPCION o PREPARANDO); el backend lo crea si no hay ninguno. */
+export async function asegurarCicloOperativo(): Promise<AdminCicloQa> {
+  return apiJson<AdminCicloQa>(
+    "/api/admin/ciclos/operativo",
+    { method: "POST" },
+  );
+}
+
 export async function asegurarSucursalEnCiclo(
   cicloId: number,
   sucursalId: number,
@@ -323,6 +331,8 @@ export interface EjecucionQaCicloResultado {
   total_diferencias: number;
   estados: Record<string, number>;
   diferencias_por_tipo: Record<string, number>;
+  /** Sucursales del ciclo que se omitieron porque su agente no ha enviado inventario. */
+  sucursales_sin_inventario_agente?: string[];
 }
 
 export async function ejecutarQaCicloAdmin(

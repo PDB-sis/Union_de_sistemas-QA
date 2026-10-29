@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  asegurarCicloOperativo,
+  asegurarSucursalEnCiclo,
   listarCiclosAdmin,
   listarSucursalesAdmin,
   obtenerComparacionInventarioAdmin,
@@ -198,28 +200,32 @@ export function AdminInventariosView() {
     return () => window.clearInterval(temporizador);
   }, [ejecutandoQa]);
 async function ejecutarQa() {
-  if (!cicloOperativo) {
-    setError(
-      "No existe un ciclo operativo disponible para ejecutar QA.",
-    );
-    return;
-  }
-
   try {
     setEjecutandoQa(true);
     setError("");
     setMensaje("");
     setEjecucionQa(null);
 
+    // Sin ciclo abierto, el backend crea uno; al ejecutar entran todas las
+    // sucursales con inventario de agente.
+    const ciclo = cicloOperativo ?? await asegurarCicloOperativo();
+
     const data = await ejecutarQaCicloAdmin(
-      cicloOperativo.id,
+      ciclo.id,
     );
 
     setEjecucionQa(data);
 
+    const sinAgente = data.sucursales_sin_inventario_agente ?? [];
+
     setMensaje(
-      `QA completado correctamente. Ejecución #${data.ejecucion_id} creada.`,
+      `QA completado correctamente. Ejecución #${data.ejecucion_id} creada.`
+      + (sinAgente.length
+        ? ` Sin inventario de agente (omitidas): ${sinAgente.join(", ")}.`
+        : ""),
     );
+
+    await recargarDatos();
   } catch (err) {
     setEjecucionQa(null);
 
@@ -237,13 +243,6 @@ async function ejecutarQa() {
   async function cargarComparacion(
     paginaSolicitada = 1,
   ) {
-    if (!cicloOperativo) {
-      setError(
-        "No existe un ciclo operativo en PREPARANDO o RECEPCION.",
-      );
-      return;
-    }
-
     if (!sucursalId) {
       setError("Selecciona una sucursal.");
       return;
@@ -253,9 +252,18 @@ async function ejecutarQa() {
       setCargandoComparacion(true);
       setError("");
 
+      // La sucursal entra al ciclo abierto (que se crea si no hay) y, si no tiene
+      // carga, el backend toma el inventario que envió su agente.
+      const ciclo = cicloOperativo ?? await asegurarCicloOperativo();
+      await asegurarSucursalEnCiclo(ciclo.id, sucursalId);
+
+      if (!cicloOperativo) {
+        await recargarDatos();
+      }
+
       const data =
         await obtenerComparacionInventarioAdmin(
-          cicloOperativo.id,
+          ciclo.id,
           sucursalId,
           {
             pagina: paginaSolicitada,
@@ -384,8 +392,7 @@ async function ejecutarQa() {
       className="admin-inventarios-primary"
       onClick={() => void ejecutarQa()}
       disabled={
-        ejecutandoQa ||
-        !cicloOperativo
+        ejecutandoQa
       }
     >
       {ejecutandoQa
@@ -494,7 +501,6 @@ async function ejecutarQa() {
             onClick={() => void cargarComparacion(1)}
             disabled={
               cargandoComparacion ||
-              !cicloOperativo ||
               !sucursalId
             }
           >

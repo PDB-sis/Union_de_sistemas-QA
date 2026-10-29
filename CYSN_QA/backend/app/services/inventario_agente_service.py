@@ -1,17 +1,18 @@
 """
 Inventario de cada sucursal tomado de su agente para los ciclos QA.
 
-Reemplaza la carga de CSV, que está retirada: al marcar un ciclo LISTO_QA, cada
-sucursal PENDIENTE recibe una fotografía de lo que envió su agente
-(inventario_agente_actual) como una carga de inventario más. El motor QA
-(inventario_detalle vs creacion) no distingue el origen.
+Reemplaza la carga de CSV, que está retirada. Al ejecutar QA (o al marcar LISTO_QA, o
+al visualizar una sucursal), cada sucursal PENDIENTE recibe una fotografía de lo que
+envió su agente (inventario_agente_actual) como una carga de inventario más. El motor
+QA (inventario_detalle vs creacion) no distingue el origen. Si no hay ciclo abierto,
+«Ejecutar QA» crea uno con todas las sucursales que tienen inventario de agente.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, select, text
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models.inventario_carga import InventarioCarga
 from app.models.inventario_detalle import InventarioDetalle
+from app.models.qa_ciclo import QACiclo
 from app.models.qa_ciclo_sucursal import QACicloSucursal
 from app.models.sucursal import Sucursal
 from app.services.codigo_barra_service import (
@@ -137,6 +139,61 @@ def tomar_inventario_agente(
     participacion.updated_at = ahora
 
     return carga
+
+
+_SQL_SUCURSALES_CON_AGENTE = text(
+    """
+    SELECT s.id
+    FROM sucursal AS s
+    JOIN empresa AS e ON e.id = s.empresa_id
+    WHERE s.activo AND e.activo
+      AND EXISTS (
+          SELECT 1 FROM inventario_agente_actual AS i
+          WHERE i.activo
+            AND (i.sucursal_id = s.id OR (s.dim_id_tienda IS NOT NULL AND i.dim_id_tienda = s.dim_id_tienda))
+      )
+    ORDER BY s.id
+    """
+)
+
+
+def asegurar_ciclo_operativo(db: Session, usuario_id: int) -> QACiclo:
+    """El ciclo abierto (RECEPCION y, si no, PREPARANDO); si no hay, crea «QA <fecha>». No confirma."""
+    for estado in ("RECEPCION", "PREPARANDO"):
+        ciclo = db.scalar(
+            select(QACiclo).where(QACiclo.estado == estado).order_by(QACiclo.id.desc())
+        )
+        if ciclo is not None:
+            return ciclo
+
+    hoy = date.today()
+    ciclo = QACiclo(
+        nombre=f"QA {hoy:%d/%m/%Y}",
+        descripcion="Ciclo QA automático con el inventario que envían los agentes de las sucursales.",
+        fecha_inicio=hoy,
+        creado_por_user_id=usuario_id,
+    )
+    db.add(ciclo)
+    db.flush()
+    return ciclo
+
+
+def agregar_sucursales_con_agente(db: Session, ciclo_id: int) -> int:
+    """Añade al ciclo las sucursales activas que tienen inventario de agente. No confirma."""
+    ids = db.scalars(_SQL_SUCURSALES_CON_AGENTE).all()
+    existentes = set(
+        db.scalars(
+            select(QACicloSucursal.sucursal_id).where(QACicloSucursal.qa_ciclo_id == ciclo_id)
+        ).all()
+    )
+    nuevas = [
+        QACicloSucursal(qa_ciclo_id=ciclo_id, sucursal_id=sucursal_id, estado_recepcion="PENDIENTE")
+        for sucursal_id in ids
+        if sucursal_id not in existentes
+    ]
+    db.add_all(nuevas)
+    db.flush()
+    return len(nuevas)
 
 
 def tomar_inventarios_pendientes(
