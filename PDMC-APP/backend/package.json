@@ -31,7 +31,7 @@
     "administrar-accesos": "node --import tsx scripts/administrar-accesos.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.17",
+    "@hono/node-server": "^2.1.5",
     "@pdmc/contratos": "*",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
