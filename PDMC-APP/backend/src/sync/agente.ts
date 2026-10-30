@@ -1,6 +1,5 @@
-import "server-only";
 import { createHash } from "node:crypto";
-import type { PrismaClient } from "../../../generated/prisma/client";
+import type { PrismaClient } from "../../generated/prisma/client";
 import { toCsv } from "./csv";
 
 // Regla del proyecto: PDMC solo lee de PostgreSQL. Transferencias, devoluciones y

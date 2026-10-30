@@ -1,8 +1,8 @@
-import { loadEnvConfig } from "@next/env";
+import { loadEnv } from "../src/env";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../../generated/prisma/client";
+import { PrismaClient } from "../generated/prisma/client";
 
-loadEnvConfig(process.cwd());
+loadEnv();
 
 async function main() {
   const codigo = process.env.SEED_BODEGA_CODIGO?.trim();

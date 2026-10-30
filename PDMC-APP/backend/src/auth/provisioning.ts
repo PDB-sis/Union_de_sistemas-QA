@@ -1,8 +1,7 @@
 import { administrativeRoles, requireOperator } from "./access-management";
-import "server-only";
 import { z } from "zod";
-import type { PrismaClient } from "../../../generated/prisma/client";
-import { roles, type Rol } from "../../../shared/auth/model";
+import type { PrismaClient } from "../../generated/prisma/client";
+import { roles, type Rol } from "@pdmc/contratos/auth/model";
 import { authAudit, AuthError, emailSchema, userByEmail } from "./service";
 import { hashPassword, passwordSchema, verifyPassword } from "./password";
 

@@ -1,7 +1,7 @@
-import {loadEnvConfig} from "@next/env";
+import { loadEnv } from "../src/env";
 import {getDb} from "../src/db";
 
-loadEnvConfig(process.cwd());
+loadEnv();
 const db=getDb();
 const count=async(sql:TemplateStringsArray,...values:unknown[])=>Number((await db.$queryRawUnsafe<{total:bigint}[]>(String.raw(sql,...values)))[0]?.total??0);
 

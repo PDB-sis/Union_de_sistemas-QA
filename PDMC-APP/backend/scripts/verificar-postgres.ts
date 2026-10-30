@@ -1,7 +1,7 @@
-import { loadEnvConfig } from "@next/env";
+import { loadEnv } from "../src/env";
 import { getDb } from "../src/db";
 
-loadEnvConfig(process.cwd());
+loadEnv();
 
 async function main() {
   const db = getDb();

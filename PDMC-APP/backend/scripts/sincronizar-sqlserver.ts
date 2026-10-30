@@ -1,5 +1,5 @@
-import { loadEnvConfig } from "@next/env";
-loadEnvConfig(process.cwd());
+import { loadEnv } from "../src/env";
+loadEnv();
 
 import { getDb } from "../src/db";
 import { ejecutarModulo } from "../src/sync/ejecutar";

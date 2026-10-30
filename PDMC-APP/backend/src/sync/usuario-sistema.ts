@@ -1,5 +1,4 @@
-import "server-only";
-import type { PrismaClient } from "../../../generated/prisma/client";
+import type { PrismaClient } from "../../generated/prisma/client";
 import { authAudit, emailSchema } from "../auth/service";
 
 /**

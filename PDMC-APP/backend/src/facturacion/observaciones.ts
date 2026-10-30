@@ -1,7 +1,6 @@
-import "server-only";
 import {z} from "zod";
-import type {Prisma,PrismaClient} from "../../../generated/prisma/client";
-import {allows,permissionMatrix} from "../../../shared/auth/permissions";
+import type {Prisma,PrismaClient} from "../../generated/prisma/client";
+import {allows,permissionMatrix} from "@pdmc/contratos/auth/permissions";
 import {Authorization,denied} from "../auth/authorization";
 import {NegativosError,uuid} from "../negativos/validation";
 

@@ -1,10 +1,9 @@
-import "server-only";
 import {createHash} from "node:crypto";
-import type {PrismaClient} from "../../../generated/prisma/client";
+import type {PrismaClient} from "../../generated/prisma/client";
 import {parseDelimitedTable,normalizeHeader,NegativosError} from "../negativos/validation";
 import {Authorization,denied} from "../auth/authorization";
-import {transferType} from "../../../shared/transferencias/classification";
-import {planCabeceras,planDetalles,sinCambiosEnPlan} from "../../../shared/consultas/cambios";
+import {transferType} from "@pdmc/contratos/transferencias/classification";
+import {planCabeceras,planDetalles,sinCambiosEnPlan} from "@pdmc/contratos/consultas/cambios";
 
 export const COLUMNAS_TRANSFERENCIAS=["Numero","fecha_formateada","CodNombre","CodigoBarra","Cantidad","NumeroCaja","codigoRecibe_Dletra","status","observacion"] as const;
 const expected=COLUMNAS_TRANSFERENCIAS;

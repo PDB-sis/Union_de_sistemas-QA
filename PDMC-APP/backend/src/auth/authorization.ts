@@ -1,6 +1,5 @@
-import "server-only";
-import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
-import { allows, allowsGeneralNegatives, hasPermission, permissionMatrix, type Permission } from "../../../shared/auth/permissions";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client";
+import { allows, allowsGeneralNegatives, hasPermission, permissionMatrix, type Permission } from "@pdmc/contratos/auth/permissions";
 import { AuthError } from "./service";
 
 export const denied = () => new AuthError(403, "PERMISO", "No tiene permiso para esta operación o ubicación.");

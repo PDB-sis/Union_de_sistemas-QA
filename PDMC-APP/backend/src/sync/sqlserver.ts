@@ -1,4 +1,3 @@
-import "server-only";
 import sql from "mssql";
 import { assertReadOnlyQuery } from "./solo-lectura";
 

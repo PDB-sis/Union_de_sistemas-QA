@@ -1,32 +1,31 @@
-import "server-only";
-import { pageSession } from "@backend/auth/page";
-import type {DashboardData} from "@shared/dashboard-contract";
+import type { UsuarioSesion } from "@pdmc/contratos/auth/model";
+import type { PanelInicio } from "@pdmc/contratos/panel";
+import type {DashboardData} from "@pdmc/contratos/dashboard-contract";
 import { dashboardData } from "./dashboard-data";
 import { Authorization } from "@backend/auth/authorization";
 import { getDb } from "@backend/db";
-import { allows, allowsGeneralNegatives, permissions } from "@shared/auth/permissions";
-import { hasPermission } from "@shared/auth/permissions";
-import { redirect } from "next/navigation";
+import { allows, allowsGeneralNegatives, permissions } from "@pdmc/contratos/auth/permissions";
+import { hasPermission } from "@pdmc/contratos/auth/permissions";
 import { transferDashboardData } from "@backend/transferencias/consulta";
 import { StoreService } from "@backend/tienda/service";
 
-export async function loadAdministration(){
-  const user=await pageSession();
+// Datos iniciales de cada espacio. Los sirve GET /api/panel (src/http/panel/route.ts);
+// el frontend decide la navegación con la respuesta (redirigir, acceso restringido, etc.).
+export async function loadAdministration(user:UsuarioSesion){
   const grants=await new Authorization(getDb(),user.id).grants();
   return {user,canManage:allows(grants,"usuarios.administrar"),canAudit:hasPermission(grants,"auditoria.leer")};
 }
-export async function loadStore(){
-  const user=await pageSession(),db=getDb(),access=new Authorization(db,user.id);
+export async function loadStore(user:UsuarioSesion){
+  const db=getDb(),access=new Authorization(db,user.id);
   await access.permitted("tienda.panel");
   return {user,initialData:await new StoreService(db,access).dashboard()};
 }
 
-export async function loadDashboard() {
-  const user = await pageSession();
+export async function loadDashboard(user:UsuarioSesion):Promise<PanelInicio> {
   const access = new Authorization(getDb(),user.id);
   const grants = await access.grants();
-  if(grants.some(grant=>grant.rol==="ADMINISTRADOR"&&grant.ubicacionId===null))redirect("/administracion");
-  if (hasPermission(grants,"tienda.panel") && !hasPermission(grants,"panel.leer")) redirect("/tienda");
+  if(grants.some(grant=>grant.rol==="ADMINISTRADOR"&&grant.ubicacionId===null))return {redirigir:"/administracion"};
+  if (hasPermission(grants,"tienda.panel") && !hasPermission(grants,"panel.leer")) return {redirigir:"/tienda"};
   const available = permissions.filter(p=>hasPermission(grants,p));
   const national = permissions.filter(p=>allows(grants,p));
   const locations = await getDb().bodega.findMany({where:{activa:true},select:{id:true,codigo:true,ubicacion:{select:{id:true,regionId:true}}}});

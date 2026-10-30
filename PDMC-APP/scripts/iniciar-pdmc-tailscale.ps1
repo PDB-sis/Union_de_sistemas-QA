@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $root
 $server = $null
+# Desde la separación, la configuración es del backend (backend\.env.local); se acepta la de la raíz como respaldo.
+$envFile = if (Test-Path -LiteralPath 'backend\.env.local') { 'backend\.env.local' } else { '.env.local' }
 
 function Invoke-Npm([string[]]$Arguments) {
     & npm.cmd @Arguments
@@ -39,7 +41,7 @@ function Get-ServeStatus([string]$Executable) {
 function Get-LocalDatabaseMode {
     $configured = $env:DATABASE_URL
     if (!$configured) {
-        $line = [regex]::Match((Get-Content -LiteralPath '.env.local' -Raw), '(?m)^DATABASE_URL\s*=\s*([^\r\n]+)')
+        $line = [regex]::Match((Get-Content -LiteralPath $envFile -Raw), '(?m)^DATABASE_URL\s*=\s*([^\r\n]+)')
         $configured = $line.Groups[1].Value.Trim().Trim('"', "'")
     }
     try { $database = [Uri]$configured } catch { throw 'DATABASE_URL no esta configurada correctamente en .env.local.' }
@@ -70,7 +72,7 @@ function Get-PdmcListener {
     if (!$listener) { return $null }
     $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)"
     if (!$processInfo) { return $null }
-    if ($processInfo.CommandLine -notmatch 'servidor-pdmc\.mjs') {
+    if ($processInfo.CommandLine -notmatch 'src[\\/]server\.ts') {
         throw 'El puerto 3000 esta ocupado por otro programa. Cierralo antes de iniciar PDMC.'
     }
     return $processInfo
@@ -108,8 +110,8 @@ try {
         if ($serve.Web."$($dns.TrimEnd('.')):3000".Handlers.'/'.Proxy -ne $expected) { throw 'Tailscale Serve no confirmo el destino de PDMC.' }
     }
 
-    if (!(Test-Path -LiteralPath '.env.local')) { throw 'Falta .env.local. Configura primero la base de datos y las credenciales propias.' }
-    if (!(Test-Path -LiteralPath 'node_modules\next')) { throw 'Faltan dependencias. Ejecuta npm ci una vez.' }
+    if (!(Test-Path -LiteralPath $envFile)) { throw 'Falta backend\.env.local. Configura primero la base de datos y las credenciales propias.' }
+    if (!(Test-Path -LiteralPath 'node_modules\hono')) { throw 'Faltan dependencias. Ejecuta npm ci una vez.' }
     $databaseMode = Get-LocalDatabaseMode
     $existing = Get-PdmcListener
     if ($CheckOnly) {
@@ -130,10 +132,10 @@ try {
         }
         if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL no esta listo.' }
     }
-    Invoke-Npm @('run','db:migrate')
-    Invoke-Npm @('run','db:check')
+    Invoke-Npm @('run','db:migrate','-w','backend')
+    Invoke-Npm @('run','db:check','-w','backend')
 
-    # El build modifica .next. Solo detener el servidor propio justo antes de compilar.
+    # El build reemplaza frontend\dist. Solo detener el servidor propio justo antes de compilar.
     $current = Get-PdmcListener
     if ($current) {
         Write-Host 'Reiniciando la instancia anterior de PDMC...'
@@ -150,7 +152,7 @@ try {
 
     # El enlace publico de Tailscale es el origen principal para las operaciones autenticadas.
     # El enlace LAN configurado sigue autorizado como origen adicional.
-    $environmentText = Get-Content -LiteralPath '.env.local' -Raw
+    $environmentText = Get-Content -LiteralPath $envFile -Raw
     $lanOrigin = [regex]::Match($environmentText, '(?m)^PDMC_AUTH_ORIGIN=(https://[^\r\n]+)\s*$').Groups[1].Value.Trim()
     $configuredAdditional = [regex]::Match($environmentText, '(?m)^PDMC_AUTH_ADDITIONAL_ORIGINS=([^\r\n]*)$').Groups[1].Value.Trim()
     $otherOrigins = @($lanOrigin) + @($configuredAdditional.Split(',')) |
@@ -163,7 +165,11 @@ try {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $outputLog = Join-Path $logDir "pdmc-tailscale-$stamp.log"
     $errorLog = Join-Path $logDir "pdmc-tailscale-$stamp-error.log"
-    $server = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList 'scripts/servidor-pdmc.mjs' -WorkingDirectory $root -WindowStyle Hidden -RedirectStandardOutput $outputLog -RedirectStandardError $errorLog -PassThru
+    # HTTPS local (Tailscale Serve reenvía con https+insecure), como antes con servidor-pdmc.mjs.
+    $env:PDMC_HOST = '0.0.0.0'
+    $env:PDMC_TLS_PFX_FILE = Join-Path $root '.secrets\pdmc-lan.pfx'
+    $env:PDMC_TLS_PASSWORD_FILE = Join-Path $root '.secrets\pdmc-lan-password'
+    $server = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList '--import','tsx','src/server.ts','--frontend' -WorkingDirectory (Join-Path $root 'backend') -WindowStyle Hidden -RedirectStandardOutput $outputLog -RedirectStandardError $errorLog -PassThru
     $ready = $false
     for ($i=0; $i -lt 40; $i++) {
         if ($server.HasExited) { break }

@@ -1,8 +1,7 @@
-import "server-only";
 import { auditActor } from "../audit-context";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client";
 import { hashPassword, passwordSchema, verifyPassword } from "./password";
 
 export class AuthError extends Error {

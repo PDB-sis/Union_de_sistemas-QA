@@ -1,15 +1,14 @@
 import { Authorization } from "../auth/authorization";
 import { auditActor } from "../audit-context";
-import "server-only";
 import { z } from "zod";
-import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
-import { estados, gruposEstado, type GrupoEstado } from "../../../shared/negativos/model";
+import { Prisma, type PrismaClient } from "../../generated/prisma/client";
+import { estados, gruposEstado, type GrupoEstado } from "@pdmc/contratos/negativos/model";
 import { uuid, NegativosError } from "./validation";
-import {countWorkflow,type CountWorkflow} from "../../../shared/workflow/count-routing";
-import {currentMonth,monthRange} from "../../../shared/month";
-import {validarMotivoNegativo} from "../../../shared/negativos/reasons";
+import {countWorkflow,type CountWorkflow} from "@pdmc/contratos/workflow/count-routing";
+import {currentMonth,monthRange} from "@pdmc/contratos/month";
+import {validarMotivoNegativo} from "@pdmc/contratos/negativos/reasons";
 import {photoComparison} from "./photo-comparison";
-import {validarCambioNegativo,verificarAjusteNegativo,type VerificacionNegativo} from "../../../shared/negativos/flujo";
+import {validarCambioNegativo,verificarAjusteNegativo,type VerificacionNegativo} from "@pdmc/contratos/negativos/flujo";
 
 export const stateSchema = z.enum(Object.keys(estados) as [keyof typeof estados, ...(keyof typeof estados)[]]);
 const note = z.string().trim().max(10000);

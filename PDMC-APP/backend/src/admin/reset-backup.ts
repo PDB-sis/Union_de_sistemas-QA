@@ -1,10 +1,10 @@
-import "server-only";
 import {spawn} from "node:child_process";
 import {createWriteStream,createReadStream} from "node:fs";
 import {mkdir,stat,unlink,open,writeFile} from "node:fs/promises";
 import type {Writable} from "node:stream";
 import {pipeline} from "node:stream/promises";
-import {resolve} from "node:path";
+import {dirname,resolve} from "node:path";
+import {fileURLToPath} from "node:url";
 import {createHash,randomUUID} from "node:crypto";
 import {NegativosError} from "../negativos/validation";
 
@@ -40,7 +40,7 @@ export async function createResetBackup(schema:string):Promise<ResetBackup>{
   let file:string|undefined;
   try{
     if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema))throw new Error("SCHEMA");
-    const url=new URL(process.env.DATABASE_URL!),tools=await commands(url),directory=resolve("backups/restablecimientos");await mkdir(directory,{recursive:true,mode:0o700});
+    const url=new URL(process.env.DATABASE_URL!),tools=await commands(url),directory=resolve(dirname(fileURLToPath(import.meta.url)),"../../backups/restablecimientos");await mkdir(directory,{recursive:true,mode:0o700});
     const nombre=`pdmc-${new Date().toISOString().replace(/[:.]/g,"-")}-${randomUUID()}.dump`;file=resolve(directory,nombre);
     const env={...process.env,PGPASSWORD:decodeURIComponent(url.password)};
     const args=["--host",tools.host,"--port",tools.port,"--username",decodeURIComponent(url.username),"--dbname",decodeURIComponent(url.pathname.slice(1)),"--schema",schema,"--format=custom","--no-owner","--no-acl"];

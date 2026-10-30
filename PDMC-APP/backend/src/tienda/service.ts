@@ -1,11 +1,10 @@
-import "server-only";
 import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
-import {Prisma,type PrismaClient} from "../../../generated/prisma/client";
-import type {Permission} from "../../../shared/auth/permissions";
-import {productCode} from "../../../shared/negativos/presentation";
-import {STORE_REPORT_REASONS,STORE_REPORT_SUBREASONS,UNKNOWN_BARCODE_REASONS} from "../../../shared/tienda/model";
-import {transferType} from "../../../shared/transferencias/classification";
+import {Prisma,type PrismaClient} from "../../generated/prisma/client";
+import type {Permission} from "@pdmc/contratos/auth/permissions";
+import {productCode} from "@pdmc/contratos/negativos/presentation";
+import {STORE_REPORT_REASONS,STORE_REPORT_SUBREASONS,UNKNOWN_BARCODE_REASONS} from "@pdmc/contratos/tienda/model";
+import {transferType} from "@pdmc/contratos/transferencias/classification";
 import {Authorization,denied} from "../auth/authorization";
 import {NegativosError,uuid} from "../negativos/validation";
 

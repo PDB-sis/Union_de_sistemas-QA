@@ -1,9 +1,8 @@
-import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
-import { productCode } from "../../../shared/negativos/presentation";
-import { negativeCutWindow,negativeWeekRange } from "../../../shared/negativos/cut-window";
+import { Prisma, type PrismaClient } from "../../generated/prisma/client";
+import { productCode } from "@pdmc/contratos/negativos/presentation";
+import { negativeCutWindow,negativeWeekRange } from "@pdmc/contratos/negativos/cut-window";
 import { Authorization } from "../auth/authorization";
 import { NegativosError, normalizeHeader, parseDate, parseDelimitedTable, uuid } from "../negativos/validation";
 import { compare, emptyComparison } from "../negativos/comparator";

@@ -25,8 +25,8 @@ No guarde estas conexiones en GitHub.
 
 ```bash
 npm ci
-npm run db:migrate
-npm run db:migrar-admin-limpio
+npm run db:migrate -w backend
+npm run db:migrar-admin-limpio -w backend
 ```
 
 `db:migrate` se ejecuta usando `DATABASE_URL`, por lo que aplica el esquema exclusivamente en el destino. El segundo comando rechaza destinos que ya contengan información y nunca copia sesiones ni registros operativos.

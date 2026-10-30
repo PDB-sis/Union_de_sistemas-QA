@@ -1,8 +1,7 @@
-import "server-only";
 import { z } from "zod";
-import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
-import { roles, rolesConAlcanceNacional, type Rol } from "../../../shared/auth/model";
-import { allows, hasPermission, permissionMatrix, type Permission, type Grant } from "../../../shared/auth/permissions";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client";
+import { roles, rolesConAlcanceNacional, type Rol } from "@pdmc/contratos/auth/model";
+import { allows, hasPermission, permissionMatrix, type Permission, type Grant } from "@pdmc/contratos/auth/permissions";
 import { AuthError, emailSchema } from "../auth/service";
 import { hashPassword, passwordSchema, verifyPassword } from "../auth/password";
 import { denied } from "../auth/authorization";

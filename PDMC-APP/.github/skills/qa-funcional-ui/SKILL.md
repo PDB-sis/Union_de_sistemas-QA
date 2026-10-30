@@ -13,7 +13,7 @@ Valida los flujos visibles de PDMC desde la perspectiva de sus usuarios. Basa lo
 2. Cubre los caminos principales y sus límites: estados vacíos, carga, éxito, validación, error, cancelación, permisos y persistencia después de recargar.
 3. Comprueba navegación, etiquetas y mensajes, controles deshabilitados, selección, filtros, paginación y consistencia de los datos que se muestran.
 4. Para cambios de interfaz, verifica teclado y foco, nombres accesibles, diálogos y tamaños de pantalla relevantes cuando el entorno lo permita.
-5. Ejecuta primero las pruebas más acotadas. Para regresión automatizada del proyecto, usa `npm test`; para las pruebas de interfaz en Edge, consulta `tests/frontend/interfaz.browser.mjs` y `tests/frontend/admin.browser.mjs`.
+5. Ejecuta primero las pruebas más acotadas. Para regresión automatizada del proyecto, usa `npm test`; para las pruebas de interfaz en Edge, usa `npm run test:browser` (`tests/e2e/workspace.browser.mjs`) y consulta `tests/e2e/interfaz.browser.mjs` y `tests/e2e/admin.browser.mjs`.
 6. La prueba de navegador requiere una compilación previa (`npm run build`), Edge instalado y una base PostgreSQL local o `TEST_DATABASE_URL` de pruebas. La prueba crea un esquema aleatorio aislado y lo elimina al finalizar. Usa únicamente una base descartable; no la apuntes a producción.
 7. Si no se puede ejecutar una prueba, explica el requisito que falta y deja el resultado como no ejecutado; no lo marques como aprobado.
 

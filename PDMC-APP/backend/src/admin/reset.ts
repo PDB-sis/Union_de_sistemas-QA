@@ -1,7 +1,6 @@
-import "server-only";
 import {createHash,randomBytes} from "node:crypto";
 import {z} from "zod";
-import {Prisma,type PrismaClient} from "../../../generated/prisma/client";
+import {Prisma,type PrismaClient} from "../../generated/prisma/client";
 import {Authorization,denied} from "../auth/authorization";
 import {AuthService} from "../auth/service";
 import {verifyPassword} from "../auth/password";

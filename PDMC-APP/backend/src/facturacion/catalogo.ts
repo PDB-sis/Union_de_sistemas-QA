@@ -1,5 +1,4 @@
-import "server-only";
-import type {PrismaClient} from "../../../generated/prisma/client";
+import type {PrismaClient} from "../../generated/prisma/client";
 import {normalizeHeader,parseDelimitedTable} from "../negativos/validation";
 
 const code=(value:string)=>value.trim().replace(/^="(.*)"$/,"$1").toUpperCase();

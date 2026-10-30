@@ -9,6 +9,9 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 $serverProcess = $null
 $syncProcess = $null
+$backendRoot = Join-Path $projectRoot 'backend'
+# Lee la configuración del backend (backend\.env.local; la de la raíz como respaldo) sin mostrar valores.
+$loadEnv = 'const fs=require("node:fs"),util=require("node:util");for(const f of ["backend/.env.local","backend/.env",".env.local",".env"])if(fs.existsSync(f))for(const [k,v] of Object.entries(util.parseEnv(fs.readFileSync(f,"utf8"))))if(process.env[k]===undefined)process.env[k]=v;'
 
 function Get-LanAddresses {
     $adapters = @(Get-NetAdapter -Physical | Where-Object Status -eq 'Up')
@@ -59,20 +62,20 @@ try {
     $addresses | ForEach-Object { Write-Host "  $($_.InterfaceAlias): $($_.IPAddress)" }
     if ($CheckOnly) {
         Write-Host "Node: $(& node.exe --version)"
-        Write-Host "Build disponible: $(Test-Path -LiteralPath (Join-Path $projectRoot '.next\BUILD_ID'))"
+        Write-Host "Build disponible: $(Test-Path -LiteralPath (Join-Path $projectRoot 'frontend\dist\index.html'))"
         Write-Host 'Diagnostico completado sin cambiar firewall, archivos ni servicios.'
         exit 0
     }
 
-    if (!(Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\next\dist\bin\next'))) {
+    if (!(Test-Path -LiteralPath (Join-Path $projectRoot 'node_modules\hono'))) {
         Write-Host 'Instalando las dependencias del proyecto...'
         Invoke-Npm -NpmArguments @('ci')
     }
 
     # Never print the connection URL or password. Respect an external database.
-    $dbMode = 'const env=require("@next/env");env.loadEnvConfig(process.cwd());try {const u=new URL(process.env.DATABASE_URL);console.log(["127.0.0.1","localhost"].includes(u.hostname)&&u.port==="55432"?"local":"external")}catch{console.log("missing")}' | & node.exe
+    $dbMode = $loadEnv + 'try {const u=new URL(process.env.DATABASE_URL);console.log(["127.0.0.1","localhost"].includes(u.hostname)&&u.port==="55432"?"local":"external")}catch{console.log("missing")}' | & node.exe
     if ($LASTEXITCODE -ne 0 -or $dbMode -notin @('local', 'external')) {
-        throw 'DATABASE_URL no esta configurada correctamente. Conserve .env.local y la carpeta .secrets del proyecto.'
+        throw 'DATABASE_URL no esta configurada correctamente. Conserve backend\.env.local y la carpeta .secrets del proyecto.'
     }
     if ($dbMode -eq 'local') {
         $null = Get-Command docker.exe -ErrorAction Stop
@@ -93,12 +96,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL no esta listo. Revisa Docker Desktop. No se borraron volumenes ni datos.' }
     }
     Write-Host 'Comprobando esquema, conexion y configuracion de la API...'
-    Invoke-Npm -NpmArguments @('run', 'db:migrate')
-    Invoke-Npm -NpmArguments @('run', 'db:check')
+    Invoke-Npm -NpmArguments @('run', 'db:migrate', '-w', 'backend')
+    Invoke-Npm -NpmArguments @('run', 'db:check', '-w', 'backend')
 
     # Use the production build already validated by the project. Avoid rebuilding
     # over another running instance. Build only if no production build exists.
-    if (!(Test-Path -LiteralPath (Join-Path $projectRoot '.next\BUILD_ID'))) {
+    if (!(Test-Path -LiteralPath (Join-Path $projectRoot 'frontend\dist\index.html'))) {
         Write-Host 'Generando la version de produccion...'
         Invoke-Npm -NpmArguments @('run', 'build')
     }
@@ -123,8 +126,11 @@ try {
     $null = New-Item -ItemType Directory -Path $logDirectory -Force
     $outputLog = Join-Path $logDirectory "pdmc-red-$stamp.log"
     $errorLog = Join-Path $logDirectory "pdmc-red-$stamp-error.log"
-    $nextPath = Join-Path $PSScriptRoot 'servidor-pdmc.mjs'
-    $serverProcess = Start-Process -FilePath $nodePath -ArgumentList "`"$nextPath`"" -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput $outputLog -RedirectStandardError $errorLog -PassThru
+    # API y frontend compilado en el mismo puerto, con HTTPS de la red local (preparar-https.ps1).
+    $env:PDMC_HOST = '0.0.0.0'
+    $env:PDMC_TLS_PFX_FILE = Join-Path $projectRoot '.secrets\pdmc-lan.pfx'
+    $env:PDMC_TLS_PASSWORD_FILE = Join-Path $projectRoot '.secrets\pdmc-lan-password'
+    $serverProcess = Start-Process -FilePath $nodePath -ArgumentList '--import','tsx','src/server.ts','--frontend' -WorkingDirectory $backendRoot -WindowStyle Hidden -RedirectStandardOutput $outputLog -RedirectStandardError $errorLog -PassThru
     $ready = $false
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         if ($serverProcess.HasExited) { break }
@@ -142,11 +148,11 @@ try {
     $linkFile = Join-Path $projectRoot 'Enlace_PDMC_Red.txt'
     (@('PDMC - Enlaces para otra PC en la misma red', '') + $links + @('', 'Mantener esta PC encendida y el iniciador abierto. La IP puede cambiar al reconectar la red.')) | Set-Content -LiteralPath $linkFile -Encoding UTF8
     # Consultas automaticas a SQL Server: solo si PDMC_SQLSERVER_ENABLED=true.
-    $syncMode = 'const env=require("@next/env");env.loadEnvConfig(process.cwd());console.log(process.env.PDMC_SQLSERVER_ENABLED==="true"?"on":"off")' | & node.exe
+    $syncMode = $loadEnv + 'console.log(process.env.PDMC_SQLSERVER_ENABLED==="true"?"on":"off")' | & node.exe
     if ($syncMode -eq 'on') {
         $syncLog = Join-Path $logDirectory "sync-sqlserver-$stamp.log"
         $syncErrorLog = Join-Path $logDirectory "sync-sqlserver-$stamp-error.log"
-        $syncProcess = Start-Process -FilePath $nodePath -ArgumentList '--conditions=react-server','--import','tsx','backend/scripts/sincronizar-sqlserver.ts' -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput $syncLog -RedirectStandardError $syncErrorLog -PassThru
+        $syncProcess = Start-Process -FilePath $nodePath -ArgumentList '--import','tsx','scripts/sincronizar-sqlserver.ts' -WorkingDirectory $backendRoot -WindowStyle Hidden -RedirectStandardOutput $syncLog -RedirectStandardError $syncErrorLog -PassThru
         Write-Host "Consultas automaticas a SQL Server iniciadas. Registro: $syncLog"
     } else {
         Write-Host 'Consultas automaticas a SQL Server desactivadas (PDMC_SQLSERVER_ENABLED).'

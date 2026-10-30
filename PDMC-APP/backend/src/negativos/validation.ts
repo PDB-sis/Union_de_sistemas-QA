@@ -1,4 +1,4 @@
-import { productCode } from "../../../shared/negativos/presentation";
+import { productCode } from "@pdmc/contratos/negativos/presentation";
 import { z } from "zod";
 
 export class NegativosError extends Error {

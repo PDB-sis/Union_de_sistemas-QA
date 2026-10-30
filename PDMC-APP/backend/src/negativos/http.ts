@@ -1,13 +1,12 @@
 import { Authorization } from "../auth/authorization";
 import { auditContext } from "../audit-context";
-import "server-only";
 import { requireApiSession, requireOrigin } from "../auth/http";
 import { AuthError } from "../auth/service";
 import { z } from "zod";
 import { getDb } from "../db";
 import { NegativosService } from "./service";
 import { NegativosError, uuid } from "./validation";
-import type { ApiEnvelope } from "../../../shared/negativos/contracts";
+import type { ApiEnvelope } from "@pdmc/contratos/negativos/contracts";
 import {enterApiRequest} from "../maintenance";
 
 export const pagination = z.object({

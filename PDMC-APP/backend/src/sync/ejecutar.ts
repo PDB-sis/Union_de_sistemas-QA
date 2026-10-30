@@ -1,12 +1,15 @@
-import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { Prisma, PrismaClient } from "../../generated/prisma/client";
 import { NegativosError } from "../negativos/validation";
 import { toCsv } from "./csv";
 import { cargaInventario, cargasAgente, firmaAgente, firmaInventario, type TareaAgente } from "./agente";
 import type { Modulo, OpcionesEjecucion } from "./modulos";
+
+// Las consultas viven en backend/sqlserver/consultas, sin importar desde dónde se ejecute.
+const consultasDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "sqlserver", "consultas");
 import { runQuery } from "./sqlserver";
 
 const RETENTION_DAYS = 30;
@@ -53,7 +56,7 @@ type Aplicado = { hash: string; totalFilas: number; result: { sinCambios: boolea
 /** Fuente SQL Server: ejecuta la consulta del módulo y entrega el resultado, como CSV, a su importación. */
 async function desdeSqlServer(db: PrismaClient, modulo: Modulo, consulta: string, ultimoHash: string | null, opciones: OpcionesEjecucion): Promise<Aplicado> {
   // Las consultas se copian tal cual de consultaPDMC; algunos editores de Windows les añaden BOM.
-  const sqlText = (await readFile(join(process.cwd(), "backend", "sqlserver", "consultas", consulta), "utf8")).replace(/^﻿/, "");
+  const sqlText = (await readFile(join(consultasDir, consulta), "utf8")).replace(/^\uFEFF/, "");
   const { columns, rows } = await runQuery(sqlText);
   const csv = toCsv(columns, rows);
   const hash = createHash("sha256").update(csv).digest("hex");

@@ -66,28 +66,28 @@ botón avisa y no la duplica.
   `SincronizacionEjecucion` y se muestra en Administración; la información
   anterior se conserva y se reintenta en el siguiente ciclo.
 - El inventario se registra a nombre de una cuenta de sistema
-  (`PDMC_SYNC_USUARIO_EMAIL`) creada con `npm run sync:crear-usuario`. No tiene
+  (`PDMC_SYNC_USUARIO_EMAIL`) creada con `npm run sync:crear-usuario -w backend`. No tiene
   contraseña, así que nadie puede iniciar sesión con ella.
 
 ## Puesta en marcha
 
 1. **DBA:** ejecutar `backend/sqlserver/01-diagnostico.sql` (solo lectura) y
    `backend/sqlserver/02-usuario-solo-lectura.sql`.
-2. **PDMC:** aplicar las migraciones con `npm run db:migrate`.
-3. Completar `PDMC_SQLSERVER_*` y `PDMC_SYNC_USUARIO_EMAIL` en `.env.local` y
-   crear la cuenta de sistema: `npm run sync:crear-usuario`.
-4. Probar una vuelta: `npm run sync:sqlserver:once` (o un módulo con
+2. **PDMC:** aplicar las migraciones con `npm run db:migrate -w backend`.
+3. Completar `PDMC_SQLSERVER_*` y `PDMC_SYNC_USUARIO_EMAIL` en `backend/.env.local` y
+   crear la cuenta de sistema: `npm run sync:crear-usuario -w backend`.
+4. Probar una vuelta: `npm run sync:sqlserver:once -w backend` (o un módulo con
    `PDMC_SYNC_MODULOS=TRANSFERENCIAS`).
 5. En Inventario, pulsar **"Publicar fotografía de negativos"** la primera vez.
 6. Iniciar PDMC con `scripts/iniciar-pdmc-red.ps1`. Si `PDMC_SQLSERVER_ENABLED=true`,
    el iniciador arranca también las consultas automáticas (registro en
    `logs/sync-sqlserver-*.log`) y las detiene al cerrarse. Para ejecutarlas
-   solas: `npm run sync:sqlserver`. Si el proceso se cierra de golpe, cada
+   solas: `npm run sync:sqlserver -w backend`. Si el proceso se cierra de golpe, cada
    módulo se reanuda al vencer su bloqueo (5 minutos; inventario, 20).
 
 ## Seguridad
 
-- SQL Server solo se lee. Las credenciales viven en `.env.local` del servidor,
+- SQL Server solo se lee. Las credenciales viven en `backend/.env.local` del servidor,
   nunca en el navegador ni en el repositorio.
 - Conexión cifrada (TLS). `PDMC_SQLSERVER_TRUST_SERVER_CERTIFICATE=true` solo
   es aceptable con el certificado propio del servidor SQL Server.

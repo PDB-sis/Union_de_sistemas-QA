@@ -41,8 +41,8 @@ curso corresponde al despliegue actual de un único proceso Next.js.
 El servidor crea un archivo PostgreSQL de formato custom y su SHA-256 en:
 
 ```text
-backups/restablecimientos/pdmc-FECHA-IDENTIFICADOR.dump
-backups/restablecimientos/pdmc-FECHA-IDENTIFICADOR.dump.sha256
+backend/backups/restablecimientos/pdmc-FECHA-IDENTIFICADOR.dump
+backend/backups/restablecimientos/pdmc-FECHA-IDENTIFICADOR.dump.sha256
 ```
 
 Estos archivos no se publican por HTTP y están excluidos de Git. Contienen
@@ -88,7 +88,7 @@ de cambiar `DATABASE_URL` hacia la base restaurada y reiniciar PDMC.
 
 ```sh
 npm ci
-npm run db:migrate
+npm run db:migrate -w backend
 npm run build
 ```
 

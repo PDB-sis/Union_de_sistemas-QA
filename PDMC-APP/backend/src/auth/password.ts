@@ -1,4 +1,3 @@
-import "server-only";
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 

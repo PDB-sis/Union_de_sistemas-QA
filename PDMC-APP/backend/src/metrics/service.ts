@@ -1,7 +1,6 @@
-import "server-only";
-import type {PrismaClient} from "../../../generated/prisma/client";
+import type {PrismaClient} from "../../generated/prisma/client";
 import {Authorization} from "../auth/authorization";
-import {currentMonth,monthLabel,monthRange} from "../../../shared/month";
+import {currentMonth,monthLabel,monthRange} from "@pdmc/contratos/month";
 
 const shift=(value:string,amount:number)=>{const [year,month]=value.split("-").map(Number),date=new Date(Date.UTC(year,month-1+amount,1));return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}`};
 const key=(date:Date)=>`${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}`;

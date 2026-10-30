@@ -24,3 +24,4 @@ desktop-config.json
 Enlace_PDMC_Red.txt
 *.cer
 *.pfx
+tests/e2e/.salida/

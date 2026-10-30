@@ -1,10 +1,10 @@
-import nextEnv from "@next/env";
+import { loadEnv } from "../src/env.ts";
 import pg from "pg";
 import {spawn} from "node:child_process";
 import {createWriteStream,existsSync,mkdirSync,statSync,unlinkSync} from "node:fs";
 import {resolve} from "node:path";
 
-nextEnv.loadEnvConfig(process.cwd());
+loadEnv();
 
 const confirmation="INICIAR-OPERACION-OFICIAL";
 const args=new Set(process.argv.slice(2));

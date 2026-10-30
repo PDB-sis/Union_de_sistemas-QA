@@ -1,15 +1,17 @@
 #!/bin/sh
-# web:  aplica las migraciones de PDMC (esquema de DATABASE_URL) y arranca Next.js.
+# web:  aplica las migraciones de PDMC (esquema de DATABASE_URL) y arranca la API de PDMC
+#       sirviendo también el frontend compilado (frontend/dist) en el mismo puerto.
 # sync: sincronizador; lee lo que envían los agentes (y BODEGA_DATOS si PDMC_SQLSERVER_ENABLED=true).
 # Cualquier otra orden se ejecuta tal cual (p. ej. npm run crear-usuarios-iniciales).
+# Directorio de trabajo: /app/backend.
 set -eu
 case "${1:-web}" in
   web)
     npx prisma migrate deploy
-    exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p "${PORT:-3000}"
+    exec node --import tsx src/server.ts --frontend
     ;;
   sync)
-    exec node --conditions=react-server --import tsx backend/scripts/sincronizar-sqlserver.ts
+    exec node --import tsx scripts/sincronizar-sqlserver.ts
     ;;
   *)
     exec "$@"

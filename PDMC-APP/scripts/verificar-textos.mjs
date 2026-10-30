@@ -4,7 +4,7 @@ import ts from "typescript";
 
 const roots=["app","frontend","backend","shared","public","scripts","tests","docs"];
 const extensions=new Set([".ts",".tsx",".js",".mjs",".cjs",".json",".css",".md",".sql",".svg",".html"]);
-const ignored=new Set(["generated","node_modules","vendor",".next","entregables"]);
+const ignored=new Set(["generated","node_modules","vendor",".next","dist",".salida","entregables"]);
 const suspiciousCharacters=new Set([String.fromCodePoint(0x00c2),String.fromCodePoint(0x00c3),String.fromCodePoint(0x00e2),String.fromCodePoint(0xfffd)]);
 const findings=[];
 

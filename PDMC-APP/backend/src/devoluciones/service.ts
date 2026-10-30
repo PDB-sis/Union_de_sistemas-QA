@@ -1,10 +1,9 @@
-import "server-only";
 import {createHash} from "node:crypto";
-import {Prisma,type PrismaClient} from "../../../generated/prisma/client";
+import {Prisma,type PrismaClient} from "../../generated/prisma/client";
 import {Authorization,denied} from "../auth/authorization";
 import {NegativosError,normalizeHeader,parseDelimitedTable} from "../negativos/validation";
 import {normalizeStoreCode} from "../transferencias/consulta";
-import {planCabeceras,sinCambiosEnPlan} from "../../../shared/consultas/cambios";
+import {planCabeceras,sinCambiosEnPlan} from "@pdmc/contratos/consultas/cambios";
 
 // Una fila por devolución (cabecera); la consulta ya no trae detalle por producto y caja.
 export const COLUMNAS_DEVOLUCIONES=["Numero","fecha_formateada","CodNombre","usuario","codigoRecibe_Dletra","status","Observacion","TotalValor","DocumentoOrigen"] as const;

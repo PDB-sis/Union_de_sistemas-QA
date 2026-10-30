@@ -1,8 +1,8 @@
-import {loadEnvConfig} from "@next/env";
+import { loadEnv } from "../src/env";
 import {PrismaPg} from "@prisma/adapter-pg";
-import {PrismaClient} from "../../generated/prisma/client";
+import {PrismaClient} from "../generated/prisma/client";
 
-loadEnvConfig(process.cwd());
+loadEnv();
 
 const sourceUrl=process.env.PDMC_SOURCE_DATABASE_URL?.trim();
 const destinationUrl=process.env.DATABASE_URL?.trim();

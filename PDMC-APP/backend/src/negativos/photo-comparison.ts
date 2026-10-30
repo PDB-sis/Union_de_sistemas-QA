@@ -1,4 +1,4 @@
-import {Prisma} from "../../../generated/prisma/client";
+import {Prisma} from "../../generated/prisma/client";
 import {compare} from "./comparator";
 
 export function photoComparison(previous:string|null,current:string|null,hasPrevious:boolean,hasCurrent:boolean){

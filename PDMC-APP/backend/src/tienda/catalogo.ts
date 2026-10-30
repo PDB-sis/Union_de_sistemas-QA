@@ -1,5 +1,4 @@
-import "server-only";
-import type {Prisma,PrismaClient,TipoUbicacion} from "../../../generated/prisma/client";
+import type {Prisma,PrismaClient,TipoUbicacion} from "../../generated/prisma/client";
 import {NegativosError,normalizeHeader,parseDelimitedTable} from "../negativos/validation";
 
 // Catálogo de sitios (tiendas y bodegas) desde BODEGA_DATOS.tbDimTiendas.

@@ -1,4 +1,3 @@
-import "server-only";
 import {NegativosError} from "./negativos/validation";
 const runtime=globalThis as unknown as {pdmcMaintenance?:{active:number;resetting:boolean}};
 function state(){return runtime.pdmcMaintenance??=( {active:0,resetting:false} );}

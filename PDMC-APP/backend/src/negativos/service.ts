@@ -1,6 +1,5 @@
-import "server-only";
-import { Prisma, type PrismaClient } from "../../../generated/prisma/client";
-import { countWorkflow } from "../../../shared/workflow/count-routing";
+import { Prisma, type PrismaClient } from "../../generated/prisma/client";
+import { countWorkflow } from "@pdmc/contratos/workflow/count-routing";
 import { Authorization } from "../auth/authorization";
 import { NegativosError } from "./validation";
 import { verificacionesAjuste } from "./operations";

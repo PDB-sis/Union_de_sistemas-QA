@@ -1,8 +1,8 @@
-import { loadEnvConfig } from "@next/env";
+import { loadEnv } from "../src/env";
 import { getDb } from "../src/db";
 import { manageAccess, manageLocation } from "../src/auth/access-management";
 import { AuthError } from "../src/auth/service";
-loadEnvConfig(process.cwd());
+loadEnv();
 async function main() {
   const db=getDb();
   try {
