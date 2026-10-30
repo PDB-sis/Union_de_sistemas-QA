@@ -23,7 +23,9 @@ export async function POST(request:Request){return endpoint(request,async(_,acce
   const url=new URL(request.url),id=url.searchParams.get("modulo"),modulo=modulos.find(item=>item.id===id),publicarNegativos=url.searchParams.get("publicar")==="1";
   if(!modulo)throw new NegativosError(404,"MODULO","Módulo de sincronización desconocido.");
   if(publicarNegativos&&modulo.id!=="INVENTARIO")throw new NegativosError(422,"PUBLICAR","Solo el inventario publica fotografías de negativos.");
-  await access.national(permisos[modulo.id]);
+  // El permiso viene del rol (el mismo que muestra el módulo), no de tener alcance nacional:
+  // un usuario de Mejora Continua asignado a una región también puede actualizar.
+  await access.permitted(permisos[modulo.id]);
   if(modulo.fuente.tipo==="SQLSERVER"&&!sqlServerSyncEnabled())throw new NegativosError(409,"DESACTIVADA","Las consultas a SQL Server están desactivadas (PDMC_SQLSERVER_ENABLED).");
   const result=await ejecutarModulo(getDb(),modulo,{publicarNegativos});
   if(result.estado==="OMITIDA")throw new NegativosError(409,"EN_CURSO","Ya se está actualizando. Intente de nuevo en unos minutos.");
