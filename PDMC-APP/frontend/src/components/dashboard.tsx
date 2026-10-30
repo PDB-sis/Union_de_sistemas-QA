@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { useStoredInitialState } from "@/hooks/use-stored-initial-state";
+import { formatoFecha } from "@/lib/fechas";
 import {
   AlertCircle, Boxes, CheckCircle2, ChevronLeft, ChevronRight,
   ClipboardCheck, ClipboardCopy, Download, FileSpreadsheet, FileWarning,
@@ -99,11 +100,8 @@ const sectionDetails: Record<Section, { eyebrow: string; description: string }> 
   auditoria: { eyebrow: "Trazabilidad", description: "Consulta cambios realizados en los procesos operativos." },
 };
 
-function formatDate(v: string) {
-  const native = new Date(v);
-  if (!Number.isNaN(native.getTime())) return native.toLocaleDateString("es-VE", { day: "2-digit", month: "short", year: "numeric" });
-  return v || "—";
-}
+// Las fechas de transferencia son de calendario: se muestran como el día que son, no un día antes.
+const formatDate = (v: string) => formatoFecha(v);
 function monthKey(v: string, generatedAt: string) {
   const value = String(v ?? "").trim();
   if (!value) return "";
