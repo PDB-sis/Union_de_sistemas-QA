@@ -70,6 +70,8 @@ test('API de Tienda: permisos, territorio, cruce atómico, auditoría, idempoten
     {numero:'78755',fecha:new Date('2026-06-22T00:00:00Z'),codigoFacturador:'DANMARY',codigoTiendaConsulta:storeB.codigo,tiendaId:storeB.id,estado:'Exportada',observacion:'Rotación de mercancía',unidades:77,cantidadCodigos:11,ultimaImportacionId:transferImport.id},
     {numero:'78756',fecha:new Date('2026-06-22T00:00:00Z'),codigoFacturador:'DANMARY',codigoTiendaConsulta:storeB.codigo,tiendaId:storeB.id,estado:'Exportada',observacion:'Prueba mixta',unidades:20,cantidadCodigos:3,ultimaImportacionId:transferImport.id},
     {numero:'78757',fecha:new Date('2026-06-22T00:00:00Z'),codigoFacturador:'DANMARY',codigoTiendaConsulta:storeA.codigo,tiendaId:storeA.id,estado:'Exportada',observacion:'Prueba de rollback',unidades:10,cantidadCodigos:1,ultimaImportacionId:transferImport.id},
+    // Caso Machiques: aprobada en GDC pero aún no exportada; la tienda todavía no la puede reportar.
+    {numero:'78760',fecha:new Date('2026-06-23T00:00:00Z'),codigoFacturador:'DANMARY',codigoTiendaConsulta:storeA.codigo,tiendaId:storeA.id,estado:'Aprobada',observacion:'Por exportar',unidades:5,cantidadCodigos:1,ultimaImportacionId:transferImport.id},
   ]});
 
   assert.equal((await GET(request('inicio'))).status,401);
@@ -79,6 +81,8 @@ test('API de Tienda: permisos, territorio, cruce atómico, auditoría, idempoten
   const correction=start.body.data.transfers.find(item=>item.id==='78749');
   assert.equal(correction.type,'CORRECCION');assert.equal(correction.description,'Transferencia de corrección');assert.equal(Object.hasOwn(correction,'biller'),false);
   assert.equal(start.body.data.transfers.some(item=>item.id==='78755'),false);
+  assert.equal(start.body.data.transfers.some(item=>item.id==='78760'),false,'una transferencia aprobada no se puede reportar todavía');
+  assert.equal(start.body.data.metrics.awaitingExport,1,'la tienda ve cuántas transferencias vienen por exportar');
   const lookup=await payload(await GET(request(`producto&codigo=${productA.codigoBarra}`,userA)));
   assert.equal(lookup.response.status,200);assert.equal(lookup.body.data.id,productA.id);
   const historical=await db.producto.create({data:{codigoBarra:'6900000000099',referencia:'H',descripcion:'Producto fuera del inventario vigente'}});

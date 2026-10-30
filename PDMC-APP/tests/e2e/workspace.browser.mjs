@@ -147,11 +147,24 @@ try {
     await admin.query(`INSERT INTO "Negativo" (id,"productoId","bodegaId",estado,"conteoFisico","existenciaSistemaConteo","conteoRegistradoAt","primeraDeteccion","ultimaDeteccion","updatedAt") VALUES ($1,$2,$3,'En investigación',0,$4,now(),now(),now(),now())`,[randomUUID(),productId,panelWarehouse,-2-index]);
     await admin.query(`INSERT INTO "Inconsistencia" (id,"sourceKey",fecha,sucursal,transferencia,"codigoBarra","tipoError","cantidadErrada","conteoFisico","existenciaSistemaConteo","conteoRegistradoAt","unidadesSinResolver","updatedAt") VALUES ($1,$2,now(),'Tienda del panel',$3,$4,'Faltante físico',2,3,5,now(),2,now())`,[randomUUID(),randomUUID(),`9100${index}`,code]);
   }
+  // Transferencias de una tienda (caso Machiques): una exportada sin reporte y una aprobada que aún no se exporta.
+  const transferRegion=randomUUID(),transferStore=randomUUID(),transferImport=randomUUID();
+  await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo) VALUES ($1,'R-PANEL','Región del panel','REGION')`,[transferRegion]);
+  await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo,"regionId") VALUES ($1,'T-MACHIQUES','MACHIQUES','TIENDA',$2)`,[transferStore,transferRegion]);
+  await admin.query(`INSERT INTO "TransferenciaConsultaImport" (id,"nombreArchivo","hashArchivo","totalFilas",resumen) VALUES ($1,'prueba',$2,2,'{}'::jsonb)`,[transferImport,randomBytes(32).toString("hex")]);
+  for(const [numero,estado] of [["82278","Aprobada"],["82200","Exportada"]])
+    await admin.query(`INSERT INTO "TransferenciaConsulta" (id,numero,fecha,"codigoFacturador","codigoTiendaConsulta","tiendaId",estado,observacion,unidades,"cantidadCodigos","ultimaImportacionId","updatedAt") VALUES ($1,$2,current_date,'F1','T-MACHIQUES',$3,$4,'',10,1,$5,now())`,[randomUUID(),numero,transferStore,estado,transferImport]);
   await role("MEJORA_CONTINUA");
   await contains("Mi día"); await contains("Una visión clara.");
   await capture("operacion-light"); await noOverflow();
   assert.equal(await evaluate('document.querySelectorAll("aside").length'),0);
-  await nav("Transferencias"); await contains("Control de transferencias"); await capture("transferencias-light");
+  await nav("Transferencias"); await contains("Control de transferencias");
+  // Solo lo exportado está pendiente de reporte; lo aprobado se muestra "Por exportar" y se cuenta en la tarjeta de la tienda.
+  const fila=numero=>`[...document.querySelectorAll("tr")].find(tr=>tr.textContent.includes("#${numero}"))?.textContent??""`;
+  await until(()=>evaluate(`${fila("82278")}.includes("Por exportar")`),"La transferencia aprobada no aparece como Por exportar");
+  assert.ok((await evaluate(fila("82200"))).includes("Pendiente"),"La transferencia exportada debe estar pendiente de reporte");
+  await contains("1 por exportar");
+  await capture("transferencias-light");
   // Selector de periodo: abre el calendario de meses y no permite meses futuros.
   await evaluate(`document.querySelector('[aria-label^="Periodo:"]').click()`);
   await until(()=>evaluate(`document.querySelectorAll('[role="group"][aria-label^="Meses de"] button').length===12`),"No abrió el calendario de meses");
