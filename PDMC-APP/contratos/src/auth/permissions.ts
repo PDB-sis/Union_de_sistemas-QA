@@ -19,17 +19,24 @@ export const permissionMatrix: Record<Rol, readonly Permission[]> = {
 };
 export type Grant = { rol: Rol; ubicacionId: string | null; ubicacion: { tipo: "REGION" | "BODEGA" | "TIENDA" } | null };
 export type Resource = { id: string; regionId: string | null };
+/**
+ * Regla: no hay cuentas operativas de alcance nacional. Cada rol trabaja sobre su región,
+ * bodega o tienda, porque cada una tiene su propia consulta, inventario y datos. Solo el
+ * Administrador (gestión del sistema, no operación) va sin ubicación. Una asignación
+ * operativa sin ubicación no es válida y no concede nada.
+ */
+export const asignacionValida = (g: Pick<Grant, "rol" | "ubicacionId">) => g.ubicacionId !== null || g.rol === "ADMINISTRADOR";
 export function allows(grants: readonly Grant[], permission: Permission, resource?: Resource) {
-  return grants.some(g => permissionMatrix[g.rol]?.includes(permission) &&
+  return grants.some(g => asignacionValida(g) && permissionMatrix[g.rol]?.includes(permission) &&
     (g.ubicacionId === null || Boolean(resource && (g.ubicacionId === resource.id ||
       (g.ubicacion?.tipo === "REGION" && g.ubicacionId === resource.regionId)))));
 }
 export function hasPermission(grants: readonly Grant[], permission: Permission) {
-  return grants.some(g => permissionMatrix[g.rol]?.includes(permission));
+  return grants.some(g => asignacionValida(g) && permissionMatrix[g.rol]?.includes(permission));
 }
 
 export function allowsGeneralNegatives(grants: readonly Grant[], permission: Permission) {
   return permission.startsWith("negativos.") && grants.some(g =>
-    g.rol === "MEJORA_CONTINUA" && permissionMatrix.MEJORA_CONTINUA.includes(permission)
+    g.rol === "MEJORA_CONTINUA" && asignacionValida(g) && permissionMatrix.MEJORA_CONTINUA.includes(permission)
   );
 }

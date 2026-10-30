@@ -1,5 +1,5 @@
 import type { PrismaClient } from "../../generated/prisma/client";
-import { Authorization } from "../auth/authorization";
+import { SystemAuthorization } from "../auth/authorization";
 import { COLUMNAS_DEVOLUCIONES, ReturnsService } from "../devoluciones/service";
 import { importBillerCatalog } from "../facturacion/catalogo";
 import { InventoryService } from "../inventario/service";
@@ -56,7 +56,7 @@ async function inventoryAuthorization(db: PrismaClient) {
   if (!email) throw new Error("Configura PDMC_SYNC_USUARIO_EMAIL: el inventario se importa a nombre de ese usuario.");
   const user = await db.usuario.findUnique({ where: { email }, select: { id: true } });
   if (!user) throw new Error("No existe el usuario " + email + " configurado en PDMC_SYNC_USUARIO_EMAIL.");
-  return new Authorization(db, user.id);
+  return new SystemAuthorization(db, user.id);
 }
 
 export const modulos: readonly Modulo[] = [

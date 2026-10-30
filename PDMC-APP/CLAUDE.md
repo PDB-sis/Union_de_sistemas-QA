@@ -21,12 +21,14 @@ Tres paquetes independientes (workspaces de npm), organizados como `CYSN_QA`. De
 ## Reglas de dominio clave
 - Claves estables: tienda y facturador por **código corporativo**, producto por **código de barra (texto)**. Los nombres son editables y nunca son claves.
 - Aislamiento por región, bodega y tienda, validado en el servidor.
+- **No existen cuentas operativas de alcance nacional.** Cada rol trabaja sobre su región, bodega o tienda; quien cubra varias regiones recibe el rol una vez por región. Solo ADMINISTRADOR (gestión del sistema, no operación) va sin ubicación. Lo hace cumplir `asignacionValida` (`contratos/src/auth/permissions.ts`) y el CHECK `AsignacionAcceso_sin_alcance_nacional`. La cuenta de sistema del sincronizador no tiene asignaciones (`SystemAuthorization`).
+- **Una consulta, un destino por sitio.** Cada bodega es una fuente distinta (su propio SQL Server, agente e inventario): la consulta es la misma para todas, pero cada carga se importa a su sitio (`origenId` / `dimIdTienda`) y nunca se mezcla con la de otra bodega o región. Transferencias y devoluciones ya van por bodega; el inventario aún lee un solo sitio (`PDMC_INVENTARIO_DIM_ID`) hasta la fase 2b-2 de `PLAN-agente-multisitio.md`.
 - Roles (`RolUsuario`): ADMINISTRADOR, MEJORA_CONTINUA, TIENDA, JEFE_BODEGA, RECTIFICACION, RECEPCION, AUDITORIA, FACTURACION. No existe Supervisor.
 - Transferencias y devoluciones: Abierta, Aprobada, Exportada. El plazo de 5 días hábiles para reportar empieza en Exportada.
 - Inconsistencias: Pendiente de conteo → Investigación → Corrección pendiente → Verificación → Solucionado. Registrar una corrección no la verifica; no se cierra un caso con unidades pendientes.
 - Negativos: Pendientes de conteo → Con conteo → Aprobados para ajuste → Listos para cerrar. Máximo dos fotografías por semana. Que un caso desaparezca no lo soluciona.
 - % de error del facturador = unidades de errores atribuibles confirmados / unidades transferidas en el mes × 100. Atribuibles: "Error por facturador (Físico Faltante)" y "No se facturó la mercancía (No está en transf)".
-- El restablecimiento protegido (solo administrador nacional) nunca se ejecuta sin una solicitud expresa.
+- El restablecimiento protegido (solo el administrador) nunca se ejecuta sin una solicitud expresa.
 - Pedidos, etiquetado y proyectos son elementos históricos: verificar su estado antes de tratarlos como módulos activos.
 
 ## Sistema visual

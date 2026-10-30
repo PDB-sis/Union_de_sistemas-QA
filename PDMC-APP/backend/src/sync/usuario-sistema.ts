@@ -4,7 +4,8 @@ import { authAudit, emailSchema } from "../auth/service";
 /**
  * Cuenta de sistema a cuyo nombre se registran las cargas automáticas de
  * inventario. No tiene contraseña, así que nadie puede iniciar sesión con ella,
- * y solo recibe el rol nacional de Mejora Continua (el que importa inventario).
+ * y no tiene asignaciones (no es una cuenta nacional): las importaciones la
+ * autorizan como cuenta de sistema con SystemAuthorization.
  */
 export async function ensureSyncUser(db: PrismaClient, rawEmail: string | undefined) {
   const email = emailSchema.parse(rawEmail);
@@ -18,11 +19,11 @@ export async function ensureSyncUser(db: PrismaClient, rawEmail: string | undefi
       : await tx.usuario.create({
         data: { email, nombre: "Sincronizacion SQL Server", rol: "MEJORA_CONTINUA", passwordHash: null, estado: "ACTIVO", activo: true, debeCambiarPassword: false },
       });
-    const grant = await tx.asignacionAcceso.findFirst({ where: { usuarioId: user.id, rol: "MEJORA_CONTINUA", ubicacionId: null } });
-    if (!grant) await tx.asignacionAcceso.create({ data: { usuarioId: user.id, rol: "MEJORA_CONTINUA" } });
-    if (!existing || !grant) {
+    // Versiones anteriores le daban el rol nacional de Mejora Continua, que ya no existe.
+    const { count: retiradas } = await tx.asignacionAcceso.deleteMany({ where: { usuarioId: user.id } });
+    if (!existing || retiradas) {
       await authAudit(tx, existing ? "USUARIO_SINCRONIZACION_ACTUALIZADO" : "USUARIO_SINCRONIZACION_CREADO", user.id,
-        "Cuenta de sistema sin contrasena para las cargas automaticas de inventario", { rol: "MEJORA_CONTINUA" });
+        "Cuenta de sistema sin contrasena ni asignaciones para las cargas automaticas de inventario", { asignacionesRetiradas: retiradas });
     }
     return { email, creado: !existing };
   });

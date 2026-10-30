@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import {allows,allowsGeneralNegatives,hasPermission} from "@pdmc/contratos/auth/permissions";
 import {assignmentsSchema} from "../src/auth/access-management.ts";
 const grant=(rol,ubicacionId=null,tipo="TIENDA")=>({rol,ubicacionId,ubicacion:ubicacionId?{tipo}:null});
-test("denegación por defecto, ámbito nacional explícito y combinación sin producto cruzado",()=>{
+test("denegación por defecto, alcance por región y combinación sin producto cruzado",()=>{
   assert.equal(allows([],"negativos.leer"),false);
-  const grants=[grant("AUDITORIA"),grant("RECTIFICACION","A")];
+  const grants=[grant("AUDITORIA","R","REGION"),grant("RECTIFICACION","A")];
   assert.equal(allows(grants,"negativos.leer",{id:"B",regionId:"R"}),true);
+  assert.equal(allows(grants,"negativos.leer",{id:"C",regionId:"OTRA"}),false);
   assert.equal(allows(grants,"negativos.conteo",{id:"A",regionId:"R"}),true);
   assert.equal(allows(grants,"negativos.ajustar",{id:"A",regionId:"R"}),false);
   assert.equal(allows(grants,"negativos.ajustar",{id:"B",regionId:"R"}),false);
@@ -15,6 +16,17 @@ test("denegación por defecto, ámbito nacional explícito y combinación sin pr
   assert.equal(allows([grant("TIENDA","R","REGION")],"negativos.leer",{id:"A",regionId:"R"}),true);
   assert.equal(allows([grant("TIENDA","R","TIENDA")],"negativos.leer",{id:"A",regionId:"R"}),false);
   assert.equal(allows([grant("DESCONOCIDO")],"negativos.leer"),false);
+});
+
+test("no hay alcance nacional operativo: un rol sin ubicación no concede nada; solo el administrador va sin ubicación",()=>{
+  for(const rol of ["MEJORA_CONTINUA","AUDITORIA","JEFE_BODEGA","TIENDA"]){
+    assert.equal(allows([grant(rol)],"negativos.leer",{id:"A",regionId:"R"}),false,rol);
+    assert.equal(allows([grant(rol)],"negativos.leer"),false,rol);
+    assert.equal(hasPermission([grant(rol)],"negativos.leer"),false,rol);
+  }
+  assert.equal(allowsGeneralNegatives([grant("MEJORA_CONTINUA")],"negativos.editar"),false);
+  assert.equal(allows([grant("ADMINISTRADOR")],"ubicaciones.administrar"),true);
+  assert.equal(allows([grant("ADMINISTRADOR")],"negativos.leer",{id:"A",regionId:"R"}),true);
 });
 
 test("Mejora Continua regional puede accionar la bodega general de negativos",()=>{

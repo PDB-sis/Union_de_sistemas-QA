@@ -42,6 +42,10 @@ async function user(grants=[{rol:"ADMINISTRADOR",ubicacionId:null}],extra={}) {
   const token=randomBytes(32).toString("base64url");await db.sesionUsuario.create({data:{usuarioId:u.id,tokenHash:createHash("sha256").update(token).digest("hex"),expiresAt:new Date(Date.now()+3600000)}});
   return {...u,token,cookie:`__Host-pdmc-session=${token}`,service:new Administration(db,u.id),access:new Authorization(db,u.id)};
 }
+// No hay cuentas operativas nacionales: cada rol operativo necesita su región (o su tienda).
+async function region(){return db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Región de prueba",tipo:"REGION"}});}
+async function tienda(regionId){return db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Tienda de prueba",tipo:"TIENDA",regionId}});
+}
 function request(path,u,body,method="GET",site=origin) {return new Request(`${origin}${path}`,{method,headers:{Origin:site,"Content-Type":"application/json",...(u?{cookie:u.cookie}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});}
 async function api(path,u,body,method=body===undefined?"GET":"POST") {return ({GET,POST,PATCH}[method])(request(`/api/admin/${path}`,u,body,method),{params:Promise.resolve({path:path.split("?")[0].split("/")})});}
 const edit=(u,asignaciones)=>({id:u.id,nombre:u.nombre,email:u.email,version:u.updatedAt.toISOString(),asignaciones,motivo});
@@ -155,7 +159,7 @@ test("el cierre masivo de ajustes verifica todo el lote y no modifica ninguno si
   assert.deepEqual(await ops.masivo({bodegaId:b.id,estado:"SOLUCIONADO",casos:lote()}),{modificados:2});
 });
 test("API administrativa: todas las rutas protegidas, CSRF, solo lectura de auditoría y entrada estricta",async()=>{
-  const viewer=await user([{rol:"AUDITORIA",ubicacionId:null}]);
+  const viewer=await user([{rol:"AUDITORIA",ubicacionId:(await region()).id}]);
   for(const path of ["usuarios","entidades","auditoria"]) assert.equal((await api(path)).status,401);
   for(const path of ["usuarios","entidades"]) assert.equal((await api(path,viewer)).status,403);
   assert.equal((await api("auditoria",viewer)).status,200);
@@ -170,10 +174,13 @@ test("cuenta temporal: hash, unicidad sin distinción de mayúsculas, cambio obl
   const a=await user(),password=secret(),email=`${randomUUID()}@example.test`;
   const region=await a.service.createEntity({codigo:randomUUID(),nombre:"Región de cuenta",tipo:"REGION",motivo});
   const store=await a.service.createEntity({codigo:randomUUID(),nombre:"Tienda de cuenta",tipo:"TIENDA",ubicacionId:region.id,motivo});
-  // Mejora Continua puede tener alcance nacional; el resto de roles operativos exige región.
-  await assert.rejects(a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Sin región",passwordTemporal:secret(),asignaciones:[{rol:"JEFE_BODEGA",ubicacionId:null}],motivo}),{status:422,code:"REGION"});
-  const nacional=await a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Mejora Continua nacional",passwordTemporal:secret(),asignaciones:[{rol:"MEJORA_CONTINUA",ubicacionId:null}],motivo});
-  assert.deepEqual(nacional.asignaciones.map(g=>[g.rol,g.ubicacionId]),[["MEJORA_CONTINUA",null]]);
+  // No existen cuentas operativas nacionales: todo rol operativo, Mejora Continua incluido, exige región.
+  for(const rol of ["JEFE_BODEGA","MEJORA_CONTINUA","AUDITORIA"])
+    await assert.rejects(a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Sin región",passwordTemporal:secret(),asignaciones:[{rol,ubicacionId:null}],motivo}),{status:422,code:"REGION"},rol);
+  const regional=await a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Mejora Continua regional",passwordTemporal:secret(),asignaciones:[{rol:"MEJORA_CONTINUA",ubicacionId:region.id}],motivo});
+  assert.deepEqual(regional.asignaciones.map(g=>[g.rol,g.ubicacionId]),[["MEJORA_CONTINUA",region.id]]);
+  // La base tampoco admite una asignación operativa sin ubicación.
+  await assert.rejects(db.asignacionAcceso.create({data:{usuarioId:regional.id,rol:"MEJORA_CONTINUA"}}));
   await assert.rejects(a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Tienda mal enlazada",passwordTemporal:secret(),asignaciones:[{rol:"TIENDA",ubicacionId:region.id}],motivo}),{status:422,code:"TIENDA"});
   const input={email,nombre:"Temporal",passwordTemporal:password,asignaciones:[{rol:"TIENDA",ubicacionId:store.id}],motivo};
   const response=await api("usuarios",a,input);assert.equal(response.status,200);const created=(await response.json()).data;
@@ -204,7 +211,7 @@ test("cambio de alcance revoca sesiones y se aplica inmediatamente; versiones y 
   await assert.rejects(a.service.editUser(edit(a,[{rol:"ADMINISTRADOR",ubicacionId:null},{rol:"TIENDA",ubicacionId:null}])),{status:403,code:"AUTOELEVACION"});
 });
 test("mejora continua sin administración no puede otorgar ni restablecer cuentas superiores",async()=>{
-    const limited=await user([{rol:"MEJORA_CONTINUA",ubicacionId:null}]),a=await user();
+    const limited=await user([{rol:"MEJORA_CONTINUA",ubicacionId:(await region()).id}]),a=await user();
     await assert.rejects(limited.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Superior",passwordTemporal:secret(),asignaciones:[{rol:"ADMINISTRADOR",ubicacionId:null}],motivo}),{status:403});
     await assert.rejects(limited.service.editUser(edit(a,[])),{status:403});
     await assert.rejects(limited.service.password({id:a.id,passwordTemporal:secret(),motivo}),{status:403});
@@ -310,8 +317,9 @@ test("devoluciones acepta el estado Aprobada y rechaza estados, valores y númer
   await assert.rejects(new ReturnsService(db,a.access).import("devoluciones.csv","Numero;fecha_formateada;CodNombre;CodigoBarra;Cantidad;NumeroCaja;codigoRecibe_Dletra;status;Observacion\nX;10/01/2026;A;1;1;1;B;Abierta;C"),{code:"ENCABEZADOS"});
 });
 test("desactivar y transferir: alcance receptor, pendientes, historial, revocación y rollback auditado",async()=>{
-  const a=await user(),source=await user([{rol:"TIENDA",ubicacionId:null}]),receiver=await user([{rol:"TIENDA",ubicacionId:null}]),denied=await user([]);
-  const b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Casos generales"}});
+  const store=await tienda((await region()).id);
+  const a=await user(),source=await user([{rol:"TIENDA",ubicacionId:store.id}]),receiver=await user([{rol:"TIENDA",ubicacionId:store.id}]),denied=await user([]);
+  const b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Casos de la tienda",ubicacionId:store.id}});
   const cases=[];for(const estado of ["EN_INVESTIGACION","AJUSTE_AUTORIZADO","SOLUCIONADO"])cases.push(await db.negativo.create({data:{bodega:{connect:{id:b.id}},producto:{create:{codigoBarra:randomUUID()}},responsable:{connect:{id:source.id}},estado,primeraDeteccion:new Date(),ultimaDeteccion:new Date()}}));
   await assert.rejects(a.service.status({id:source.id,estado:"INACTIVO",transferirA:denied.id,motivo}),{status:403});
   assert.equal((await db.usuario.findUniqueOrThrow({where:{id:source.id}})).estado,"ACTIVO");

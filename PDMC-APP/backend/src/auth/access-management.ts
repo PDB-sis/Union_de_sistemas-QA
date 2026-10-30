@@ -30,6 +30,7 @@ export async function manageAccess(db: PrismaClient, env: Record<string,string|u
     for(const g of grants) {
       const location=g.ubicacionCodigo?await tx.ubicacion.findUnique({where:{codigo:g.ubicacionCodigo}}):null;
       if(g.ubicacionCodigo&&!location)throw new AuthError(422,"UBICACION","Una ubicación no existe.");
+      if(!location&&g.rol!=="ADMINISTRADOR")throw new AuthError(422,"REGION","Cada rol operativo necesita su región, bodega o tienda. No existen cuentas operativas de alcance nacional.");
       data.push({usuarioId:target.id,rol:g.rol,ubicacionId:location?.id??null});
     }
     const before=await tx.asignacionAcceso.findMany({where:{usuarioId:target.id}});

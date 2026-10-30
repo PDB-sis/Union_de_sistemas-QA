@@ -7,6 +7,8 @@ import pg from "pg";
 import {PrismaPg} from "@prisma/adapter-pg";
 import {PrismaClient} from "../generated/prisma/client.ts";
 import {POST} from "../src/http/sincronizacion/route.ts";
+import {SystemAuthorization} from "../src/auth/authorization.ts";
+import {ensureSyncUser} from "../src/sync/usuario-sistema.ts";
 
 // Botón "Actualizar ahora" (inventario, transferencias, devoluciones…): el permiso viene del rol,
 // no de tener alcance nacional. Antes un usuario de Mejora Continua asignado a una región veía
@@ -58,6 +60,21 @@ test('Actualizar ahora: lo permite el rol aunque el usuario tenga solo una regi�
     assert.notEqual(result.status,403,`${modulo}: ${JSON.stringify(result.body)}`);
     assert.notEqual(result.body.error?.code,'PERMISO',modulo);
   }
+});
+
+test('cuenta de sistema del sincronizador: sin asignaciones (no es nacional) y solo puede importar',async()=>{
+  const email=`${randomUUID()}@sync.test`;
+  await ensureSyncUser(db,email);
+  const sistema=await db.usuario.findUniqueOrThrow({where:{email},include:{asignaciones:true}});
+  assert.equal(sistema.asignaciones.length,0);
+  assert.equal(sistema.passwordHash,null);
+  const access=new SystemAuthorization(db,sistema.id);
+  await access.permitted('inventario.administrar');
+  await assert.rejects(access.permitted('ubicaciones.administrar'),{status:403});
+  await assert.rejects(access.warehouseWhere('negativos.leer'),{status:403});
+  // Una persona (con contraseña) no puede actuar como cuenta de sistema.
+  const persona=await db.usuario.create({data:{email:`${randomUUID()}@sync.test`,nombre:'Persona',passwordHash:'x',estado:'ACTIVO',debeCambiarPassword:false}});
+  await assert.rejects(new SystemAuthorization(db,persona.id).permitted('inventario.administrar'),{status:403});
 });
 
 test('Actualizar ahora: sigue rechazando a los roles que no tienen el permiso',async()=>{

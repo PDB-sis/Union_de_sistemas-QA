@@ -4,7 +4,7 @@ import { AuthError } from "./service";
 
 export const denied = () => new AuthError(403, "PERMISO", "No tiene permiso para esta operación o ubicación.");
 export class Authorization {
-  constructor(private db: PrismaClient, readonly userId?: string) {}
+  constructor(protected db: PrismaClient, readonly userId?: string) {}
   async grants() {
     if (!this.userId) throw denied();
     const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{activo:true,estado:true,debeCambiarPassword:true}});
@@ -72,5 +72,19 @@ export class Authorization {
       if (["AJUSTE_REALIZADO","SOLUCIONADO","CERRADO_SIN_AJUSTE"].includes(after.estado)) await this.warehouse("negativos.ajustar",bodegaId);
     }
     if (after.numeroAjuste !== undefined && after.numeroAjuste !== (before.numeroAjuste ?? "")) await this.warehouse("negativos.ajustar",bodegaId);
+  }
+}
+
+/**
+ * Cargas automáticas del sincronizador. Actúan a nombre de la cuenta de sistema (sin contraseña,
+ * nadie inicia sesión con ella) y sin asignaciones: no es una cuenta nacional. Solo puede
+ * importar; cualquier otra consulta por ubicación la deniega, porque no tiene asignaciones.
+ */
+const importacionesDelSistema: readonly Permission[] = ["inventario.administrar", "transferencias.importar", "devoluciones.importar"];
+export class SystemAuthorization extends Authorization {
+  async permitted(permission: Permission) {
+    if (!this.userId || !importacionesDelSistema.includes(permission)) throw denied();
+    const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{activo:true,estado:true,passwordHash:true}});
+    if (!user?.activo || user.estado !== "ACTIVO" || user.passwordHash !== null) throw denied();
   }
 }

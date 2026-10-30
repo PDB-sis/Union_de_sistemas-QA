@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "../../generated/prisma/client";
-import { roles, rolesConAlcanceNacional, type Rol } from "@pdmc/contratos/auth/model";
+import { roles, type Rol } from "@pdmc/contratos/auth/model";
 import { allows, hasPermission, permissionMatrix, type Permission, type Grant } from "@pdmc/contratos/auth/permissions";
 import { AuthError, emailSchema } from "../auth/service";
 import { hashPassword, passwordSchema, verifyPassword } from "../auth/password";
@@ -61,10 +61,10 @@ export class Administration {
     for(const g of rows) {
       const location=g.ubicacionId?await tx.ubicacion.findUnique({where:{id:g.ubicacionId}}):null;
       if(g.ubicacionId&&!location)throw new AuthError(422,"UBICACION","La ubicación no existe.");
-      if(g.rol==="ADMINISTRADOR"&&location)throw new AuthError(422,"ALCANCE","El administrador general debe tener alcance nacional.");
+      if(g.rol==="ADMINISTRADOR"&&location)throw new AuthError(422,"ALCANCE","El administrador general gestiona todo el sistema y no se enlaza con una ubicación.");
       if(g.rol==="TIENDA"&&location?.tipo!=="TIENDA")throw new AuthError(422,"TIENDA","La cuenta de tienda debe enlazarse directamente con una tienda registrada.");
-      const nacional=!location&&rolesConAlcanceNacional.includes(g.rol);
-      if(g.rol!=="ADMINISTRADOR"&&g.rol!=="TIENDA"&&!nacional&&location?.tipo!=="REGION")throw new AuthError(422,"REGION","Cada rol operativo debe enlazarse con una región.");
+      // Sin alcance nacional: cada rol operativo trabaja sobre las bodegas y tiendas de su región.
+      if(g.rol!=="ADMINISTRADOR"&&g.rol!=="TIENDA"&&location?.tipo!=="REGION")throw new AuthError(422,"REGION","Cada rol operativo debe enlazarse con una región. No existen cuentas operativas de alcance nacional.");
       result.push({...g,ubicacion:location});
     }
     return result;
@@ -321,7 +321,7 @@ export class Administration {
     if(f.desde&&f.hasta&&f.desde>f.hasta)throw new AuthError(422,"FECHA","El rango de fechas no es válido.");
     const base:Prisma.AuditoriaWhereInput={usuarioId:f.usuarioId,accion:f.accion,entidad:f.entidad,entidadId:f.entidadId,
       ...((f.desde||f.hasta)?{createdAt:{gte:f.desde,lte:f.hasta}}:{}),...(f.q?{OR:[{motivo:{contains:f.q,mode:"insensitive"}},{accion:{contains:f.q,mode:"insensitive"}},{origen:{contains:f.q,mode:"insensitive"}}]}:{})};
-    const national=actor.asignaciones.some(grant=>grant.ubicacionId===null&&permissionMatrix[grant.rol].includes("auditoria.leer"));
+    const national=allows(actor.asignaciones,"auditoria.leer");
     let where=base;
     if(!national){
       const regionIds=actor.asignaciones.filter(grant=>grant.ubicacion?.tipo==="REGION"&&permissionMatrix[grant.rol].includes("auditoria.leer")).map(grant=>grant.ubicacionId!).filter(Boolean);

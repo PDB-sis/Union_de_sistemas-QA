@@ -172,7 +172,8 @@ model AsignacionAcceso {
   id          String     @id @default(uuid()) @db.Uuid
   usuarioId   String     @db.Uuid
   rol         RolUsuario
-  // null representa alcance nacional.
+  // null solo para ADMINISTRADOR (gestión del sistema). Los roles operativos siempre
+  // tienen región, bodega o tienda: no hay alcance nacional (CHECK AsignacionAcceso_sin_alcance_nacional).
   ubicacionId String?    @db.Uuid
   usuario     Usuario    @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   ubicacion   Ubicacion? @relation(fields: [ubicacionId], references: [id], onDelete: Restrict)
