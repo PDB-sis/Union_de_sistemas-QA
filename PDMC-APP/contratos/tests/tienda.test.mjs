@@ -6,8 +6,8 @@ import {allows,hasPermission} from "../src/auth/permissions.ts";
 const storeGrant={rol:"TIENDA",ubicacionId:"tienda-a",ubicacion:{tipo:"TIENDA"}};
 
 test("el catálogo de motivos es cerrado y no repite valores",()=>{
-  assert.deepEqual(STORE_REPORT_REASONS.map(([value])=>value),["FALTANTE","SOBRANTE","CRUCE","DANADO","VENCIDO","OTRO"]);
-  assert.equal(new Set(STORE_REPORT_REASONS.map(([value])=>value)).size,6);
+  assert.deepEqual(STORE_REPORT_REASONS.map(([value])=>value),["FALTANTE","SOBRANTE","CRUCE","OTRO"]);
+  assert.equal(new Set(STORE_REPORT_REASONS.map(([value])=>value)).size,4);
 });
 
 test("submotivos y causas de código desconocido son catálogos cerrados",()=>{

@@ -2,8 +2,6 @@ export const STORE_REPORT_REASONS = [
   ["FALTANTE", "Faltante"],
   ["SOBRANTE", "Sobrante"],
   ["CRUCE", "Cruce de producto"],
-  ["DANADO", "Dañado"],
-  ["VENCIDO", "Vencido"],
   ["OTRO", "Otro"],
 ] as const;
 

@@ -8,7 +8,7 @@ import {transferType} from "@pdmc/contratos/transferencias/classification";
 import {Authorization,denied} from "../auth/authorization";
 import {NegativosError,uuid} from "../negativos/validation";
 
-const reasonValues=STORE_REPORT_REASONS.map(item=>item[0]) as ["FALTANTE","SOBRANTE","CRUCE","DANADO","VENCIDO","OTRO"];
+const reasonValues=STORE_REPORT_REASONS.map(item=>item[0]) as ["FALTANTE","SOBRANTE","CRUCE","OTRO"];
 const subreasonValues=Object.values(STORE_REPORT_SUBREASONS).flat().map(item=>item[0]) as ["UNIDADES_MAS_PAQUETE","NO_ESTA_TRANSFERENCIA","UNIDADES_MENOS_PAQUETE","NO_ESTA_FISICO"];
 const reportSchema=z.object({
   solicitudId:uuid,
