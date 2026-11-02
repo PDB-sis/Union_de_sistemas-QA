@@ -13,15 +13,17 @@ type Command={bin:string;prefix:string[]};
 function run(command:Command,args:string[],env:NodeJS.ProcessEnv,output?:Writable){
   return new Promise<number>((done,reject)=>{
     const child=spawn(command.bin,[...command.prefix,...args],{env,windowsHide:true,stdio:["ignore","pipe","pipe"]});
-    let size=0;child.stdout.on("data",b=>{size+=b.length});child.stderr.resume();
+    let size=0,stderr="";child.stdout.on("data",b=>{size+=b.length});child.stderr.on("data",b=>{if(stderr.length<4000)stderr+=b.toString()});
     const stream=output?pipeline(child.stdout,output):Promise.resolve();
     if(!output)child.stdout.resume();
     const timer=setTimeout(()=>{child.kill();reject(new Error("BACKUP_TIMEOUT"))},300_000);
     child.on("error",error=>{clearTimeout(timer);reject(error)});
-    child.on("close",code=>{clearTimeout(timer);void stream.then(()=>code===0?done(size):reject(new Error("BACKUP_FAILED")),reject)});
+    child.on("close",code=>{clearTimeout(timer);void stream.then(()=>code===0?done(size):reject(failure("BACKUP_FAILED",stderr)),reject)});
     void stream.catch(()=>{child.kill()});
   });
 }
+/** Error con lo que respondió PostgreSQL: va solo al registro del servidor, nunca a la interfaz. */
+function failure(code:string,stderr:string){return Object.assign(new Error(code),{detalle:stderr.trim().slice(-1000)})}
 async function capture(bin:string,args:string[]){
   return new Promise<string>((done,reject)=>{const child=spawn(bin,args,{windowsHide:true,stdio:["ignore","pipe","ignore"]});let result="";const timer=setTimeout(()=>{child.kill();reject(new Error("DOCKER_TIMEOUT"))},15000);child.stdout.on("data",b=>{result+=b.toString();if(result.length>100000)child.kill()});child.on("error",e=>{clearTimeout(timer);reject(e)});child.on("close",code=>{clearTimeout(timer);if(code===0)done(result);else reject(new Error("DOCKER_FAILED"))})});
 }
@@ -66,10 +68,10 @@ export async function createResetBackup(schema:string):Promise<ResetBackup>{
     // Docker no ve el disco del servidor: se verifica el archivo a través de stdin.
     const verify=tools.restore.bin==="docker"?{...tools.restore,prefix:["exec","-i",...tools.restore.prefix.slice(1)]}:tools.restore;
     await new Promise<void>((done,reject)=>{
-      const child=spawn(verify.bin,[...verify.prefix,"--file=-"],{env,windowsHide:true,stdio:["pipe","pipe","pipe"]});child.stdout.resume();child.stderr.resume();
+      const child=spawn(verify.bin,[...verify.prefix,"--file=-"],{env,windowsHide:true,stdio:["pipe","pipe","pipe"]});child.stdout.resume();let stderr="";child.stderr.on("data",b=>{if(stderr.length<4000)stderr+=b.toString()});
       const timer=setTimeout(()=>{child.kill();reject(new Error("VERIFY_TIMEOUT"))},300000);
       const stream=pipeline(createReadStream(/* turbopackIgnore: true */ file!),child.stdin);void stream.catch(()=>child.kill());
-      child.on("error",e=>{clearTimeout(timer);reject(e)});child.on("close",code=>{clearTimeout(timer);void stream.then(()=>code===0?done():reject(new Error("VERIFY_FAILED")),reject)});
+      child.on("error",e=>{clearTimeout(timer);reject(e)});child.on("close",code=>{clearTimeout(timer);void stream.then(()=>code===0?done():reject(failure("VERIFY_FAILED",stderr)),reject)});
     });
     const hash=createHash("sha256");for await(const chunk of createReadStream(/* turbopackIgnore: true */ file))hash.update(chunk);
     const sha256=hash.digest("hex");await writeFile(file+".sha256",sha256+"  "+nombre+"\n",{flag:"wx",mode:0o600});
@@ -78,7 +80,8 @@ export async function createResetBackup(schema:string):Promise<ResetBackup>{
     if(file){await unlink(file).catch(()=>{});await unlink(file+".sha256").catch(()=>{});}
     // La causa queda en el registro del servidor y, como código, en el mensaje (sin rutas ni claves).
     const causa=error instanceof Error?error.message:String(error),sistema=(error as NodeJS.ErrnoException)?.code;
-    console.error(`[restablecimiento] respaldo fallido: ${causa}`);
+    const detalle=(error as {detalle?:string})?.detalle;
+    console.error(`[restablecimiento] respaldo fallido: ${causa}${detalle?`\n${detalle}`:""}`);
     const codigo=/^(BACKUP|VERIFY|EMPTY|DOCKER|SCHEMA)[A-Z_]*$/.test(causa)?causa:typeof sistema==="string"&&/^[A-Z_]+$/.test(sistema)?sistema:null;
     const pista=causa==="POSTGRES_TOOLS_REQUIRED"?" No se encontraron pg_dump ni pg_restore: instale las herramientas de PostgreSQL o configure PDMC_PG_DUMP_PATH y PDMC_PG_RESTORE_PATH.":codigo==="EACCES"||codigo==="EPERM"?` Causa: ${codigo} (sin permiso para escribir en backend\\backups\\restablecimientos).`:codigo?` Causa: ${codigo}. Detalle en el registro del servidor.`:" Detalle en el registro del servidor ([restablecimiento] respaldo fallido).";
     throw new NegativosError(503,"RESPALDO_REQUERIDO",`No se pudo crear y verificar el respaldo. No se borró ningún dato.${pista}`);
