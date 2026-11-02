@@ -42,7 +42,26 @@ En el PC de creación (sitio CREACION, dimID 2010), `config.env` lleva `TAREAS=c
 - **En el servidor, el worker `python -m app.sync.creacion --loop`** con `CYSN_CREACION_FUENTE=AGENTE` lo pasa a `cysn_qa.creacion` con la misma limpieza y los mismos controles de antes: no hace nada con 0 filas y se detiene si se darían de baja más del 20 %. Espera a que el agente lleve 2 minutos sin enviar, para no procesar un envío a medias.
 - El usuario de solo lectura necesita `SELECT` sobre `INVENTARIO`, `MARCAS`, `CATEGORIAS`, `TASA_CAMBIO` y `PARAMETROS` de la base `CREACION`.
 
-## Instalar en un sitio (tienda o bodega)
+## Instalar en muchos sitios (recomendado)
+
+1. **En el servidor, generar los tokens** de todas las tiendas y bodegas activas que no tienen agente (desde `CYSN_QA\backend`):
+   ```powershell
+   .venv\Scripts\python.exe -m app.agentes crear-faltantes                     # solo muestra la lista
+   .venv\Scripts\python.exe -m app.agentes crear-faltantes --aplicar --salida C:\temp\tokens-agentes.csv
+   ```
+   Opciones: `--tipo tienda|bodega` y `--excluir-dim 1017 1018`. Es todo o nada. El CSV (`codigo;token;dim_id_tienda;sitio;tipo;sucursal_id`) es el único lugar donde quedan los tokens en claro: pasarlo solo a quien instala y borrarlo al terminar. Los agentes registrados que nunca se conectaron se listan aparte y no se tocan (`rotar-token`).
+2. **En cada PC,** descomprimir `NexoQAAgente-<fecha>.zip` (lo arma `construir.ps1`), abrir `Instalar-NexoQA.exe` (pide permisos de administrador) y pegar el código y el token del sitio. El instalador:
+   - prueba el código y el token con la API (`/api/agente/v1/latido`) antes de tocar nada;
+   - busca las instancias de SQL Server del PC y la base: `BD_SPDV` (tienda), `GDC_CASA_MATRIZ` (bodega) o `CREACION`, y de ahí saca `TAREAS`, el intervalo y el `HTTP_TIMEOUT`;
+   - entra como administrador de SQL Server con la cuenta de Windows o, si no alcanza, con un usuario que pide una vez y no guarda (por ejemplo `sa`);
+   - crea o actualiza `nexoqa_agente` con una clave aleatoria y `SELECT` solo sobre las tablas que leen sus consultas, y comprueba que no es administrador ni puede escribir. Si SQL Server solo acepta autenticación de Windows, se detiene y lo explica;
+   - copia el servicio a `C:\NexoQA\agente` y la consola a `C:\NexoQA\consola`, escribe `config.env` (solo Administradores y SYSTEM pueden leerlo) y hace la primera carga;
+   - instala el servicio con inicio automático (retrasado) y reinicio a los 60 s si se cae, y quita la suspensión y la hibernación con el PC enchufado.
+   
+   Volver a ejecutarlo en un sitio ya instalado actualiza los archivos y conserva el código y el token. `Instalar-NexoQA.exe --diagnostico` solo muestra el estado del PC; `--desinstalar` quita el servicio; `--help` muestra el resto. Registro en `C:\NexoQA\instalacion.log`, sin claves.
+3. **Comprobar** en el servidor con `python -m app.agentes listar --sin-contacto-minutos 5`.
+
+## Instalar en un sitio a mano
 
 Se usa la carpeta compilada `dist\NexoQAAgenteTienda` (no hace falta instalar Python):
 

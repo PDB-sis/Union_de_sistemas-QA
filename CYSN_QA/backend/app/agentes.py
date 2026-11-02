@@ -10,6 +10,7 @@ Uso (desde CYSN_QA/backend, con el .env del servidor):
     python -m app.agentes desactivar --codigo AGT-GALERIAS
     python -m app.agentes activar --codigo AGT-GALERIAS
     python -m app.agentes listar [--sin-contacto-minutos 10]
+    python -m app.agentes crear-faltantes [--tipo tienda|bodega] [--aplicar --salida tokens.csv]
 
 Enlace de sucursales con el catálogo de sitios (dimID_Tienda de BODEGA_DATOS,
 que PDMC carga en <esquema PDMC>."Ubicacion"):
@@ -151,23 +152,132 @@ def crear(
         )
 
     codigo = validar_codigo(codigo) if codigo else codigo_desde_nombre(nombre_sitio)
-    token = generar_token()
-    try:
-        db.execute(
-            text("""
-                INSERT INTO agente_sucursal (sucursal_id, dim_id_tienda, codigo, token_hash)
-                VALUES (:sucursal_id, :dim_id, :codigo, :token_hash)
-            """),
-            {"sucursal_id": sucursal_id, "dim_id": dim_id, "codigo": codigo, "token_hash": hash_token_agente(token)},
-        )
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise AgenteError(f"El código {codigo} ya está en uso. Indique otro con --codigo.") from exc
+    token = _registrar(db, sucursal_id, dim_id, codigo)
+    db.commit()
 
     destino = f"la sucursal {sucursal_id}" if sucursal_id is not None else f"el sitio dimID {dim_id}"
     print(f"Agente {codigo} creado para {destino} ({nombre_sitio}).")
     mostrar_credenciales(codigo, token)
+    return EXIT_OK
+
+
+def _registrar(db: Session, sucursal_id: int | None, dim_id: int | None, codigo: str) -> str:
+    """Inserta el agente (sin confirmar la transacción) y devuelve su token en claro."""
+    token = generar_token()
+    try:
+        with db.begin_nested():
+            db.execute(
+                text("""
+                    INSERT INTO agente_sucursal (sucursal_id, dim_id_tienda, codigo, token_hash)
+                    VALUES (:sucursal_id, :dim_id, :codigo, :token_hash)
+                """),
+                {"sucursal_id": sucursal_id, "dim_id": dim_id, "codigo": codigo, "token_hash": hash_token_agente(token)},
+            )
+    except IntegrityError as exc:
+        raise AgenteError(f"El código {codigo} ya está en uso. Indique otro con --codigo.") from exc
+    return token
+
+
+# --- Alta masiva de los sitios que faltan ---------------------------------------------
+
+COLUMNAS_TOKENS = ["codigo", "token", "dim_id_tienda", "sitio", "tipo", "sucursal_id"]
+
+
+def sitios_sin_agente(db: Session, esquema: str) -> list[dict]:
+    """Tiendas y bodegas activas del catálogo de sitios (PDMC) que todavía no tienen agente."""
+    try:
+        filas = db.execute(text(f"""
+            SELECT u."dimIdTienda" AS dim_id_tienda, u.nombre AS sitio, u.tipo::text AS tipo, s.id AS sucursal_id
+            FROM "{esquema}"."Ubicacion" u
+            LEFT JOIN "{esquema}"."Tienda" t ON t."ubicacionId" = u.id
+            LEFT JOIN "{esquema}"."Bodega" b ON b."ubicacionId" = u.id
+            LEFT JOIN sucursal s ON s.dim_id_tienda = u."dimIdTienda"
+            WHERE u."dimIdTienda" IS NOT NULL AND u.tipo::text IN ('TIENDA', 'BODEGA')
+              AND COALESCE(t.activa, b.activa, false)
+              AND NOT EXISTS (
+                  SELECT 1 FROM agente_sucursal a LEFT JOIN sucursal s2 ON s2.id = a.sucursal_id
+                  WHERE COALESCE(a.dim_id_tienda, s2.dim_id_tienda) = u."dimIdTienda")
+            ORDER BY u.tipo::text, u.nombre
+        """)).mappings().all()
+    except Exception as exc:
+        db.rollback()
+        raise AgenteError(
+            f'No se pudo leer el catálogo de sitios en {esquema}."Ubicacion". '
+            "Debe existir la migración de sitios de PDMC y haberse sincronizado SUCURSALES."
+        ) from exc
+    return [dict(f) for f in filas]
+
+
+def codigos_unicos(sitios: list[dict], ocupados: set[str]) -> list[str]:
+    """AGT-<NOMBRE> para cada sitio; si el nombre se repite, se le añade el dimID."""
+    codigos = []
+    for s in sitios:
+        codigo = codigo_desde_nombre(s["sitio"])
+        if codigo in ocupados:
+            codigo = validar_codigo(f"{codigo[:72]}-{s['dim_id_tienda']}")
+        if codigo in ocupados:
+            raise AgenteError(f"No hay un código libre para {s['sitio']!r} (dimID {s['dim_id_tienda']}).")
+        ocupados.add(codigo)
+        codigos.append(codigo)
+    return codigos
+
+
+def crear_faltantes(db: Session, tipo: str, aplicar: bool, salida: Path | None,
+                    excluir: list[int], esquema: str | None) -> int:
+    sitios = [s for s in sitios_sin_agente(db, esquema_pdmc(esquema))
+              if (tipo == "todos" or s["tipo"] == tipo.upper()) and s["dim_id_tienda"] not in excluir]
+    sin_contacto = db.execute(text("""
+        SELECT a.codigo, COALESCE(a.dim_id_tienda, s.dim_id_tienda) AS dim_id_tienda
+        FROM agente_sucursal a LEFT JOIN sucursal s ON s.id = a.sucursal_id
+        WHERE a.activo AND a.ultimo_contacto_at IS NULL ORDER BY a.codigo
+    """)).mappings().all()
+    if sin_contacto:
+        print("Agentes registrados que nunca se conectaron (no se tocan; para un token nuevo use rotar-token):")
+        for a in sin_contacto:
+            print(f"    {a['codigo']} (dimID {a['dim_id_tienda']})")
+        print()
+    if not sitios:
+        print("Todos los sitios activos del catálogo ya tienen agente.")
+        return EXIT_OK
+
+    ocupados = set(db.execute(text("SELECT codigo FROM agente_sucursal")).scalars())
+    codigos = codigos_unicos(sitios, ocupados)
+    print(f"{'TIPO':<7} {'DIM_ID':>6}  {'SUCURSAL':>8}  {'CÓDIGO':<34} SITIO")
+    for s, codigo in zip(sitios, codigos):
+        sucursal = s["sucursal_id"] if s["sucursal_id"] is not None else "-"
+        print(f"{s['tipo']:<7} {s['dim_id_tienda']:>6}  {sucursal:>8}  {codigo:<34} {s['sitio']}")
+    print()
+    if not aplicar:
+        print(f"{len(sitios)} sitios sin agente. No se creó nada: para crearlos y guardar sus tokens use")
+        print("    python -m app.agentes crear-faltantes --aplicar --salida C:\\ruta\\tokens-agentes.csv")
+        return EXIT_OK
+    if salida is None:
+        raise AgenteError("Con --aplicar hace falta --salida: el archivo donde se guardan los tokens.")
+    if salida.exists():
+        raise AgenteError(f"{salida} ya existe; indique otro archivo para no mezclar tokens.")
+
+    # Todo o nada: si falla un alta o el archivo, no queda ningún agente creado.
+    creado = False
+    try:
+        tokens = [_registrar(db, s["sucursal_id"], s["dim_id_tienda"], c) for s, c in zip(sitios, codigos)]
+        salida.parent.mkdir(parents=True, exist_ok=True)
+        with salida.open("x", encoding="utf-8-sig", newline="") as f:
+            creado = True
+            w = csv.writer(f, delimiter=";")
+            w.writerow(COLUMNAS_TOKENS)
+            for s, codigo, token in zip(sitios, codigos, tokens):
+                w.writerow([codigo, token, s["dim_id_tienda"], s["sitio"], s["tipo"],
+                            s["sucursal_id"] if s["sucursal_id"] is not None else ""])
+        db.commit()
+    except BaseException as exc:
+        db.rollback()
+        if creado:
+            salida.unlink(missing_ok=True)
+        if isinstance(exc, OSError):
+            raise AgenteError(f"No se pudo escribir {salida}: {exc.strerror}. No se creó ningún agente.") from exc
+        raise
+    print(f"{len(sitios)} agentes creados. Tokens en {salida}: es el único lugar donde quedan en claro.")
+    print("Páselo solo a quien instala, por un medio seguro, y bórrelo cuando estén todos instalados.")
     return EXIT_OK
 
 
@@ -443,6 +553,15 @@ def main(argv: list[str] | None = None) -> int:
     p_crear.add_argument("--esquema-pdmc", help="Esquema de PDMC con el catálogo de sitios, para bodegas (por defecto CYSN_PDMC_SCHEMA o pdmc).")
 
     ayuda_esquema = "Esquema de PDMC con el catálogo de sitios (por defecto CYSN_PDMC_SCHEMA o pdmc)."
+    p_faltantes = sub.add_parser(
+        "crear-faltantes",
+        help="Registra un agente por cada tienda y bodega activa sin agente y guarda sus tokens en un CSV.",
+    )
+    p_faltantes.add_argument("--tipo", choices=["todos", "tienda", "bodega"], default="todos")
+    p_faltantes.add_argument("--aplicar", action="store_true", help="Crea los agentes (sin esto solo los muestra).")
+    p_faltantes.add_argument("--salida", type=Path, help="CSV nuevo donde se guardan los tokens (obligatorio con --aplicar).")
+    p_faltantes.add_argument("--excluir-dim", type=int, nargs="*", default=[], help="dimID que no se registran.")
+    p_faltantes.add_argument("--esquema-pdmc", help=ayuda_esquema)
     p_proponer = sub.add_parser("proponer-enlaces", help="Propone el dimID_Tienda de cada sucursal sin enlazar (CSV para revisar).")
     p_proponer.add_argument("--salida", type=Path, default=Path("enlaces-sucursales.csv"))
     p_proponer.add_argument("--esquema-pdmc", help=ayuda_esquema)
@@ -482,6 +601,8 @@ def main(argv: list[str] | None = None) -> int:
                 return filas(db, args.dim_id)
             if args.comando == "crear":
                 return crear(db, args.sucursal_id, args.sucursal, args.codigo, args.dim_id, args.esquema_pdmc)
+            if args.comando == "crear-faltantes":
+                return crear_faltantes(db, args.tipo, args.aplicar, args.salida, args.excluir_dim, args.esquema_pdmc)
             if args.comando == "proponer-enlaces":
                 return proponer_enlaces(db, args.salida, args.esquema_pdmc)
             if args.comando == "aplicar-enlaces":

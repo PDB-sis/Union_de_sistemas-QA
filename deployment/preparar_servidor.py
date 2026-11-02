@@ -83,7 +83,9 @@ def main() -> int:
             shutil.copy2(origen, nuevo / ruta)
         elif not ruta.endswith(".anterior.bat"):
             faltan.append(ruta)
-    zips = sorted(anterior.glob("NexoQAAgente-*.zip")) if anterior else []
+    # El paquete del agente más reciente: el que arma construir.ps1 o, si no hay, el de la Servidor/ anterior.
+    zips = sorted([*(RAIZ / "CYSN_QA" / "agente_tienda" / "dist").glob("NexoQAAgente-*.zip"),
+                   *(anterior.glob("NexoQAAgente-*.zip") if anterior else [])], key=lambda p: p.name)
     if zips:
         shutil.copy2(zips[-1], nuevo / zips[-1].name)
     else:

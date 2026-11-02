@@ -1,0 +1,39 @@
+# -*- mode: python ; coding: utf-8 -*-
+# Instalar-NexoQA.exe: un solo archivo que pide permisos de administrador al abrirse.
+
+a = Analysis(
+    ['instalador.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=['qa_agent', 'pyodbc'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='Instalar-NexoQA',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    uac_admin=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
