@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 import { SystemAuthorization } from "../auth/authorization";
+import { consultasDesde } from "../admin/reset";
 import { COLUMNAS_DEVOLUCIONES, ReturnsService } from "../devoluciones/service";
 import { importBillerCatalog } from "../facturacion/catalogo";
 import { InventoryService } from "../inventario/service";
@@ -89,7 +90,7 @@ export const modulos: readonly Modulo[] = [
     catalogo: false,
     omitirSiIgual: true,
     importar: async (db, csv, opciones) => {
-      const result = await new TransferQueryService(db).import(`agente-transferencias-${opciones.sitio?.dimIdTienda}.csv`, csv, { origen: ORIGEN_AGENTE, reaplicar: true, sitio: opciones.sitio });
+      const result = await new TransferQueryService(db).import(`agente-transferencias-${opciones.sitio?.dimIdTienda}.csv`, csv, { origen: ORIGEN_AGENTE, reaplicar: true, sitio: opciones.sitio, desde: await consultasDesde(db) });
       return { sinCambios: result.repetida, resumen: result.resumen };
     },
   },
@@ -101,7 +102,7 @@ export const modulos: readonly Modulo[] = [
     catalogo: false,
     omitirSiIgual: true,
     importar: async (db, csv, opciones) => {
-      const result = await new ReturnsService(db).import(`agente-devoluciones-${opciones.sitio?.dimIdTienda}.csv`, csv, { origen: ORIGEN_AGENTE, reaplicar: true, sitio: opciones.sitio });
+      const result = await new ReturnsService(db).import(`agente-devoluciones-${opciones.sitio?.dimIdTienda}.csv`, csv, { origen: ORIGEN_AGENTE, reaplicar: true, sitio: opciones.sitio, desde: await consultasDesde(db) });
       return { sinCambios: result.repetida, resumen: result.resumen };
     },
   },

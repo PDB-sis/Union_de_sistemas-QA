@@ -7,7 +7,8 @@ import { loadEnv } from "../src/env.ts";
 import pg from "pg";
 import {PrismaPg} from "@prisma/adapter-pg";
 import {PrismaClient} from "../generated/prisma/client.ts";
-import {ProjectReset} from "../src/admin/reset.ts";
+import {ProjectReset,consultasDesde} from "../src/admin/reset.ts";
+import {ensureSyncUser} from "../src/sync/usuario-sistema.ts";
 import {createResetBackup} from "../src/admin/reset-backup.ts";
 import {Authorization} from "../src/auth/authorization.ts";
 import {hashPassword} from "../src/auth/password.ts";
@@ -52,6 +53,8 @@ test("cambios posteriores a la revisión invalidan la confirmación sin borrar",
 });
 
 test("respaldo obligatorio, espera, transacción y conservación de un solo administrador",async()=>{
+  // La cuenta de sincronización del servidor sobrevive: las consultas siguen después del restablecimiento.
+  const syncEmail=`sincronizacion-${randomUUID()}@pdmc.local`,previoSync=process.env.PDMC_SYNC_USUARIO_EMAIL;process.env.PDMC_SYNC_USUARIO_EMAIL=syncEmail;await ensureSyncUser(db,syncEmail);
   const a=await account(),other=await account("AUDITORIA"),b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Bodega de prueba"}});
   const product=await db.producto.create({data:{codigoBarra:randomUUID()}});
   const primary=await db.negativo.create({data:{productoId:product.id,bodegaId:b.id,primeraDeteccion:new Date(),ultimaDeteccion:new Date()}});
@@ -71,7 +74,33 @@ test("respaldo obligatorio, espera, transacción y conservación de un solo admi
   finally {await sql.query('DROP TRIGGER reset_audit_failure ON "Auditoria"');}
   const result=await service.execute(payload(c)),backupFile=backupFiles.at(-1);
   assert.equal(result.restablecido,true);assert.ok((await stat(backupFile)).size>100);assert.equal((await readFile(backupFile)).subarray(0,5).toString(),"PGDMP");
-  assert.equal(await db.usuario.count(),1);const kept=await db.usuario.findUniqueOrThrow({where:{id:a.user.id}});assert.equal(kept.passwordHash,encoded);assert.equal(kept.rol,"ADMINISTRADOR");
+  assert.equal(await db.usuario.count(),2);assert.ok(await db.usuario.findUnique({where:{email:syncEmail}}));if(previoSync===undefined)delete process.env.PDMC_SYNC_USUARIO_EMAIL;else process.env.PDMC_SYNC_USUARIO_EMAIL=previoSync;
+  // Desde hoy (hora de Venezuela) traen datos las consultas con fecha.
+  assert.equal((await consultasDesde(db)).toISOString().slice(0,10),new Date().toLocaleDateString("en-CA",{timeZone:"America/Caracas"}));
+  const kept=await db.usuario.findUniqueOrThrow({where:{id:a.user.id}});assert.equal(kept.passwordHash,encoded);assert.equal(kept.rol,"ADMINISTRADOR");
   assert.equal(await db.asignacionAcceso.count(),1);assert.equal(await db.sesionUsuario.count(),0);assert.equal(await db.producto.count(),0);assert.equal(await db.bodega.count(),0);assert.equal(await db.negativo.count(),0);assert.equal(await db.auditoria.count({where:{accion:"RESTABLECER_PROYECTO"}}),1);
   await assert.rejects(service.execute(payload(c)),{code:"CONFIRMACION"});
+});
+
+test("con una actualización en curso no se prepara; preparado, la sincronización se pausa",async()=>{
+  const a=await account(),service=new ProjectReset(db,a.access,a.token,async()=>{throw new Error("No debe respaldar")});
+  await db.sincronizacionEstado.create({data:{modulo:"TRANSFERENCIAS",bloqueoId:randomUUID(),bloqueoHasta:new Date(Date.now()+60000)}});
+  try{await assert.rejects(service.prepare({password}),{status:409,code:"SINCRONIZANDO"});assert.equal(await db.restablecimientoProyecto.count({where:{consumidoAt:null}}),0);}
+  finally{await db.sincronizacionEstado.deleteMany({where:{modulo:"TRANSFERENCIAS"}})}
+  const c=await service.prepare({password}),{ejecutarModulo}=await import("../src/sync/ejecutar.ts"),{modulos}=await import("../src/sync/modulos.ts");
+  const antes=await db.sincronizacionEjecucion.count();
+  assert.deepEqual(await ejecutarModulo(db,modulos.find(m=>m.id==="TRANSFERENCIAS")),{estado:"PAUSADA"});
+  assert.equal(await db.sincronizacionEjecucion.count(),antes);assert.equal(await db.sincronizacionEstado.count(),0);
+  await db.restablecimientoProyecto.delete({where:{id:c.id}});
+});
+
+test("la fecha de inicio de las consultas es el día del restablecimiento en hora de Venezuela",async()=>{
+  const a=await account(),base={usuarioId:a.user.id,sesionHash:hash(randomUUID()),conteos:{},disponibleDesde:new Date(),expiresAt:new Date()};
+  await db.restablecimientoProyecto.deleteMany({});
+  assert.equal(await consultasDesde(db),null);
+  // 2 de noviembre a las 22:30 en Venezuela ya es 3 de noviembre en UTC.
+  await db.restablecimientoProyecto.create({data:{...base,tokenHash:hash(randomUUID()),consumidoAt:new Date("2026-11-03T02:30:00Z")}});
+  await db.restablecimientoProyecto.create({data:{...base,tokenHash:hash(randomUUID())}});
+  assert.equal((await consultasDesde(db)).toISOString(),"2026-11-02T00:00:00.000Z");
+  await db.restablecimientoProyecto.deleteMany({});
 });

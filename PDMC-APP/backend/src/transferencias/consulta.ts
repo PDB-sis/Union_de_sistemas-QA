@@ -20,7 +20,8 @@ export class TransferQueryService{
   // La consulta llega del agente de cada bodega (cysn_qa.agente_fila). reaplicar: vuelve a aplicar un
   // resultado ya importado antes (p. ej. una transferencia creada y eliminada). sitio: bodega de origen;
   // la comparación y las bajas se limitan a ella, porque los números se repiten entre bodegas.
-  async import(filename:string,content:string,options:{origen?:string;reaplicar?:boolean;sitio?:{ubicacionId:string}}={}){
+  // desde: día del último restablecimiento; solo se cargan las transferencias de ese día en adelante.
+  async import(filename:string,content:string,options:{origen?:string;reaplicar?:boolean;sitio?:{ubicacionId:string};desde?:Date|null}={}){
     const origenId=options.sitio?.ubicacionId??null;
     if(this.access)await this.access.permitted("transferencias.importar");
     const table=parseDelimitedTable(content);if(!table.length)throw new NegativosError(422,"ARCHIVO","El archivo está vacío.");
@@ -39,8 +40,13 @@ export class TransferQueryService{
       else grouped.set(numero,{numero,fecha,codigoFacturador,facturadorId:byBiller.get(codigoFacturador)??null,codigoTiendaConsulta,tiendaId:byStore.get(codigoTiendaConsulta)??null,estado,observacion,unidades:cantidad,cantidadCodigos:1});
       details.push({numero,codigoBarra,cantidad,numeroCaja,productoId:byBarcode.get(codigoBarra)??null});
     }
+    let anteriores=0;
+    if(options.desde){
+      for(const [numero,row] of grouped)if(row.fecha<options.desde){grouped.delete(numero);anteriores++;}
+      for(let i=details.length-1;i>=0;i--)if(!grouped.has(details[i].numero))details.splice(i,1);
+    }
     const rows=[...grouped.values()],hash=createHash("sha256").update(`${origenId??""}
-`).update(content).digest("hex"),summary={total:rows.length,filasDetalle:details.length,abiertas:rows.filter(x=>x.estado==="Abierta").length,aprobadas:rows.filter(x=>x.estado==="Aprobada").length,exportadas:rows.filter(x=>x.estado==="Exportada").length,sinTienda:rows.filter(x=>!x.tiendaId).length,sinFacturador:rows.filter(x=>!x.facturadorId).length,sinProducto:details.filter(x=>!x.productoId).length};
+${options.desde?`desde ${options.desde.toISOString()}\n`:""}`).update(content).digest("hex"),summary={...(options.desde?{desde:options.desde.toISOString().slice(0,10),anterioresAlRestablecimiento:anteriores}:{}),total:rows.length,filasDetalle:details.length,abiertas:rows.filter(x=>x.estado==="Abierta").length,aprobadas:rows.filter(x=>x.estado==="Aprobada").length,exportadas:rows.filter(x=>x.estado==="Exportada").length,sinTienda:rows.filter(x=>!x.tiendaId).length,sinFacturador:rows.filter(x=>!x.facturadorId).length,sinProducto:details.filter(x=>!x.productoId).length};
     return this.db.$transaction(async tx=>{
       const previous=await tx.transferenciaConsultaImport.findUnique({where:{hashArchivo:hash}});if(previous&&!options.reaplicar)return {repetida:true,importacion:previous,resumen:previous.resumen};
       const imported=previous??await tx.transferenciaConsultaImport.create({data:{nombreArchivo:filename,hashArchivo:hash,totalFilas:details.length,resumen:summary,importedById:this.access?.userId}});

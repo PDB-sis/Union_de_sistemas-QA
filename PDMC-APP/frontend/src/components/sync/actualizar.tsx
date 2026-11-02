@@ -11,7 +11,8 @@ export const nombresModulo:Record<ModuloSync,string>={SUCURSALES:"Tiendas",FACTU
 
 /** Estado de las consultas automáticas, leído de /api/sincronizacion. */
 export function useEstadosSincronizacion(epoch=0){
-  const [data,setData]=useState<{activa:boolean;estados:Estado[]}|null>(null);
+  // desde: día del último restablecimiento (las consultas con fecha traen desde ese día); pausada: hay uno en preparación.
+  const [data,setData]=useState<{activa:boolean;estados:Estado[];desde?:string|null;pausada?:boolean}|null>(null);
   useEffect(()=>{let active=true;fetch("/api/sincronizacion",{cache:"no-store"}).then(r=>r.json()).then(body=>{if(active&&body.ok)setData(body.data)}).catch(()=>undefined);return()=>{active=false}},[epoch]);
   return data;
 }

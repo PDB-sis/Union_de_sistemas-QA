@@ -8,6 +8,7 @@ import { toCsv } from "./csv";
 import { cargaInventario, cargasAgente, firmaAgente, firmaInventario, type TareaAgente } from "./agente";
 import type { Modulo, OpcionesEjecucion } from "./modulos";
 import { cuentaDelSitio } from "./cuentas";
+import { restablecimientoPendiente } from "../admin/reset";
 import { AuthError } from "../auth/service";
 import type { SystemAuthorization } from "../auth/authorization";
 import type { Permission } from "@pdmc/contratos/auth/permissions";
@@ -21,6 +22,8 @@ const MAX_ERROR = 2_000;
 
 export type ResultadoEjecucion =
   | { estado: "OMITIDA" }
+  /** Hay un restablecimiento del proyecto preparado: no se carga nada hasta que se confirme o venza. */
+  | { estado: "PAUSADA" }
   | { estado: "EXITOSA" | "SIN_CAMBIOS"; totalFilas: number; resumen?: unknown }
   | { estado: "FALLIDA"; error: string };
 
@@ -135,6 +138,8 @@ async function desdeInventarioAgente(db: PrismaClient, modulo: Modulo, ultimoHas
  * como CSV, a la misma importación que hoy recibe el archivo cargado manualmente.
  */
 export async function ejecutarModulo(db: PrismaClient, modulo: Modulo, opciones: OpcionesEjecucion = {}): Promise<ResultadoEjecucion> {
+  // Antes de tomar el bloqueo: ni siquiera se registra el intento, para no cambiar los totales revisados.
+  if (await restablecimientoPendiente(db)) return { estado: "PAUSADA" };
   const leaseId = await acquireLease(db, modulo.id, modulo.bloqueoMinutos);
   if (!leaseId) return { estado: "OMITIDA" };
 

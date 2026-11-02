@@ -199,3 +199,26 @@ test("cada región carga sus bodegas con su propia cuenta; una región sin cuent
     assert.equal((await transferencias("T9")).length,2);
   }finally{process.env.PDMC_SYNC_USUARIO_EMAIL=transicion}
 });
+
+test("después de un restablecimiento solo se cargan transferencias y devoluciones desde ese día",async()=>{
+  const admin=await db.usuario.create({data:{email:`${randomUUID()}@example.test`,nombre:"Administrador",estado:"ACTIVO",debeCambiarPassword:false}});
+  // Restablecido el 25 de octubre (hora de Venezuela).
+  const hecho=await db.restablecimientoProyecto.create({data:{usuarioId:admin.id,tokenHash:"a".repeat(64),sesionHash:"b".repeat(64),conteos:{},disponibleDesde:new Date(),expiresAt:new Date(),consumidoAt:new Date("2026-10-25T15:00:00Z")}});
+  try{
+    const enFecha=(numero,fecha)=>({...linea(numero,"A","1",1),fecha_formateada:fecha});
+    await enviar(2004,"transferencias","T20|A|1",enFecha("T20","10/24/2026"));
+    await enviar(2004,"transferencias","T21|A|1",enFecha("T21","10/25/2026"));
+    const devolucion=(numero,fecha)=>({Numero:numero,fecha_formateada:fecha,CodNombre:"F1",usuario:"ANA",codigoRecibe_Dletra:"1010103",status:"Abierta",Observacion:"",TotalValor:"1",DocumentoOrigen:"55"});
+    await enviar(2004,"devoluciones","D20",devolucion("D20","10/24/2026"));
+    await enviar(2004,"devoluciones","D21",devolucion("D21","10/26/2026"));
+    const t=await ejecutarModulo(db,modulo("TRANSFERENCIAS")),d=await ejecutarModulo(db,modulo("DEVOLUCIONES"));
+    assert.equal(t.estado,"EXITOSA");assert.equal(d.estado,"EXITOSA");
+    const vigente=async(tabla,numero)=>Boolean(await db[tabla].findFirst({where:{numero,origenId:sitios[2004],bajaEn:null}}));
+    assert.equal(await vigente("transferenciaConsulta","T20"),false);
+    assert.equal(await vigente("transferenciaConsulta","T21"),true);
+    assert.equal(await vigente("devolucionConsulta","D20"),false);
+    assert.equal(await vigente("devolucionConsulta","D21"),true);
+    const resumen=t.resumen.sitios.find(s=>s.dimIdTienda===2004).resumen;
+    assert.equal(resumen.desde,"2026-10-25");assert.ok(resumen.anterioresAlRestablecimiento>=1);
+  }finally{await db.restablecimientoProyecto.delete({where:{id:hecho.id}})}
+});

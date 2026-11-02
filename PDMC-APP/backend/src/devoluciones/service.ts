@@ -22,7 +22,8 @@ export class ReturnsService{
   // La consulta llega del agente de cada bodega (cysn_qa.agente_fila). reaplicar: vuelve a aplicar un
   // resultado ya importado antes (p. ej. una devolución creada y eliminada). sitio: bodega de origen;
   // la comparación y las bajas se limitan a ella, porque los números se repiten entre bodegas.
-  async import(filename:string,content:string,options:{origen?:string;reaplicar?:boolean;sitio?:{ubicacionId:string}}={}){
+  // desde: día del último restablecimiento; solo se cargan las devoluciones de ese día en adelante.
+  async import(filename:string,content:string,options:{origen?:string;reaplicar?:boolean;sitio?:{ubicacionId:string};desde?:Date|null}={}){
     const origenId=options.sitio?.ubicacionId??null;
     if(this.access)await this.access.permitted("devoluciones.importar");
     const table=parseDelimitedTable(content),actual=table[0]?.cells.map(normalizeHeader)??[];if(actual.length!==headers.length||headers.some((name,index)=>actual[index]!==normalizeHeader(name)))throw new NegativosError(422,"ENCABEZADOS",`Encabezados requeridos: ${headers.join("; ")}.`);
@@ -36,8 +37,11 @@ export class ReturnsService{
       if(grouped.has(numero))throw new NegativosError(422,"DUPLICADO",`Fila ${row.fila}: la devolución ${numero} aparece más de una vez.`);
       grouped.set(numero,{numero,fecha,codigoResponsable,nombreResponsable:nombre&&nombre.toLowerCase()!==SIN_USUARIO?nombre:null,responsableId:byProfile.get(codigoResponsable)??null,codigoTiendaConsulta,tiendaId:byStore.get(codigoTiendaConsulta)??null,estado,observacion,totalValor,documentoOrigen});
     }
-    const rows=[...grouped.values()];if(!rows.length)throw new NegativosError(422,"ARCHIVO","La consulta no contiene devoluciones.");const hash=createHash("sha256").update(`${origenId??""}
-`).update(content).digest("hex"),summary={total:rows.length,abiertas:rows.filter(x=>x.estado==="Abierta").length,aprobadas:rows.filter(x=>x.estado==="Aprobada").length,exportadas:rows.filter(x=>x.estado==="Exportada").length,sinTienda:rows.filter(x=>!x.tiendaId).length,sinResponsable:rows.filter(x=>!x.responsableId).length};
+    if(!grouped.size)throw new NegativosError(422,"ARCHIVO","La consulta no contiene devoluciones.");
+    let anteriores=0;
+    if(options.desde)for(const [numero,row] of grouped)if(row.fecha<options.desde){grouped.delete(numero);anteriores++;}
+    const rows=[...grouped.values()];const hash=createHash("sha256").update(`${origenId??""}
+${options.desde?`desde ${options.desde.toISOString()}\n`:""}`).update(content).digest("hex"),summary={...(options.desde?{desde:options.desde.toISOString().slice(0,10),anterioresAlRestablecimiento:anteriores}:{}),total:rows.length,abiertas:rows.filter(x=>x.estado==="Abierta").length,aprobadas:rows.filter(x=>x.estado==="Aprobada").length,exportadas:rows.filter(x=>x.estado==="Exportada").length,sinTienda:rows.filter(x=>!x.tiendaId).length,sinResponsable:rows.filter(x=>!x.responsableId).length};
     return this.db.$transaction(async tx=>{
       const previous=await tx.devolucionConsultaImport.findUnique({where:{hashArchivo:hash}});if(previous&&!options.reaplicar)return {repetida:true,resumen:previous.resumen};
       const imported=previous??await tx.devolucionConsultaImport.create({data:{nombreArchivo:filename,hashArchivo:hash,totalFilas:rows.length,resumen:summary,importedById:this.access?.userId}});

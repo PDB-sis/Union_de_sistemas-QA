@@ -30,6 +30,7 @@ async function ejecutar(db: ReturnType<typeof getDb>, modulo: Modulo) {
   }));
   if (result.estado === "FALLIDA") console.error(new Date().toISOString() + " [" + modulo.id + "] FALLIDA: " + result.error);
   else if (result.estado === "OMITIDA") log(modulo, "Omitida: otro proceso la esta ejecutando.");
+  else if (result.estado === "PAUSADA") log(modulo, "En pausa: hay un restablecimiento del proyecto en preparacion.");
   else log(modulo, result.estado + " (" + result.totalFilas + " filas).");
 }
 

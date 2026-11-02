@@ -20,6 +20,27 @@ async function counts(db:Prisma.TransactionClient){
   for(const table of counted){const [row]=await db.$queryRawUnsafe<{total:bigint}[]>(`SELECT count(*)::bigint AS total FROM ${quote(table)}`);result[table]=Number(row.total);}
   return result;
 }
+
+/**
+ * Fecha de inicio de las consultas: el día (hora de Venezuela) del último restablecimiento.
+ * Desde entonces las consultas con fecha (transferencias y devoluciones) solo traen lo de ese
+ * día en adelante. Sin restablecimientos, null: se trae todo.
+ */
+export async function consultasDesde(db:Pick<PrismaClient,"restablecimientoProyecto">){
+  const ultimo=await db.restablecimientoProyecto.findFirst({where:{consumidoAt:{not:null}},orderBy:{consumidoAt:"desc"},select:{consumidoAt:true}});
+  if(!ultimo?.consumidoAt)return null;
+  const dia=ultimo.consumidoAt.toLocaleDateString("en-CA",{timeZone:"America/Caracas"});
+  return new Date(`${dia}T00:00:00.000Z`);
+}
+/** Mientras haya un restablecimiento preparado (máximo 10 minutos), la sincronización se pausa: si no, sus cargas cambian los totales revisados. */
+export async function restablecimientoPendiente(db:Pick<PrismaClient,"restablecimientoProyecto">){
+  return Boolean(await db.restablecimientoProyecto.findFirst({where:{consumidoAt:null,expiresAt:{gt:new Date()}},select:{id:true}}));
+}
+/** La cuenta de sistema de transición (PDMC_SYNC_USUARIO_EMAIL, sin contraseña) sobrevive al restablecimiento para que las consultas sigan. */
+async function cuentaDeTransicion(tx:Prisma.TransactionClient){
+  const email=process.env.PDMC_SYNC_USUARIO_EMAIL?.trim().toLowerCase();
+  return email?tx.usuario.findFirst({where:{email,passwordHash:null},select:{id:true}}):null;
+}
 export class ProjectReset {
   constructor(private db:PrismaClient,private access:Authorization,private sessionToken:string,private backup:(schema:string)=>Promise<ResetBackup>=createResetBackup){}
   private async authorize(){
@@ -34,14 +55,19 @@ export class ProjectReset {
   }
   async preview(){
     await this.authorize();
-    const totals=await this.db.$transaction(tx=>counts(tx),{isolationLevel:"RepeatableRead"});
+    const [totals,sistema]=await this.db.$transaction(async tx=>[await counts(tx),await cuentaDeTransicion(tx)] as const,{isolationLevel:"RepeatableRead"});
     const actor=await this.db.usuario.findUniqueOrThrow({where:{id:this.access.userId},select:{nombre:true,email:true}});
-    return {actor,tablas:counted.map(tabla=>({tabla,cantidad:Math.max(0,totals[tabla]-(["Usuario","AsignacionAcceso"].includes(tabla)?1:0))})),frase:"RESTABLECER PDMC DESDE CERO"};
+    const conservados:Record<string,number>={Usuario:sistema?2:1,AsignacionAcceso:1};
+    return {actor,tablas:counted.map(tabla=>({tabla,cantidad:Math.max(0,totals[tabla]-(conservados[tabla]??0))})),frase:"RESTABLECER PDMC DESDE CERO"};
   }
   async prepare(raw:unknown){
     await this.authorize();const input=prepareSchema.parse(raw);await this.password(input.password);
     const token=randomBytes(32).toString("hex"),now=Date.now();
     const challenge=await this.db.$transaction(async tx=>{
+      // Con una carga en curso los totales cambiarían antes de confirmar. Las siguientes se pausan
+      // en cuanto exista esta preparación (restablecimientoPendiente).
+      const enCurso=await tx.sincronizacionEstado.findMany({where:{bloqueoHasta:{gt:new Date()}},select:{modulo:true}});
+      if(enCurso.length)throw new NegativosError(409,"SINCRONIZANDO",`Hay una actualización en curso (${enCurso.map(e=>e.modulo).join(", ")}). Espere a que termine y prepare de nuevo.`);
       await tx.restablecimientoProyecto.deleteMany({where:{usuarioId:this.access.userId,consumidoAt:null}});
       return tx.restablecimientoProyecto.create({data:{usuarioId:this.access.userId!,tokenHash:digest(token),sesionHash:digest(this.sessionToken),conteos:await counts(tx),disponibleDesde:new Date(now+30000),expiresAt:new Date(now+10*60000)}});
     });
@@ -70,12 +96,15 @@ export class ProjectReset {
       const truncated=tables.filter(t=>!["Usuario","RestablecimientoProyecto"].includes(t));
       // Lista cerrada, sin CASCADE: una dependencia nueva aborta la transacción.
       await tx.$executeRawUnsafe(`TRUNCATE TABLE ${truncated.map(quote).join(",")}`);
+      // Queda solo este restablecimiento: su fecha es desde cuándo traen datos las consultas (consultasDesde).
+      const sistema=await cuentaDeTransicion(tx);
       await tx.restablecimientoProyecto.deleteMany({where:{id:{not:challenge.id}}});
-      await tx.usuario.deleteMany({where:{id:{not:actor.id}}});
+      await tx.usuario.deleteMany({where:{id:{notIn:[actor.id,...(sistema?[sistema.id]:[])]}}});
       await tx.usuario.update({where:{id:actor.id},data:{rol:"ADMINISTRADOR"}});
       await tx.asignacionAcceso.create({data:{usuarioId:actor.id,rol:"ADMINISTRADOR",ubicacionId:null}});
       const after=await counts(tx);
-      if(counted.some(t=>after[t]!==(["Usuario","AsignacionAcceso"].includes(t)?1:0)))throw new NegativosError(503,"VERIFICACION","La verificación de limpieza falló. Se revirtieron los cambios.");
+      const esperado:Record<string,number>={Usuario:sistema?2:1,AsignacionAcceso:1};
+      if(counted.some(t=>after[t]!==(esperado[t]??0)))throw new NegativosError(503,"VERIFICACION","La verificación de limpieza falló. Se revirtieron los cambios.");
       await tx.restablecimientoProyecto.update({where:{id:challenge.id},data:{consumidoAt:new Date(),respaldoNombre:backup.nombre,respaldoSha256:backup.sha256}});
       await tx.auditoria.create({data:{usuarioId:actor.id,entidad:"RestablecimientoProyecto",entidadId:challenge.id,accion:"RESTABLECER_PROYECTO",motivo:"Restablecimiento total confirmado por el administrador con contraseña, frase y respaldo verificado",valorAnterior:before,valorNuevo:{respaldo:backup.nombre,sha256:backup.sha256,bytes:backup.bytes,administradorConservado:actor.id}}});
       return {restablecido:true,respaldo:backup.nombre,sha256:backup.sha256};

@@ -29,7 +29,7 @@ Tres paquetes independientes (workspaces de npm), organizados como `CYSN_QA`. De
 - Inconsistencias: Pendiente de conteo → Investigación → Corrección pendiente → Verificación → Solucionado. Registrar una corrección no la verifica; no se cierra un caso con unidades pendientes.
 - Negativos: Pendientes de conteo → Con conteo → Aprobados para ajuste → Listos para cerrar. Máximo dos fotografías por semana. Que un caso desaparezca no lo soluciona.
 - % de error del facturador = unidades de errores atribuibles confirmados / unidades transferidas en el mes × 100. Atribuibles: "Error por facturador (Físico Faltante)" y "No se facturó la mercancía (No está en transf)".
-- El restablecimiento protegido (solo el administrador) nunca se ejecuta sin una solicitud expresa.
+- El restablecimiento protegido (solo el administrador) nunca se ejecuta sin una solicitud expresa. Mientras está preparado, la sincronización se pausa (`restablecimientoPendiente`). Conserva al administrador y la cuenta de transición `PDMC_SYNC_USUARIO_EMAIL`, y fija la fecha de inicio de las consultas: desde entonces, transferencias y devoluciones solo se cargan con fecha del día del restablecimiento en adelante (`consultasDesde`, hora de Venezuela).
 - Pedidos, etiquetado y proyectos son elementos históricos: verificar su estado antes de tratarlos como módulos activos.
 
 ## Sistema visual
