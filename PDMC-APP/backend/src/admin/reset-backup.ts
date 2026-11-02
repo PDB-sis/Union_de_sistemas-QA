@@ -77,9 +77,10 @@ export async function createResetBackup(schema:string):Promise<ResetBackup>{
   }catch(error){
     if(file){await unlink(file).catch(()=>{});await unlink(file+".sha256").catch(()=>{});}
     // La causa queda en el registro del servidor y, como código, en el mensaje (sin rutas ni claves).
-    const causa=error instanceof Error?error.message:String(error);
+    const causa=error instanceof Error?error.message:String(error),sistema=(error as NodeJS.ErrnoException)?.code;
     console.error(`[restablecimiento] respaldo fallido: ${causa}`);
-    const pista=causa==="POSTGRES_TOOLS_REQUIRED"?" No se encontraron pg_dump ni pg_restore: instale las herramientas de PostgreSQL o configure PDMC_PG_DUMP_PATH y PDMC_PG_RESTORE_PATH.":/^(BACKUP|VERIFY|EMPTY|DOCKER|SCHEMA)[A-Z_]*$/.test(causa)?` Causa: ${causa}.`:" Compruebe Docker o configure pg_dump y pg_restore en el servidor.";
+    const codigo=/^(BACKUP|VERIFY|EMPTY|DOCKER|SCHEMA)[A-Z_]*$/.test(causa)?causa:typeof sistema==="string"&&/^[A-Z_]+$/.test(sistema)?sistema:null;
+    const pista=causa==="POSTGRES_TOOLS_REQUIRED"?" No se encontraron pg_dump ni pg_restore: instale las herramientas de PostgreSQL o configure PDMC_PG_DUMP_PATH y PDMC_PG_RESTORE_PATH.":codigo==="EACCES"||codigo==="EPERM"?` Causa: ${codigo} (sin permiso para escribir en backend\\backups\\restablecimientos).`:codigo?` Causa: ${codigo}. Detalle en el registro del servidor.`:" Detalle en el registro del servidor ([restablecimiento] respaldo fallido).";
     throw new NegativosError(503,"RESPALDO_REQUERIDO",`No se pudo crear y verificar el respaldo. No se borró ningún dato.${pista}`);
   }
 }
