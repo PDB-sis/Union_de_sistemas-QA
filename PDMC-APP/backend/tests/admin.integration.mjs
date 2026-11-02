@@ -333,6 +333,28 @@ test("desactivar y transferir: alcance receptor, pendientes, historial, revocaci
   assert.equal(await db.historialNegativo.count({where:{accion:"RESPONSABLE_TRANSFERIDO",usuarioId:a.id}}),2);
   await a.service.status({id:source.id,estado:"ACTIVO",motivo});assert.equal((await db.usuario.findUniqueOrThrow({where:{id:source.id}})).activo,true);
 });
+test("cuentas de sincronización: una por región, sin contraseña, fuera de Usuarios y protegidas",async()=>{
+  const a=await user(),r=await region();
+  const cuenta=await a.service.createSyncAccount({regionId:r.id,motivo});
+  const stored=await db.usuario.findUniqueOrThrow({where:{id:cuenta.id},include:{asignaciones:true}});
+  assert.equal(stored.passwordHash,null);assert.equal(stored.estado,"ACTIVO");
+  assert.deepEqual(stored.asignaciones.map(g=>[g.rol,g.ubicacionId]),[["SINCRONIZACION",r.id]]);
+  assert.equal((await a.service.syncAccounts()).rows.find(row=>row.region.id===r.id).cuenta.id,cuenta.id);
+  await assert.rejects(a.service.createSyncAccount({regionId:r.id,motivo}),{status:409,code:"YA_EXISTE"});
+  await assert.rejects(a.service.createSyncAccount({regionId:(await tienda(r.id)).id,motivo}),{status:422,code:"REGION"});
+  await assert.rejects(db.asignacionAcceso.create({data:{usuarioId:a.id,rol:"SINCRONIZACION",ubicacionId:r.id}}));
+  // No aparece entre las personas ni se asigna desde el formulario de usuarios.
+  assert.equal((await a.service.users({q:cuenta.email})).total,0);
+  await assert.rejects(a.service.createUser({email:`${randomUUID()}@example.test`,nombre:"Otra",passwordTemporal:secret(),asignaciones:[{rol:"SINCRONIZACION",ubicacionId:(await region()).id}],motivo}),{status:422,code:"CUENTA_SISTEMA"});
+  await assert.rejects(a.service.password({id:cuenta.id,passwordTemporal:secret(),motivo}),{status:422,code:"CUENTA_SISTEMA"});
+  // Se desactiva y se reactiva sin contraseña.
+  await a.service.status({id:cuenta.id,estado:"INACTIVO",motivo});
+  await a.service.status({id:cuenta.id,estado:"ACTIVO",motivo});
+  assert.equal((await db.usuario.findUniqueOrThrow({where:{id:cuenta.id}})).estado,"ACTIVO");
+  // Solo quien administra accesos la crea.
+  const mejora=await user([{rol:"MEJORA_CONTINUA",ubicacionId:r.id}]);
+  await assert.rejects(mejora.service.createSyncAccount({regionId:(await region()).id,motivo}),{status:403});
+});
 test("último administrador activo protegido incluso con invitado; concurrencia no deja cero administradores",async()=>{
   // Sólo se alteran cuentas del esquema de esta prueba.
   await db.asignacionAcceso.deleteMany({where:{rol:"ADMINISTRADOR"}});

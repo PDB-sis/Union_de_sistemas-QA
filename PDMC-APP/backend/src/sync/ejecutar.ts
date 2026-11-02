@@ -7,6 +7,10 @@ import { NegativosError } from "../negativos/validation";
 import { toCsv } from "./csv";
 import { cargaInventario, cargasAgente, firmaAgente, firmaInventario, type TareaAgente } from "./agente";
 import type { Modulo, OpcionesEjecucion } from "./modulos";
+import { cuentaDelSitio } from "./cuentas";
+import { AuthError } from "../auth/service";
+import type { SystemAuthorization } from "../auth/authorization";
+import type { Permission } from "@pdmc/contratos/auth/permissions";
 
 // Las consultas viven en backend/sqlserver/consultas, sin importar desde dónde se ejecute.
 const consultasDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "sqlserver", "consultas");
@@ -73,13 +77,40 @@ async function desdeAgente(db: PrismaClient, modulo: Modulo, tarea: TareaAgente,
   // Instalación nueva o sitio sin agente: no es un fallo; lo ya importado se conserva.
   if (!cargas.length) return { hash: firma, totalFilas: 0, result: { sinCambios: true, resumen: { aviso: `Ningún agente de bodega ha enviado ${tarea} todavía.` } } };
   const porSitio = [];
-  let sinCambios = true;
+  let sinCambios = true, omitidos = 0;
+  const permiso = permisoPorTarea[tarea];
   for (const carga of cargas) {
-    const r = await modulo.importar(db, carga.csv, { ...opciones, sitio: { ubicacionId: carga.ubicacionId, dimIdTienda: carga.dimIdTienda } });
+    // Cada bodega se carga con la cuenta de sincronización de su región. Si la región no
+    // tiene una activa, esa bodega se omite (con aviso) y las demás regiones siguen.
+    let acceso: SystemAuthorization | undefined, cuenta: string | undefined;
+    if (permiso) {
+      const resuelta = await cuentaDelSitio(db, carga.ubicacionId);
+      const aviso = "aviso" in resuelta ? resuelta.aviso : await motivoDeRechazo(resuelta.acceso.permitted(permiso));
+      if (aviso || "aviso" in resuelta) {
+        omitidos++;
+        porSitio.push({ dimIdTienda: carga.dimIdTienda, sitio: carga.nombre, filas: carga.filas, omitido: aviso });
+        continue;
+      }
+      acceso = resuelta.acceso; cuenta = resuelta.cuenta;
+    }
+    const r = await modulo.importar(db, carga.csv, { ...opciones, acceso, sitio: { ubicacionId: carga.ubicacionId, dimIdTienda: carga.dimIdTienda } });
     sinCambios &&= r.sinCambios;
-    porSitio.push({ dimIdTienda: carga.dimIdTienda, sitio: carga.nombre, filas: carga.filas, resumen: r.resumen });
+    porSitio.push({ dimIdTienda: carga.dimIdTienda, sitio: carga.nombre, filas: carga.filas, cuenta, resumen: r.resumen });
   }
-  return { hash: firma, totalFilas: filas, result: { sinCambios, resumen: { fuente: "agente", sitios: porSitio } } };
+  // Con bodegas omitidas no se guarda la huella: así se reintentan en cuanto su región tenga cuenta.
+  return { hash: omitidos ? createHash("sha256").update(`${firma}:incompleta`).digest("hex") : firma, totalFilas: filas, result: { sinCambios: sinCambios && !omitidos, resumen: { fuente: "agente", sitios: porSitio, ...(omitidos ? { bodegasOmitidas: omitidos } : {}) } } };
+}
+
+// Transferencias y devoluciones son datos de cada bodega: se cargan con la cuenta de su región.
+// Los facturadores (usuarios) son un catálogo común, sin región.
+const permisoPorTarea: Record<TareaAgente, Permission | null> = { transferencias: "transferencias.importar", devoluciones: "devoluciones.importar", usuarios: null };
+
+/** Cuenta inactiva o de otra región: el motivo, para omitir esa bodega en lugar de detener todo. */
+function motivoDeRechazo(comprobacion: Promise<void>) {
+  return comprobacion.then(() => undefined, (error: unknown) => {
+    if (error instanceof AuthError) return error.message;
+    throw error;
+  });
 }
 
 /** Fuente inventario del agente: un solo sitio (PDMC_INVENTARIO_DIM_ID); solo productos activos. */
@@ -91,8 +122,12 @@ async function desdeInventarioAgente(db: PrismaClient, modulo: Modulo, ultimoHas
   if (!filas && !opciones.publicarNegativos) return { hash: firma, totalFilas: 0, result: { sinCambios: true, resumen: { aviso: "El agente del sitio PDMC_INVENTARIO_DIM_ID todavía no ha enviado inventario." } } };
   const carga = await cargaInventario(db);
   const ubicacion = await db.ubicacion.findUnique({ where: { dimIdTienda: carga.dim }, select: { id: true } });
-  const result = await modulo.importar(db, carga.csv, { ...opciones, sitio: { ubicacionId: ubicacion?.id ?? "", dimIdTienda: carga.dim } });
-  return { hash: firma, totalFilas: carga.filas, result };
+  if (!ubicacion) throw new Error(`El sitio con dimID_Tienda ${carga.dim} (PDMC_INVENTARIO_DIM_ID) no está en el catálogo de PDMC: sincronice SUCURSALES.`);
+  // El inventario se importa a nombre de la cuenta de sincronización de la región del sitio.
+  const resuelta = await cuentaDelSitio(db, ubicacion.id);
+  if ("aviso" in resuelta) throw new Error(resuelta.aviso);
+  const result = await modulo.importar(db, carga.csv, { ...opciones, acceso: resuelta.acceso, sitio: { ubicacionId: ubicacion.id, dimIdTienda: carga.dim } });
+  return { hash: firma, totalFilas: carga.filas, result: { ...result, resumen: { cuenta: resuelta.cuenta, region: resuelta.region, importacion: result.resumen } } };
 }
 
 /**

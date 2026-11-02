@@ -16,6 +16,8 @@ export const permissionMatrix: Record<Rol, readonly Permission[]> = {
   RECEPCION: [...read, "panel.leer", "inconsistencias.leer", "facturacion.leer"],
   AUDITORIA: [...read, "panel.leer", "metricas.leer", "inconsistencias.leer", "transferencias.leer", "facturacion.leer", "productos.problemas.leer", "auditoria.leer"],
   FACTURACION: ["panel.leer", "facturacion.leer"],
+  // Solo importa, y solo los sitios de su región (SystemAuthorization).
+  SINCRONIZACION: ["inventario.administrar", "transferencias.importar", "devoluciones.importar"],
 };
 export type Grant = { rol: Rol; ubicacionId: string | null; ubicacion: { tipo: "REGION" | "BODEGA" | "TIENDA" } | null };
 export type Resource = { id: string; regionId: string | null };

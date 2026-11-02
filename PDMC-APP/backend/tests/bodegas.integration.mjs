@@ -44,6 +44,8 @@ before(async()=>{
   }
   const tienda=randomUUID();
   await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo,"regionId") VALUES ($1,'1010103','SUC. GALERIAS','TIENDA',$2)`,[tienda,region]);
+  // Esta región no tiene cuenta propia: sus bodegas se cargan con la de transición (PDMC_SYNC_USUARIO_EMAIL).
+  await ensureSyncUser(db,process.env.PDMC_SYNC_USUARIO_EMAIL);
 });
 
 after(async()=>{
@@ -164,4 +166,36 @@ test("inventario: sin cambios en el agente no se reimporta; con cambios, sí",as
   assert.equal(r.estado,"EXITOSA");
   const b=await db.inventarioActual.findFirstOrThrow({where:{producto:{codigoBarra:"INV-B"}}});
   assert.equal(b.existencia.toString(),"7");
+});
+
+test("cada región carga sus bodegas con su propia cuenta; una región sin cuenta se omite y se reintenta",async()=>{
+  const nueva=async(codigo,nombre,dim)=>{
+    const region=randomUUID(),bodega=randomUUID();
+    await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo) VALUES ($1,$2,$3,'REGION')`,[region,`R-${codigo}`,`Región ${nombre}`]);
+    await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo,"regionId","dimIdTienda") VALUES ($1,$2,$3,'BODEGA',$4,$5)`,[bodega,codigo,`BODEGA ${nombre}`,region,dim]);
+    return region;
+  };
+  const cuentaDe=region=>db.usuario.create({data:{email:`sincronizacion.${randomUUID()}@pdmc.local`,nombre:"Sincronización",rol:"SINCRONIZACION",estado:"ACTIVO",debeCambiarPassword:false,asignaciones:{create:{rol:"SINCRONIZACION",ubicacionId:region}}}});
+  const oriente=await nueva("900001","ORIENTE",2006),centro=await nueva("900002","CENTRO",2007);
+  const cuentaOriente=await cuentaDe(oriente);
+  await enviar(2006,"transferencias","T9|A|1",linea("T9","A","1",2));
+  await enviar(2007,"transferencias","T9|A|1",linea("T9","A","1",6));
+  // Sin cuenta de transición: solo cargan las regiones que tienen la suya.
+  const transicion=process.env.PDMC_SYNC_USUARIO_EMAIL;delete process.env.PDMC_SYNC_USUARIO_EMAIL;
+  try{
+    const r=await ejecutarModulo(db,modulo("TRANSFERENCIAS"));
+    const sitio=dim=>r.resumen.sitios.find(s=>s.dimIdTienda===dim);
+    assert.equal(sitio(2006).cuenta,cuentaOriente.email);
+    assert.match(sitio(2007).omitido,/Región CENTRO no tiene cuenta de sincronización/);
+    assert.equal((await transferencias("T9")).map(t=>t.origenId).join(),(await db.ubicacion.findUniqueOrThrow({where:{dimIdTienda:2006}})).id);
+    // Una cuenta desactivada detiene solo su región.
+    await db.usuario.update({where:{id:cuentaOriente.id},data:{estado:"INACTIVO",activo:false}});
+    const inactiva=await ejecutarModulo(db,modulo("TRANSFERENCIAS"));
+    assert.match(inactiva.resumen.sitios.find(s=>s.dimIdTienda===2006).omitido,/inactiva/);
+    // Al crear la cuenta de la región que faltaba, sus bodegas se cargan aunque los agentes no hayan cambiado.
+    await cuentaDe(centro);
+    const reintento=await ejecutarModulo(db,modulo("TRANSFERENCIAS"));
+    assert.ok(reintento.resumen.sitios.find(s=>s.dimIdTienda===2007).cuenta);
+    assert.equal((await transferencias("T9")).length,2);
+  }finally{process.env.PDMC_SYNC_USUARIO_EMAIL=transicion}
 });

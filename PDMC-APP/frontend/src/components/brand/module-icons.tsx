@@ -131,3 +131,11 @@ export const IconoCuenta: ModuleIcon = props => <svg {...svg(props)}>
   <circle cx="12" cy="10" r="3" />
   <path d="M6.6 18.2a6 6 0 0 1 10.8 0" />
 </svg>;
+
+/** Sincronización: la bodega (base de datos) con el ciclo de actualización. */
+export const IconoSincronizacion: ModuleIcon = props => <svg {...svg(props)}>
+  <ellipse {...tono} cx="9" cy="6.5" rx="5.5" ry="2.5" />
+  <ellipse cx="9" cy="6.5" rx="5.5" ry="2.5" />
+  <path d="M3.5 6.5v8c0 1.4 2.5 2.5 5.5 2.5M14.5 6.5v3M3.5 10.5c0 1.4 2.5 2.5 5.5 2.5" />
+  <path d="M13.2 16.5a3.6 3.6 0 0 1 6.2-2.4M19.8 12.4v1.9h-1.9M20.6 17.5a3.6 3.6 0 0 1-6.2 2.4M14 21.6v-1.9h1.9" />
+</svg>;

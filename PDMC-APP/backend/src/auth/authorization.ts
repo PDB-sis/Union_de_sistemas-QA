@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client";
-import { allows, allowsGeneralNegatives, hasPermission, permissionMatrix, type Permission } from "@pdmc/contratos/auth/permissions";
+import { allows, allowsGeneralNegatives, hasPermission, permissionMatrix, type Permission, type Resource } from "@pdmc/contratos/auth/permissions";
 import { AuthError } from "./service";
 
 export const denied = () => new AuthError(403, "PERMISO", "No tiene permiso para esta operación o ubicación.");
@@ -76,17 +76,21 @@ export class Authorization {
 }
 
 /**
- * Cargas automáticas del sincronizador. Las ejecuta el servidor (el botón ya validó el rol de
- * quien lo presiona) y quedan registradas a nombre de la cuenta PDMC_SYNC_USUARIO_EMAIL; no
- * dependen de sus asignaciones, así que no hace falta ninguna cuenta nacional. Solo puede
- * importar; cualquier otra consulta por ubicación sigue las asignaciones normales de la cuenta.
+ * Cargas automáticas del sincronizador, una por sitio (bodega). Las ejecuta el servidor (el botón
+ * ya validó el rol de quien lo presiona) a nombre de la cuenta de sincronización de la región del
+ * sitio. Esa cuenta solo puede importar, y solo los sitios de su región. La cuenta de transición
+ * PDMC_SYNC_USUARIO_EMAIL (sin asignaciones) se usa en las regiones que aún no tienen la suya.
  */
 const importacionesDelSistema: readonly Permission[] = ["inventario.administrar", "transferencias.importar", "devoluciones.importar"];
 export class SystemAuthorization extends Authorization {
+  constructor(db: PrismaClient, userId: string, private sitio?: Resource) { super(db, userId); }
   async permitted(permission: Permission) {
     if (!this.userId || !importacionesDelSistema.includes(permission)) throw denied();
-    const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{activo:true,estado:true}});
-    // Un error de configuración del servidor, no de permisos de quien presiona el botón: se dice cuál.
-    if (!user?.activo || user.estado !== "ACTIVO") throw new AuthError(409, "CUENTA_SINCRONIZACION", "La cuenta de sincronización (PDMC_SYNC_USUARIO_EMAIL) está inactiva o bloqueada. Actívela o ejecute npm run sync:crear-usuario -w backend.");
+    const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{email:true,activo:true,estado:true,asignaciones:{include:{ubicacion:true}}}});
+    // Un error de configuración, no de permisos de quien presiona el botón: se dice cuál.
+    if (!user?.activo || user.estado !== "ACTIVO") throw new AuthError(409, "CUENTA_SINCRONIZACION", `La cuenta de sincronización ${user?.email ?? ""} está inactiva o bloqueada. Reactívela en Administración → Sincronización.`);
+    const regionales = user.asignaciones.filter(g => g.rol === "SINCRONIZACION");
+    if (regionales.length && !(this.sitio && allows(regionales, permission, this.sitio)))
+      throw new AuthError(403, "REGION_SINCRONIZACION", `La cuenta ${user.email} solo carga las bodegas de su región.`);
   }
 }

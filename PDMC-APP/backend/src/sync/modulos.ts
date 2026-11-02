@@ -18,6 +18,8 @@ export type OpcionesEjecucion = {
   publicarNegativos?: boolean;
   /** Fuente agente: bodega de la carga (su Ubicacion en el catálogo de sitios). */
   sitio?: { ubicacionId: string; dimIdTienda: number };
+  /** Cuenta de sincronización de la región del sitio, a cuyo nombre se importa (sync/cuentas.ts). */
+  acceso?: SystemAuthorization;
 };
 
 export type Modulo = {
@@ -51,13 +53,6 @@ export type Modulo = {
 const ORIGEN = "SQL_SERVER sincronizacion";
 const ORIGEN_AGENTE = "AGENTE sincronizacion";
 
-async function inventoryAuthorization(db: PrismaClient) {
-  const email = process.env.PDMC_SYNC_USUARIO_EMAIL?.trim().toLowerCase();
-  if (!email) throw new Error("Configura PDMC_SYNC_USUARIO_EMAIL: el inventario se importa a nombre de ese usuario.");
-  const user = await db.usuario.findUnique({ where: { email }, select: { id: true } });
-  if (!user) throw new Error("No existe el usuario " + email + " configurado en PDMC_SYNC_USUARIO_EMAIL.");
-  return new SystemAuthorization(db, user.id);
-}
 
 export const modulos: readonly Modulo[] = [
   {
@@ -122,7 +117,9 @@ export const modulos: readonly Modulo[] = [
     // puede omitirse cuando el inventario no cambió.
     omitirSiIgual: true,
     importar: async (db, csv, opciones) => {
-      const service = new InventoryService(db, await inventoryAuthorization(db));
+      // Se importa a nombre de la cuenta de sincronización de la región del sitio.
+      if (!opciones.acceso) throw new Error("El inventario necesita la cuenta de sincronización de la región del sitio.");
+      const service = new InventoryService(db, opciones.acceso);
       const result = await service.import({
         nombreArchivo: `agente-inventario-${opciones.sitio?.dimIdTienda ?? "sqlserver"}.csv`,
         fechaConsulta: new Date().toISOString(),

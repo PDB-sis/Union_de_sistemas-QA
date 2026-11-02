@@ -17,6 +17,7 @@ async function handle(request:Request,context:Context) {
       if(path==="usuarios")return admin.users(filters);
       if(path==="entidades")return admin.entities(filters);
       if(path==="auditoria")return admin.auditLog(filters);
+      if(path==="sincronizacion")return admin.syncAccounts();
       if(path==="restablecer")return reset.preview();
     }
     if(request.method==="POST"||request.method==="PATCH") {
@@ -26,6 +27,7 @@ async function handle(request:Request,context:Context) {
       if(path==="usuarios"&&request.method==="POST")return admin.createUser(body);
       if(path==="usuarios"&&request.method==="PATCH")return admin.editUser(body);
       if(path==="usuarios/estado"&&request.method==="POST")return admin.status(body);
+      if(path==="sincronizacion"&&request.method==="POST")return admin.createSyncAccount(body);
       if(path==="usuarios/password"&&request.method==="POST")return admin.password(body);
       if(path==="usuarios/reasignar"&&request.method==="POST")return admin.transferCases(body);
       if(path==="entidades"&&request.method==="POST")return admin.createEntity(body);

@@ -36,6 +36,8 @@ enum RolUsuario {
   RECEPCION
   AUDITORIA
   FACTURACION
+  // Cuenta de sistema de una región (sin contraseña): las cargas automáticas de sus bodegas.
+  SINCRONIZACION
 }
 
 model SesionUsuario {

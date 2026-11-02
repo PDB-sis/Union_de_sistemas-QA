@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { Prisma, PrismaClient } from "../../generated/prisma/client";
-import { roles, type Rol } from "@pdmc/contratos/auth/model";
+import { roles, rolesDeSistema, type Rol } from "@pdmc/contratos/auth/model";
 import { allows, hasPermission, permissionMatrix, type Permission, type Grant } from "@pdmc/contratos/auth/permissions";
 import { AuthError, emailSchema } from "../auth/service";
 import { hashPassword, passwordSchema, verifyPassword } from "../auth/password";
@@ -61,6 +61,7 @@ export class Administration {
     for(const g of rows) {
       const location=g.ubicacionId?await tx.ubicacion.findUnique({where:{id:g.ubicacionId}}):null;
       if(g.ubicacionId&&!location)throw new AuthError(422,"UBICACION","La ubicación no existe.");
+      if(rolesDeSistema.includes(g.rol))throw new AuthError(422,"CUENTA_SISTEMA","La cuenta de sincronización de una región se crea en Administración → Sincronización.");
       if(g.rol==="ADMINISTRADOR"&&location)throw new AuthError(422,"ALCANCE","El administrador general gestiona todo el sistema y no se enlaza con una ubicación.");
       if(g.rol==="TIENDA"&&location?.tipo!=="TIENDA")throw new AuthError(422,"TIENDA","La cuenta de tienda debe enlazarse directamente con una tienda registrada.");
       // Sin alcance nacional: cada rol operativo trabaja sobre las bodegas y tiendas de su región.
@@ -75,6 +76,10 @@ export class Administration {
     if(!target)throw new AuthError(404,"USUARIO","Usuario no encontrado.");
     if(!canDelegate(actor.asignaciones,target.asignaciones))throw denied();
     return target;
+  }
+  /** Las cuentas de sincronización no son personas: sin contraseña, accesos editables ni vínculos. */
+  private person(target:{asignaciones:{rol:Rol}[]}) {
+    if(target.asignaciones.some(g=>rolesDeSistema.includes(g.rol)))throw new AuthError(422,"CUENTA_SISTEMA","Es una cuenta de sincronización: solo se activa o desactiva en Administración → Sincronización.");
   }
   private async preserveAdmin(tx:Prisma.TransactionClient) {
     await ensureActiveAdministrator(tx);
@@ -104,10 +109,38 @@ export class Administration {
   async users(raw:unknown) {
     await this.actor(this.db,"usuarios.administrar");
     const f=userFilters.parse(raw);
+    // Las cuentas de sincronización se gestionan en su propia sección, no entre las personas.
     const where:Prisma.UsuarioWhereInput={...(f.q?{OR:[{nombre:{contains:f.q,mode:"insensitive"}},{email:{contains:f.q,mode:"insensitive"}}]}:{}),estado:f.estado,
-      ...((f.rol||f.ubicacionId)?{asignaciones:{some:{rol:f.rol,ubicacionId:f.ubicacionId}}}:{})};
+      AND:[{asignaciones:{none:{rol:{in:[...rolesDeSistema]}}}},...((f.rol||f.ubicacionId)?[{asignaciones:{some:{rol:f.rol,ubicacionId:f.ubicacionId}}}]:[])]};
     const [rows,total]=await this.db.$transaction([this.db.usuario.findMany({where,select:safeUser,orderBy:[{nombre:"asc"},{id:"asc"}],skip:f.skip,take:f.take}),this.db.usuario.count({where})]);
     return {rows,total};
+  }
+  /** Cada región con su cuenta de sincronización (o sin ella). */
+  async syncAccounts() {
+    await this.actor(this.db,"usuarios.administrar");
+    const [regions,grants]=await Promise.all([
+      this.db.ubicacion.findMany({where:{tipo:"REGION"},select:{id:true,codigo:true,nombre:true,_count:{select:{ubicaciones:true}}},orderBy:{nombre:"asc"}}),
+      this.db.asignacionAcceso.findMany({where:{rol:"SINCRONIZACION"},select:{ubicacionId:true,usuario:{select:{id:true,email:true,nombre:true,estado:true,activo:true,createdAt:true}}}}),
+    ]);
+    const byRegion=new Map(grants.map(g=>[g.ubicacionId,g.usuario]));
+    return {rows:regions.map(region=>({region:{id:region.id,codigo:region.codigo,nombre:region.nombre,sitios:region._count.ubicaciones},cuenta:byRegion.get(region.id)??null})),
+      transicion:Boolean(process.env.PDMC_SYNC_USUARIO_EMAIL?.trim())};
+  }
+  /** Crea la cuenta de sincronización de una región: sin contraseña, solo carga las bodegas de esa región. */
+  async createSyncAccount(raw:unknown) {
+    const input=z.object({regionId:id,motivo:reason}).strict().parse(raw);
+    return this.mutation("usuarios.administrar",async(tx,actor)=>{
+      if(!allows(actor.asignaciones,"accesos.administrar"))throw denied();
+      const region=await tx.ubicacion.findUnique({where:{id:input.regionId}});
+      if(region?.tipo!=="REGION")throw new AuthError(422,"REGION","Seleccione una región.");
+      if(await tx.asignacionAcceso.findFirst({where:{rol:"SINCRONIZACION",ubicacionId:region.id}}))throw new AuthError(409,"YA_EXISTE",`La región ${region.nombre} ya tiene cuenta de sincronización.`);
+      const email=`sincronizacion.${region.codigo.toLowerCase().replace(/[^\p{L}\p{N}_-]+/gu,"-")}@pdmc.local`;
+      if(await tx.usuario.findUnique({where:{email}}))throw new AuthError(409,"USUARIO_EXISTE",`Ya existe una cuenta con el usuario ${email}.`);
+      const created=await tx.usuario.create({data:{email,nombre:`Sincronización · ${region.nombre}`,rol:"SINCRONIZACION",passwordHash:null,estado:"ACTIVO",activo:true,debeCambiarPassword:false,
+        asignaciones:{create:{rol:"SINCRONIZACION",ubicacionId:region.id}}},select:{id:true,email:true,nombre:true,estado:true,activo:true,createdAt:true}});
+      await this.audit(tx,"Usuario",created.id,"CUENTA_SINCRONIZACION_CREADA",input.motivo,null,{...created,region:{id:region.id,nombre:region.nombre}});
+      return created;
+    });
   }
   async createUser(raw:unknown) {
     const input=createUserSchema.parse(raw);
@@ -128,6 +161,7 @@ export class Administration {
     const input=editUserSchema.parse(raw);
     return this.mutation("usuarios.administrar",async(tx,actor)=>{
       const target=await this.target(tx,input.id,actor);
+      this.person(target);
       if(target.updatedAt.toISOString()!==input.version)throw new AuthError(409,"VERSION","El usuario cambió. Actualice la lista.");
       const changed=canonical(target.asignaciones)!==canonical(input.asignaciones);
       const currentBilling=await tx.vinculoOperativo.findMany({where:{usuarioId:target.id,perfil:{tipo:"FACTURACION"}},select:{perfilId:true}});
@@ -155,6 +189,7 @@ export class Administration {
     const hashed=await hashPassword(input.passwordTemporal);
     return this.mutation("usuarios.administrar",async(tx,actor)=>{
       const target=await this.target(tx,input.id,actor);
+      this.person(target);
       if(target.id===actor.id)throw new AuthError(403,"PROPIA_PASSWORD","Use Cambiar contraseña para su propia cuenta.");
       if(await verifyPassword(input.passwordTemporal,target.passwordHash))throw new AuthError(422,"PASSWORD","Use una contraseña temporal diferente.");
       await tx.usuario.update({where:{id:target.id},data:{passwordHash:hashed,debeCambiarPassword:true,passwordTemporalHasta:new Date(Date.now()+48*3600000),passwordChangedAt:new Date()}});
@@ -170,7 +205,8 @@ export class Administration {
       const target=await this.target(tx,input.id,actor);
       if(target.id===actor.id)throw new AuthError(403,"PROPIO_ESTADO","Otro administrador debe cambiar el estado de su cuenta.");
       let estado: "ACTIVO"|"INVITADO"|"BLOQUEADO"|"INACTIVO"=input.estado;
-      if(estado==="ACTIVO") {
+      // La cuenta de sincronización no tiene contraseña: se reactiva sin ella.
+      if(estado==="ACTIVO"&&!target.asignaciones.some(g=>rolesDeSistema.includes(g.rol))) {
         if(!target.passwordHash)throw new AuthError(422,"PASSWORD","Establezca primero una contraseña temporal.");
         if(target.debeCambiarPassword) {
           if(!target.passwordTemporalHasta||target.passwordTemporalHasta<=new Date())throw new AuthError(422,"PASSWORD","Restablezca una contraseña temporal vigente antes de reactivar.");
@@ -246,7 +282,7 @@ export class Administration {
       if(!allows(actor.asignaciones,"usuarios.administrar"))throw denied();
       const entity=await tx.ubicacion.findUnique({where:{id:input.id}});
       if(!entity)throw new AuthError(404,"ENTIDAD","Entidad no encontrada.");
-      for(const u of [...input.usuarios].sort())await this.target(tx,u,actor);
+      for(const u of [...input.usuarios].sort())this.person(await this.target(tx,u,actor));
       const where={ubicacionId:input.id};
       const before=await tx.vinculoOperativo.findMany({where});
       await tx.vinculoOperativo.deleteMany({where});

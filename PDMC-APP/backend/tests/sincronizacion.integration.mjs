@@ -9,6 +9,8 @@ import {PrismaClient} from "../generated/prisma/client.ts";
 import {POST} from "../src/http/sincronizacion/route.ts";
 import {SystemAuthorization} from "../src/auth/authorization.ts";
 import {ensureSyncUser} from "../src/sync/usuario-sistema.ts";
+import {cuentaDelSitio} from "../src/sync/cuentas.ts";
+import {Administration} from "../src/admin/service.ts";
 
 // Botón "Actualizar ahora" (inventario, transferencias, devoluciones…): el permiso viene del rol,
 // no de tener alcance nacional. Antes un usuario de Mejora Continua asignado a una región veía
@@ -89,4 +91,21 @@ test('Actualizar ahora: sigue rechazando a los roles que no tienen el permiso',a
     assert.equal(result.status,403,modulo);
     assert.equal(result.body.error.code,'PERMISO',modulo);
   }
+});
+
+test('la cuenta de sincronización de una región solo carga las bodegas de esa región',async()=>{
+  const region=nombre=>db.ubicacion.create({data:{codigo:`R-${randomUUID()}`,nombre,tipo:'REGION'}});
+  const propia=await region('Occidente'),otra=await region('Oriente');
+  const bodega=r=>db.ubicacion.create({data:{codigo:randomUUID(),nombre:'Bodega',tipo:'BODEGA',regionId:r.id}});
+  const enPropia=await bodega(propia),enOtra=await bodega(otra);
+  const adminUser=await db.usuario.create({data:{email:`${randomUUID()}@sync.test`,nombre:'Administrador',rol:'ADMINISTRADOR',passwordHash:'x',estado:'ACTIVO',debeCambiarPassword:false,asignaciones:{create:{rol:'ADMINISTRADOR'}}}});
+  const cuenta=await new Administration(db,adminUser.id).createSyncAccount({regionId:propia.id,motivo:'Cuenta de prueba'});
+  const resuelta=await cuentaDelSitio(db,enPropia.id);
+  assert.equal(resuelta.cuenta,cuenta.email);
+  await resuelta.acceso.permitted('inventario.administrar');
+  await assert.rejects(new SystemAuthorization(db,cuenta.id,{id:enOtra.id,regionId:otra.id}).permitted('transferencias.importar'),{code:'REGION_SINCRONIZACION'});
+  // Sin cuenta propia ni de transición, la bodega no se carga y se dice por qué.
+  const transicion=process.env.PDMC_SYNC_USUARIO_EMAIL;delete process.env.PDMC_SYNC_USUARIO_EMAIL;
+  try{assert.match((await cuentaDelSitio(db,enOtra.id)).aviso,/Oriente no tiene cuenta de sincronización/)}
+  finally{if(transicion===undefined)delete process.env.PDMC_SYNC_USUARIO_EMAIL;else process.env.PDMC_SYNC_USUARIO_EMAIL=transicion}
 });
