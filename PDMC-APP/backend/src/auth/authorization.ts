@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client";
 import { allows, allowsGeneralNegatives, hasPermission, permissionMatrix, type Permission, type Resource } from "@pdmc/contratos/auth/permissions";
 import { AuthError } from "./service";
+import { dimInventario } from "../sync/agente";
 
 export const denied = () => new AuthError(403, "PERMISO", "No tiene permiso para esta operación o ubicación.");
 export class Authorization {
@@ -18,12 +19,30 @@ export class Authorization {
     if (!hasPermission(await this.grants(), permission)) throw denied();
   }
   async has(permission:Permission){return hasPermission(await this.grants(),permission);}
+  /**
+   * La bodega general de Negativos guarda el inventario del sitio PDMC_INVENTARIO_DIM_ID: la ven
+   * quienes cubren ese sitio (su bodega o su región), además de Mejora Continua.
+   */
+  private site?:Promise<Resource|null>;
+  generalSite():Promise<Resource|null>{
+    return this.site??=Promise.resolve().then(()=>this.db.ubicacion.findUnique({where:{dimIdTienda:dimInventario()},select:{id:true,regionId:true}})).catch(()=>null);
+  }
+  async allowsGeneral(grants:Awaited<ReturnType<Authorization["grants"]>>,permission:Permission){
+    if(!permission.startsWith("negativos."))return false;
+    if(allowsGeneralNegatives(grants,permission))return true;
+    const site=await this.generalSite();
+    return Boolean(site&&allows(grants,permission,site));
+  }
   async locationScope(permission:Permission,type:"REGION"|"BODEGA"|"TIENDA") {
     const grants=await this.grants();
     if(!hasPermission(grants,permission))throw denied();
     const national=allows(grants,permission),selected=grants.filter(g=>permissionMatrix[g.rol].includes(permission));
+    // Quien trabaja en una bodega (p. ej. Rectificación) ve las inconsistencias de las tiendas que esa bodega surte.
+    const bodegas=selected.filter(g=>g.ubicacion?.tipo==="BODEGA").map(g=>g.ubicacionId!);
+    const surtidas=!national&&type==="TIENDA"&&permission.startsWith("inconsistencias.")&&bodegas.length
+      ?(await this.db.transferenciaConsulta.findMany({where:{origenId:{in:bodegas},tiendaId:{not:null}},distinct:["tiendaId"],select:{tiendaId:true}})).map(row=>row.tiendaId!):[];
     const rows=await this.db.ubicacion.findMany({where:national?{tipo:type}:{tipo:type,OR:[
-      {id:{in:selected.filter(g=>g.ubicacion?.tipo===type).map(g=>g.ubicacionId!)}},
+      {id:{in:[...selected.filter(g=>g.ubicacion?.tipo===type).map(g=>g.ubicacionId!),...surtidas]}},
       ...(type!=="REGION"?[{regionId:{in:selected.filter(g=>g.ubicacion?.tipo==="REGION").map(g=>g.ubicacionId!)}}]:[]),
     ]},select:{id:true,codigo:true,nombre:true,regionId:true},orderBy:{nombre:"asc"}});
     return {national,rows};
@@ -35,7 +54,7 @@ export class Authorization {
     const selected = grants.filter(g => permissionMatrix[g.rol].includes(permission));
     const regional={ubicacion:{is:{OR:[{id:{in:selected.flatMap(g=>g.ubicacionId?[g.ubicacionId]:[])}},
       {regionId:{in:selected.filter(g=>g.ubicacion?.tipo==="REGION").map(g=>g.ubicacionId!)}}]}}};
-    const canUseGeneralNegatives=allowsGeneralNegatives(selected,permission);
+    const canUseGeneralNegatives=await this.allowsGeneral(selected,permission);
     return canUseGeneralNegatives?{OR:[regional,{codigo:"PDMC_GENERAL"}]}:regional;
   }
   async warehouse(permission: Permission, id: string) {

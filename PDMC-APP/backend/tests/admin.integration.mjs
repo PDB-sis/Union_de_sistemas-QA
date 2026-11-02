@@ -225,6 +225,27 @@ test("mejora continua regional puede trabajar la bodega técnica de negativos si
   const visible=await db.bodega.findMany({where:{id:scope},select:{id:true}}),ids=new Set(visible.map(row=>row.id));
   assert.equal(ids.has(general.id),true);assert.equal(ids.has(other.id),false);
 });
+test("rectificación de la región o la bodega del inventario ve los negativos; la de otra región no",async()=>{
+  const previo=process.env.PDMC_INVENTARIO_DIM_ID;process.env.PDMC_INVENTARIO_DIM_ID="7004";
+  try{
+    const zona=await region(),otra=await region();
+    const sitio=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Bodega del inventario",tipo:"BODEGA",regionId:zona.id,dimIdTienda:7004}});
+    const general=await db.bodega.upsert({where:{codigo:"PDMC_GENERAL"},update:{},create:{codigo:"PDMC_GENERAL",nombre:"Negativos"}});
+    const ve=async grants=>{const u=await user(grants);return (await db.bodega.findMany({where:{id:await u.access.filter("negativos.conteo")},select:{id:true}})).some(b=>b.id===general.id);};
+    assert.equal(await ve([{rol:"RECTIFICACION",ubicacionId:zona.id}]),true);
+    assert.equal(await ve([{rol:"RECTIFICACION",ubicacionId:sitio.id}]),true);
+    assert.equal(await ve([{rol:"RECTIFICACION",ubicacionId:otra.id}]),false);
+  }finally{if(previo===undefined)delete process.env.PDMC_INVENTARIO_DIM_ID;else process.env.PDMC_INVENTARIO_DIM_ID=previo}
+});
+test("rectificación de una bodega ve las inconsistencias de las tiendas que esa bodega surte",async()=>{
+  const zona=await region(),surtida=await tienda(zona.id),otra=await tienda(zona.id);
+  const bodega=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Bodega que surte",tipo:"BODEGA",regionId:zona.id}});
+  const carga=await db.transferenciaConsultaImport.create({data:{nombreArchivo:"prueba",hashArchivo:randomUUID(),totalFilas:1,resumen:{}}});
+  await db.transferenciaConsulta.create({data:{numero:randomUUID(),fecha:new Date("2026-11-02"),codigoFacturador:"F1",codigoTiendaConsulta:surtida.codigo,tiendaId:surtida.id,estado:"Exportada",unidades:1,cantidadCodigos:1,ultimaImportacionId:carga.id,origenId:bodega.id}});
+  const rect=await user([{rol:"RECTIFICACION",ubicacionId:bodega.id}]);
+  const ids=(await rect.access.locationScope("inconsistencias.leer","TIENDA")).rows.map(row=>row.id);
+  assert.deepEqual(ids,[surtida.id]);assert.equal(ids.includes(otra.id),false);
+});
 test("catálogo de tiendas, vínculos con acceso directo y eliminación segura de entidades",async()=>{
   const a=await user(),one=await user([]),two=await user([]),count=await db.usuario.count(),contexts=await db.bodega.count();
   const region=await a.service.createEntity({codigo:randomUUID(),nombre:"Región operativa",tipo:"REGION",motivo});

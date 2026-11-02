@@ -4,7 +4,7 @@ import type {DashboardData} from "@pdmc/contratos/dashboard-contract";
 import { dashboardData } from "./dashboard-data";
 import { Authorization } from "@backend/auth/authorization";
 import { getDb } from "@backend/db";
-import { allows, allowsGeneralNegatives, permissions } from "@pdmc/contratos/auth/permissions";
+import { allows, permissions } from "@pdmc/contratos/auth/permissions";
 import { hasPermission } from "@pdmc/contratos/auth/permissions";
 import { transferDashboardData } from "@backend/transferencias/consulta";
 import { StoreService } from "@backend/tienda/service";
@@ -29,8 +29,9 @@ export async function loadDashboard(user:UsuarioSesion):Promise<PanelInicio> {
   const available = permissions.filter(p=>hasPermission(grants,p));
   const national = permissions.filter(p=>allows(grants,p));
   const locations = await getDb().bodega.findMany({where:{activa:true},select:{id:true,codigo:true,ubicacion:{select:{id:true,regionId:true}}}});
+  const general = new Set<string>();for(const p of permissions)if(await access.allowsGeneral(grants,p))general.add(p);
   const warehouses = Object.fromEntries(locations.flatMap(b=>{
-    const enabled=permissions.filter(p=>b.codigo==="PDMC_GENERAL"?allowsGeneralNegatives(grants,p):Boolean(b.ubicacion&&allows(grants,p,b.ubicacion)));
+    const enabled=permissions.filter(p=>b.codigo==="PDMC_GENERAL"?general.has(p):Boolean(b.ubicacion&&allows(grants,p,b.ubicacion)));
     return enabled.length?[[b.id,enabled]]:[];
   }));
   let data:DashboardData|null=null;
