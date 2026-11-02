@@ -38,3 +38,14 @@ test("Tienda obtiene los permisos del módulo solamente dentro de su alcance",()
   assert.equal(allows([storeGrant],"inconsistencias.reportar",{id:"tienda-a",regionId:null}),true);
   assert.equal(allows([storeGrant],"inconsistencias.reportar",{id:"tienda-b",regionId:null}),false);
 });
+
+test("el plazo de 5 días hábiles empieza cuando la transferencia pasa a Exportada (hora de Caracas)",async()=>{
+  const {exportDeadline}=await import("../src/tienda/model.ts");
+  assert.deepEqual(exportDeadline(null),{exportDate:"",deadline:null,remaining:null,deadlineStatus:"SIN_FECHA"});
+  // Exportada el lunes 2 nov. 2026 a las 9 p. m. de Caracas (ya martes en UTC): cuenta desde el lunes.
+  const exportada=new Date("2026-11-03T01:00:00.000Z");
+  assert.equal(exportDeadline(exportada,exportada).exportDate,"2026-11-02");
+  assert.deepEqual(exportDeadline(exportada,new Date("2026-11-03T15:00:00.000Z")),{exportDate:"2026-11-02",deadline:"2026-11-09",remaining:4,deadlineStatus:"A_TIEMPO"});
+  assert.equal(exportDeadline(exportada,new Date("2026-11-09T15:00:00.000Z")).deadlineStatus,"HOY");
+  assert.deepEqual(exportDeadline(exportada,new Date("2026-11-10T15:00:00.000Z")).remaining,-1);
+});

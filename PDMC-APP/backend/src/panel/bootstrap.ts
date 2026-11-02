@@ -46,7 +46,7 @@ export async function loadDashboard(user:UsuarioSesion):Promise<PanelInicio> {
     const errorCases=rawIssues.map(row=>({date:(row.fecha??new Date(0)).toISOString(),store:row.sucursal,transfer:row.transferencia,quantity:Math.abs(row.cantidadErrada),reason:row.motivo??row.tipoError,resolved:row.resuelto,observation:row.comentarioAdmin??undefined}));
     const transferSource=await transferDashboardData(getDb(),errorCases,storeScope.national?undefined:storeIds,allowedBillerIds);
     const operationalStoreNames=storeScope.rows.map(store=>store.nombre);
-    data={...baseData,errorCases,allowedBillers,operationalStoreNames,snapshot:{...baseData.snapshot,generatedAt:transferSource.lastImport?.importedAt.toISOString()??baseData.snapshot.generatedAt,exportDateColumnAvailable:false},aggregates:{...baseData.aggregates,totalTransfers:transferSource.aggregates.totalTransfers,exported:transferSource.aggregates.exported,reported:transferSource.aggregates.reported},transfers:transferSource.transfers,pendingReports:transferSource.pendingReports,stores:transferSource.stores,billers:transferSource.billers};
+    data={...baseData,errorCases,allowedBillers,operationalStoreNames,snapshot:{...baseData.snapshot,generatedAt:transferSource.lastImport?.importedAt.toISOString()??baseData.snapshot.generatedAt,exportDateColumnAvailable:true},aggregates:{...baseData.aggregates,totalTransfers:transferSource.aggregates.totalTransfers,exported:transferSource.aggregates.exported,reported:transferSource.aggregates.reported},transfers:transferSource.transfers,pendingReports:transferSource.pendingReports,stores:transferSource.stores,billers:transferSource.billers};
   }
   return {data,user,capabilities:{available,national,warehouses}};
 }

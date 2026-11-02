@@ -3,6 +3,7 @@ import type {PrismaClient} from "../../generated/prisma/client";
 import {parseDelimitedTable,normalizeHeader,NegativosError} from "../negativos/validation";
 import {Authorization,denied} from "../auth/authorization";
 import {classifyTransfer,defaultSpecialAuthors} from "@pdmc/contratos/transferencias/classification";
+import {exportDeadline} from "@pdmc/contratos/tienda/model";
 import {planCabeceras,planDetalles,sinCambiosEnPlan} from "@pdmc/contratos/consultas/cambios";
 
 export const COLUMNAS_TRANSFERENCIAS=["Numero","fecha_formateada","CodNombre","CodigoBarra","Cantidad","NumeroCaja","codigoRecibe_Dletra","status","observacion"] as const;
@@ -53,8 +54,10 @@ ${options.desde?`desde ${options.desde.toISOString()}\n`:""}`).update(content).d
       // Solo INSERT, UPDATE y baja lógica: nunca se borran transferencias ni se recarga todo.
       const guardadas=await tx.transferenciaConsulta.findMany({where:{origenId},select:{id:true,numero:true,fecha:true,codigoFacturador:true,facturadorId:true,codigoTiendaConsulta:true,tiendaId:true,estado:true,observacion:true,unidades:true,cantidadCodigos:true,bajaEn:true}});
       const cabeceras=planCabeceras(guardadas,rows,["fecha","codigoFacturador","facturadorId","codigoTiendaConsulta","tiendaId","estado","observacion","unidades","cantidadCodigos"]);
-      for(let start=0;start<cabeceras.crear.length;start+=1_000)await tx.transferenciaConsulta.createMany({data:cabeceras.crear.slice(start,start+1_000).map(item=>({...item,origenId,ultimaImportacionId:imported.id}))});
-      for(const change of cabeceras.actualizar)await tx.transferenciaConsulta.update({where:{id:change.id},data:{...change.datos,bajaEn:null,ultimaImportacionId:imported.id}});
+      // El plazo de 5 días hábiles empieza cuando la transferencia pasa a Exportada; si vuelve atrás, se reinicia.
+      const ahora=new Date(),exportadaEn=(estado:string)=>estado==="Exportada"?ahora:null,estadoGuardado=new Map(guardadas.map(item=>[item.id,item.estado]));
+      for(let start=0;start<cabeceras.crear.length;start+=1_000)await tx.transferenciaConsulta.createMany({data:cabeceras.crear.slice(start,start+1_000).map(item=>({...item,origenId,ultimaImportacionId:imported.id,exportadaEn:exportadaEn(item.estado)}))});
+      for(const change of cabeceras.actualizar)await tx.transferenciaConsulta.update({where:{id:change.id},data:{...change.datos,...(change.datos.estado!==estadoGuardado.get(change.id)?{exportadaEn:exportadaEn(change.datos.estado)}:{}),bajaEn:null,ultimaImportacionId:imported.id}});
       if(cabeceras.bajas.length)await tx.transferenciaConsulta.updateMany({where:{id:{in:cabeceras.bajas}},data:{bajaEn:new Date(),ultimaImportacionId:imported.id}});
       const ids=new Map((await tx.transferenciaConsulta.findMany({where:{origenId,numero:{in:rows.map(item=>item.numero)}},select:{id:true,numero:true}})).map(item=>[item.numero,item.id])),numeros=new Map([...ids].map(([numero,id])=>[id,numero]));
       const actuales=(await tx.transferenciaConsultaDetalle.findMany({where:{transferenciaId:{in:[...ids.values()]}},select:{id:true,transferenciaId:true,codigoBarra:true,numeroCaja:true,cantidad:true,productoId:true}})).map(({transferenciaId,...item})=>({...item,numero:numeros.get(transferenciaId)!}));
@@ -86,7 +89,7 @@ export async function transferDashboardData(db:PrismaClient,errorCases:readonly 
   const [rows,reports,lastImport]=await Promise.all([db.transferenciaConsulta.findMany({where,include:{tienda:{select:{nombre:true}},facturador:{select:{nombre:true}}},orderBy:[{fecha:"desc"},{numero:"desc"}]}),db.reporteTransferenciaTienda.findMany({where:storeIds?{tiendaId:{in:[...storeIds]}}:{},select:{tiendaId:true,transferencia:true,sinIncidencias:true}}),db.transferenciaConsultaImport.findFirst({orderBy:{importedAt:"desc"}})]),reportByTransfer=new Map(reports.map(x=>[`${x.tiendaId}:${x.transferencia}`,x]));
   const authors=specialAuthors();
   const transfers=rows.map(x=>{const report=reportByTransfer.get(`${x.tiendaId}:${x.numero}`),comment=x.observacion??"",kind=classifyTransfer(comment,x.codigoFacturador,authors);return {id:x.numero,date:x.fecha.toISOString().slice(0,10),biller:x.facturador?.nombre??`Código ${x.codigoFacturador} sin vincular`,store:x.tienda?.nombre??`Código sin vincular: ${x.codigoTiendaConsulta}`,status:x.estado,comment,type:kind.type,typeReview:kind.review,units:x.unidades,reported:Boolean(report),reportKind:report?(report.sinIncidencias?"SIN_INCONSISTENCIAS" as const:"CON_INCONSISTENCIAS" as const):null};});
-  const pendingReports=transfers.filter(x=>x.status==="Exportada"&&!x.reported).map(x=>({...x,exportDate:"",deadline:"",daysOverdue:null}));
+  const pendingReports=transfers.flatMap((x,i)=>{if(x.status!=="Exportada"||x.reported)return [];const plazo=exportDeadline(rows[i].exportadaEn);return [{...x,exportDate:plazo.exportDate,deadline:plazo.deadline??"",daysOverdue:plazo.remaining!==null&&plazo.remaining<0?-plazo.remaining:null}];});
   // Solo lo Exportado se puede reportar; lo Abierto o Aprobado se cuenta aparte como "por exportar".
   const storeMap=new Map<string,{name:string;total:number;exported:number;reported:number;pending:number;porExportar:number;units:number}>();for(const x of transfers){const s=storeMap.get(x.store)??{name:x.store,total:0,exported:0,reported:0,pending:0,porExportar:0,units:0};s.total++;s.units+=x.units;if(x.status==="Exportada"){s.exported++;if(x.reported)s.reported++;else s.pending++;}else if(!x.reported)s.porExportar++;storeMap.set(x.store,s)}
   const stores=[...storeMap.values()].map(x=>({...x,compliance:x.exported?Number((x.reported/x.exported*100).toFixed(2)):0})).sort((a,b)=>b.pending-a.pending);

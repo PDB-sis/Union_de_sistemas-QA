@@ -108,6 +108,27 @@ test("una baja en una bodega no toca la otra",async()=>{
   assert.equal((await transferencias("T2"))[0].origenId,sitios[2005]);
 });
 
+
+test("el plazo de 5 días empieza cuando la transferencia pasa a Exportada y se reinicia si vuelve atrás",async()=>{
+  const fila=(estado,observacion="OK")=>({...linea("T8","A","1",2,estado),observacion});
+  const t8=async()=>(await transferencias("T8")).find(x=>x.origenId===sitios[2004]);
+  await enviar(2004,"transferencias","T8|A|1",fila("Aprobada"));
+  await ejecutarModulo(db,modulo("TRANSFERENCIAS"));
+  assert.equal((await t8()).exportadaEn,null);
+  await enviar(2004,"transferencias","T8|A|1",fila("Exportada"));
+  const antes=new Date();await ejecutarModulo(db,modulo("TRANSFERENCIAS"));
+  const exportada=(await t8()).exportadaEn;
+  assert.ok(exportada>=new Date(antes.getTime()-1000));
+  // Otro cambio (la observación) no reinicia el plazo.
+  await enviar(2004,"transferencias","T8|A|1",fila("Exportada","Revisada"));
+  await ejecutarModulo(db,modulo("TRANSFERENCIAS"));
+  assert.equal((await t8()).observacion,"Revisada");
+  assert.equal((await t8()).exportadaEn.getTime(),exportada.getTime());
+  // Si vuelve a Aprobada, el plazo se borra.
+  await enviar(2004,"transferencias","T8|A|1",fila("Aprobada","Revisada"));
+  await ejecutarModulo(db,modulo("TRANSFERENCIAS"));
+  assert.equal((await t8()).exportadaEn,null);
+});
 test("el detalle por número prefiere la transferencia vigente",async()=>{
   const detalle=await new TransferQueryService(db).detail("T1");
   assert.equal(detalle.unidades,9);assert.equal(detalle.items.length,2);

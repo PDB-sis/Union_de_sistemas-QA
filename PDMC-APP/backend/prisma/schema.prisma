@@ -603,6 +603,8 @@ model TransferenciaConsulta {
   // La sincronización nunca borra transferencias que desaparecen del origen:
   // las marca como inactivas para conservar la trazabilidad operativa.
   bajaEn               DateTime?                   @db.Timestamptz(3)
+  /// Cuándo la sincronización la vio pasar a Exportada: inicio de los 5 días hábiles para reportar.
+  exportadaEn          DateTime?                   @db.Timestamptz(3)
   createdAt            DateTime                    @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime                    @updatedAt @db.Timestamptz(3)
   tienda               Ubicacion?                  @relation("TransferenciaConsultaTienda", fields: [tiendaId], references: [id], onDelete: Restrict)

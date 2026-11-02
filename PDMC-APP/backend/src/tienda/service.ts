@@ -3,7 +3,7 @@ import {z} from "zod";
 import {Prisma,type PrismaClient} from "../../generated/prisma/client";
 import type {Permission} from "@pdmc/contratos/auth/permissions";
 import {productCode} from "@pdmc/contratos/negativos/presentation";
-import {STORE_REPORT_REASONS,STORE_REPORT_SUBREASONS,UNKNOWN_BARCODE_REASONS} from "@pdmc/contratos/tienda/model";
+import {STORE_REPORT_REASONS,STORE_REPORT_SUBREASONS,UNKNOWN_BARCODE_REASONS,exportDeadline} from "@pdmc/contratos/tienda/model";
 import {transferType} from "@pdmc/contratos/transferencias/classification";
 import {Authorization,denied} from "../auth/authorization";
 import {NegativosError,uuid} from "../negativos/validation";
@@ -49,7 +49,7 @@ export class StoreService{
 
   private async transferRows(stores:readonly {id:string;nombre:string}[]){
     const ids=stores.map(store=>store.id),rows=await this.db.transferenciaConsulta.findMany({where:{tiendaId:{in:ids},estado:"Exportada",bajaEn:null},include:{tienda:{select:{nombre:true}}},orderBy:[{fecha:"desc"},{numero:"desc"}]});
-    return rows.map(row=>{const description=row.observacion??"";return {id:row.numero,date:row.fecha.toISOString().slice(0,10),exportDate:"",store:row.tienda!.nombre,units:row.unidades,description,type:transferType(description),tiendaId:row.tiendaId!,tiendaNombre:row.tienda!.nombre,deadline:null,remaining:null,deadlineStatus:"SIN_FECHA" as const}});
+    return rows.map(row=>{const description=row.observacion??"";return {id:row.numero,date:row.fecha.toISOString().slice(0,10),...exportDeadline(row.exportadaEn),store:row.tienda!.nombre,units:row.unidades,description,type:transferType(description),tiendaId:row.tiendaId!,tiendaNombre:row.tienda!.nombre}});
   }
 
   async dashboard(){

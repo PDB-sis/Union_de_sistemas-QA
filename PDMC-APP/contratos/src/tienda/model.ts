@@ -59,3 +59,14 @@ export function transferDeadline(exportDate:string,today=new Date()) {
   const status:TransferDeadlineStatus=remaining<0?"VENCIDA":remaining===0?"HOY":remaining===1?"MANANA":"A_TIEMPO";
   return {deadline,remaining,status};
 }
+
+/** Día en Venezuela (YYYY-MM-DD): los plazos de las tiendas se cuentan en hora de Caracas. */
+export const caracasDay=(date:Date)=>date.toLocaleDateString("en-CA",{timeZone:"America/Caracas"});
+
+/** Plazo de una transferencia exportada: 5 días hábiles desde que pasó a Exportada. */
+export type ExportDeadline={exportDate:string;deadline:string|null;remaining:number|null;deadlineStatus:TransferDeadlineStatus|"SIN_FECHA"};
+export function exportDeadline(exportedAt:Date|null|undefined,now=new Date()):ExportDeadline{
+  if(!exportedAt)return {exportDate:"",deadline:null,remaining:null,deadlineStatus:"SIN_FECHA"};
+  const exportDate=caracasDay(exportedAt),result=transferDeadline(exportDate,new Date(`${caracasDay(now)}T00:00:00.000Z`))!;
+  return {exportDate,deadline:result.deadline.toISOString().slice(0,10),remaining:result.remaining,deadlineStatus:result.status};
+}
