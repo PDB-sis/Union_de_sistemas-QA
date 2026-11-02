@@ -2,7 +2,7 @@ import {createHash} from "node:crypto";
 import type {PrismaClient} from "../../generated/prisma/client";
 import {parseDelimitedTable,normalizeHeader,NegativosError} from "../negativos/validation";
 import {Authorization,denied} from "../auth/authorization";
-import {transferType} from "@pdmc/contratos/transferencias/classification";
+import {classifyTransfer,defaultSpecialAuthors} from "@pdmc/contratos/transferencias/classification";
 import {planCabeceras,planDetalles,sinCambiosEnPlan} from "@pdmc/contratos/consultas/cambios";
 
 export const COLUMNAS_TRANSFERENCIAS=["Numero","fecha_formateada","CodNombre","CodigoBarra","Cantidad","NumeroCaja","codigoRecibe_Dletra","status","observacion"] as const;
@@ -78,10 +78,14 @@ ${options.desde?`desde ${options.desde.toISOString()}\n`:""}`).update(content).d
   }
 }
 
+/** Códigos (CodUsuario) de quienes normalmente hacen correcciones y rotaciones; configurable por servidor. */
+function specialAuthors(){const list=(process.env.PDMC_AUTORES_CORRECCION_ROTACION??"").split(",").map(x=>x.trim()).filter(Boolean);return list.length?list:defaultSpecialAuthors}
+
 export async function transferDashboardData(db:PrismaClient,errorCases:readonly {transfer:string;quantity:number;resolved?:boolean}[]=[],storeIds?:readonly string[],billerIds?:readonly string[]){
   const where={bajaEn:null,...(storeIds?{tiendaId:{in:[...storeIds]}}:{}),...(billerIds?{facturadorId:{in:[...billerIds]}}:{})};
   const [rows,reports,lastImport]=await Promise.all([db.transferenciaConsulta.findMany({where,include:{tienda:{select:{nombre:true}},facturador:{select:{nombre:true}}},orderBy:[{fecha:"desc"},{numero:"desc"}]}),db.reporteTransferenciaTienda.findMany({where:storeIds?{tiendaId:{in:[...storeIds]}}:{},select:{tiendaId:true,transferencia:true,sinIncidencias:true}}),db.transferenciaConsultaImport.findFirst({orderBy:{importedAt:"desc"}})]),reportByTransfer=new Map(reports.map(x=>[`${x.tiendaId}:${x.transferencia}`,x]));
-  const transfers=rows.map(x=>{const report=reportByTransfer.get(`${x.tiendaId}:${x.numero}`),comment=x.observacion??"";return {id:x.numero,date:x.fecha.toISOString().slice(0,10),biller:x.facturador?.nombre??`Código ${x.codigoFacturador} sin vincular`,store:x.tienda?.nombre??`Código sin vincular: ${x.codigoTiendaConsulta}`,status:x.estado,comment,type:transferType(comment),units:x.unidades,reported:Boolean(report),reportKind:report?(report.sinIncidencias?"SIN_INCONSISTENCIAS" as const:"CON_INCONSISTENCIAS" as const):null};});
+  const authors=specialAuthors();
+  const transfers=rows.map(x=>{const report=reportByTransfer.get(`${x.tiendaId}:${x.numero}`),comment=x.observacion??"",kind=classifyTransfer(comment,x.codigoFacturador,authors);return {id:x.numero,date:x.fecha.toISOString().slice(0,10),biller:x.facturador?.nombre??`Código ${x.codigoFacturador} sin vincular`,store:x.tienda?.nombre??`Código sin vincular: ${x.codigoTiendaConsulta}`,status:x.estado,comment,type:kind.type,typeReview:kind.review,units:x.unidades,reported:Boolean(report),reportKind:report?(report.sinIncidencias?"SIN_INCONSISTENCIAS" as const:"CON_INCONSISTENCIAS" as const):null};});
   const pendingReports=transfers.filter(x=>x.status==="Exportada"&&!x.reported).map(x=>({...x,exportDate:"",deadline:"",daysOverdue:null}));
   // Solo lo Exportado se puede reportar; lo Abierto o Aprobado se cuenta aparte como "por exportar".
   const storeMap=new Map<string,{name:string;total:number;exported:number;reported:number;pending:number;porExportar:number;units:number}>();for(const x of transfers){const s=storeMap.get(x.store)??{name:x.store,total:0,exported:0,reported:0,pending:0,porExportar:0,units:0};s.total++;s.units+=x.units;if(x.status==="Exportada"){s.exported++;if(x.reported)s.reported++;else s.pending++;}else if(!x.reported)s.porExportar++;storeMap.set(x.store,s)}

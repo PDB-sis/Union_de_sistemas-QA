@@ -1,6 +1,6 @@
 import type { TransferType } from "./transferencias/classification";
-export type Transfer = { id: string; date: string; biller: string; store: string; status: string; comment: string; type:TransferType; units: number; reported: boolean; reportKind?: "SIN_INCONSISTENCIAS"|"CON_INCONSISTENCIAS"|null };
-export type PendingReport = { id: string; date: string; exportDate?: string; deadline?: string; daysOverdue?: number | null; biller: string; store: string; units: number; comment: string; type:TransferType };
+export type Transfer = { id: string; date: string; biller: string; store: string; status: string; comment: string; type:TransferType; typeReview?: string|null; units: number; reported: boolean; reportKind?: "SIN_INCONSISTENCIAS"|"CON_INCONSISTENCIAS"|null };
+export type PendingReport = { id: string; date: string; exportDate?: string; deadline?: string; daysOverdue?: number | null; biller: string; store: string; units: number; comment: string; type:TransferType; typeReview?: string|null };
 /** porExportar: transferencias Abiertas o Aprobadas; la tienda las podrá reportar cuando lleguen a Exportada. */
 export type StoreRow = { name: string; total: number; exported: number; reported: number; pending: number; porExportar: number; units: number; compliance: number };
 export type Biller = { name: string; transfers: number; units: number; errors: number; errorUnits: number; affectedTransfers: number; resolved: number; errorPct: number };
