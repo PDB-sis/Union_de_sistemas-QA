@@ -1,13 +1,30 @@
-# Sitio de entrada de PDMC en Netlify.
-# PDMC se sigue ejecutando en el servidor (Next.js + PostgreSQL); Netlify solo reenvía
-# cada petición a https://apiqa.apipalacio.com y el navegador conserva la dirección de Netlify.
-# En Netlify: Base directory = deployment/netlify-pdmc, sin build command ni variables.
+# Sitio de PDMC en Netlify: la interfaz (PDMC-APP/frontend, Vite) se publica aquí y la API
+# sigue en el servidor. /api/* se reenvía a https://apiqa.apipalacio.com y el navegador conserva
+# la dirección de Netlify, así que la cookie de sesión es de este sitio.
+# En Netlify: Base directory = deployment/netlify-pdmc (este archivo manda sobre el build).
 # En el servidor: PDMC_AUTH_ADDITIONAL_ORIGINS debe incluir la dirección de este sitio.
 [build]
-  publish = "."
+  command = "cd ../../PDMC-APP && npm ci && npm run build -w frontend && rm -rf ../deployment/netlify-pdmc/dist && cp -r frontend/dist ../deployment/netlify-pdmc/dist"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
 
 [[redirects]]
-  from = "/*"
-  to = "https://apiqa.apipalacio.com/:splat"
+  from = "/api/*"
+  to = "https://apiqa.apipalacio.com/api/:splat"
   status = 200
   force = true
+
+# Rutas de la interfaz (React Router): todas cargan index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"
+    X-Frame-Options = "DENY"

@@ -11,7 +11,7 @@
 
 | Sistema | Qué es | Problema que resuelve |
 |---|---|---|
-| **PDMC — Panel de Mejora Continua** (`PDMC-APP/`) | Aplicación web empresarial (Next.js) | Centraliza transferencias, devoluciones, inventario, negativos, inconsistencias, facturación, etiquetado, pedidos y reportes de tiendas. Sustituye las cargas manuales de CSV por consultas automáticas de solo lectura a SQL Server corporativo. |
+| **PDMC — Panel de Mejora Continua** (`PDMC-APP/`) | Aplicación web empresarial (API Hono + interfaz React/Vite) | Centraliza transferencias, devoluciones, inventario, negativos, inconsistencias, facturación, etiquetado, pedidos y reportes de tiendas. Sustituye las cargas manuales de CSV por consultas automáticas de solo lectura a SQL Server corporativo. |
 | **CYSN QA / NEXO QA** (`CYSN_QA/`) | API FastAPI + frontend React (Vite) + agente Windows por tienda | Control de calidad de inventario: compara la base de creación de productos (`CREACION`) con el inventario real de cada sucursal, detecta diferencias, gestiona ciclos QA y correcciones. Sustituye un flujo anterior de n8n. |
 
 Ambos sistemas comparten:
@@ -40,25 +40,23 @@ SQL Server de cada sitio (solo lectura)                          SQL Server cent
                                    └─► Worker app.sync.creacion ─► cysn_qa.creacion
  PostgreSQL 18 ── base `sistemas_unificados` (esquemas `pdmc` y `cysn_qa`)
 
-Navegador ─► Netlify: sistemaunionqa (reenvía a PDMC) · nexoqa-pdb (NEXO QA) ─► Caddy (HTTPS) ─► PDMC 5083 / API 5082
+Navegador ─► Netlify: sistemaunionqa (interfaz PDMC) · nexoqa-pdb (interfaz NEXO QA) ─► /api ─► Caddy (HTTPS) ─► API PDMC 5083 / API QA 5082
 ```
 
 ### PDMC-APP
 
 - **Lenguaje:** TypeScript (Node.js 22).
-- **Framework:** Next.js **16.3.6** (App Router, Turbopack) + React 19. ⚠️ Esta versión de Next tiene cambios incompatibles con versiones anteriores: consultar `node_modules/next/dist/docs/` antes de escribir código (ver `PDMC-APP/AGENTS.md`).
-- **Base de datos:** PostgreSQL 17 vía **Prisma 7.10** (`@prisma/adapter-pg`, `pg`). Cliente generado en `generated/`.
+- **Desde el 2026-10-30 ya no usa Next.js.** Son tres paquetes npm independientes (workspaces), separados por otra persona (commits `7f8d332..8f646bd` del repositorio público, traídos a `PDMC-APP` `main` = `0376d28`):
+  - `backend/` (`pdmc-backend`): API HTTP con **Hono 4** sobre `@hono/node-server` (`src/server.ts`), que se ejecuta con `node --import tsx`. Rutas en `src/http/` (todas bajo `/api`), servicios en `src/`, Prisma en `prisma/`, scripts en `scripts/`, consultas en `sqlserver/` y pruebas en `tests/`. Configuración en `backend/.env.local`; por compatibilidad también lee `PDMC-APP/.env.local`.
+  - `frontend/` (`pdmc-frontend`): interfaz **Vite 7 + React 19 + React Router 7**. Compila a archivos estáticos (`frontend/dist`), solo habla con la API por `/api` y no lee variables de entorno.
+  - `contratos/` (`@pdmc/contratos`, antes `shared/`): tipos de las respuestas, catálogos y reglas puras. Se importa como `@pdmc/contratos/<ruta>`.
+- **Base de datos:** PostgreSQL 17 vía **Prisma 7.10** (`@prisma/adapter-pg`, `pg`). Cliente generado en `backend/generated/`.
 - **SQL Server:** `mssql` (solo lectura, transacciones que siempre se revierten).
 - **UI:** Tailwind CSS 4, shadcn/ui, Radix UI, Base UI, lucide-react, Recharts, sonner.
 - **Formularios y validación:** react-hook-form + zod.
 - **Pruebas:** `node --test` con `tsx`; PGlite para pruebas de base de datos.
-- **Arquitectura:** monolito modular con un único proceso y despliegue:
-  - `frontend/` → interfaz (componentes, hooks, estilos).
-  - `backend/http/` → controladores de rutas HTTP; `backend/src/` → servicios de negocio por módulo (`auth`, `admin`, `inventario`, `transferencias`, `devoluciones`, `negativos`, `inconsistencias`, `facturacion`, `metrics`, `panel`).
-  - `shared/` → contratos TypeScript, catálogos y reglas puras.
-  - `app/` → adaptadores de Next.js (páginas y `/api/*` que delegan en `backend/http/`).
-- **Flujo de una petición:** interfaz → `/api/...` → `backend/http/` (sesión, origen/CSRF, permisos) → servicio en `backend/src/` → `backend/src/db.ts` → PostgreSQL.
-- **Servidor de producción:** `scripts/servidor-pdmc.mjs` (HTTPS si se configuran `PDMC_TLS_PFX_FILE` y `PDMC_TLS_PASSWORD_FILE`).
+- **Flujo de una petición:** interfaz → `/api/...` → `backend/src/http/` (sesión, origen/CSRF, permisos) → servicio en `backend/src/` → `backend/src/db.ts` → PostgreSQL. La sesión es una cookie, así que interfaz y `/api` deben servirse desde el mismo dominio (Netlify reenvía `/api/*`).
+- **Arranque:** `node --import tsx src/server.ts` en `backend/` (`PORT`, por defecto 3000, y `PDMC_HOST`, por defecto `127.0.0.1`). Con `--frontend` o `PDMC_FRONTEND_DIST` sirve también la interfaz compilada en el mismo puerto (`npm start` en la raíz). En el servidor se ejecuta sin interfaz. HTTPS propio con `PDMC_TLS_PFX_FILE` y `PDMC_TLS_PASSWORD_FILE`.
 
 ### CYSN_QA (NEXO QA)
 
@@ -72,22 +70,22 @@ Navegador ─► Netlify: sistemaunionqa (reenvía a PDMC) · nexoqa-pdb (NEXO Q
 
 ### Infraestructura (`deployment/`)
 
-- **Servidor:** Windows, carpeta `C:\Users\Administrator\Documents\servicios IAN\ServicioQA\` (`PDMC-APP\` y `CYSN_QA\backend\`). Es un servidor **compartido**: `Inicio-servicios-IAN.bat` arranca 12 servicios (precio, precio Margarita, Exporter, ExporterCompras, Tasa, pdbStore, rotación, servicio China y, en los pasos 9 a 12, NEXO QA, PDMC, el sincronizador de PDMC y el worker de CREACION). Al empezar detiene todos los procesos con PID guardado.
+- **Servidor:** Windows (desde el 2026-11-02 con `PDMC-API`), carpeta `C:\Users\Administrator\Documents\servicios IAN\ServicioQA\` (`PDMC-API\` y `CYSN_QA\backend\`; `PDMC-APP\` es la versión anterior con Next.js y se conserva para volver atrás). Solo ejecuta las API: las dos interfaces están en Netlify. Es un servidor **compartido**: `Inicio-servicios-IAN.bat` arranca 12 servicios (precio, precio Margarita, Exporter, ExporterCompras, Tasa, pdbStore, rotación, servicio China y, en los pasos 9 a 12, NEXO QA, PDMC, el sincronizador de PDMC y el worker de CREACION). Al empezar detiene todos los procesos con PID guardado.
   - ⚠️ El `.bat` con el que se arranca el servidor **no es** el de `ServicioQA\deployment\`, sino otra copia; el 2026-10-28 se le añadió a mano el paso 12. Si se cambia el `.bat` del proyecto, hay que copiarlo también sobre esa copia.
 - **Procesos de este proyecto en el servidor:**
   - API QA: Uvicorn en `127.0.0.1:5082`; logs en `CYSN_QA\backend\logs\qa-api.*.log`.
-  - PDMC: `next start -H 127.0.0.1 -p 5083`; logs en `PDMC-APP\logs\pdmc.*.log`. No usa `npm start`, porque `servidor-pdmc.mjs` exige el 443, que es de Caddy.
-  - Sincronizador PDMC: módulos `SUCURSALES,FACTURADORES,TRANSFERENCIAS,DEVOLUCIONES,INVENTARIO`. Solo `SUCURSALES` lee SQL Server; el resto lee lo que envían los agentes. Logs en `PDMC-APP\logs\sync.*.log`.
+  - API de PDMC: `node --import tsx src/server.ts` en `PDMC-API\backend`, con `PORT=5083` y `PDMC_HOST=127.0.0.1`; logs en `PDMC-API\logs\pdmc.*.log`. **Desplegado el 2026-11-02** siguiendo `deployment/DESPLIEGUE-PDMC-API.md` (antes: `next start` en `PDMC-APP`). Respaldo previo: `C:\temp\pdmc-antes-api-20261102-0919.dump` (esquema `pdmc`, 10,6 MB).
+  - Sincronizador PDMC: módulos `SUCURSALES,FACTURADORES,TRANSFERENCIAS,DEVOLUCIONES,INVENTARIO`. Solo `SUCURSALES` lee SQL Server; el resto lee lo que envían los agentes. Se ejecuta con `node --import tsx scripts/sincronizar-sqlserver.ts` en `PDMC-API\backend`; logs en `PDMC-API\logs\sync.*.log`.
   - Worker CREACION (paso 12): `python -m app.sync.creacion --loop` con `CYSN_CREACION_FUENTE=AGENTE` y `CYSN_CREACION_DIM_ID=2010`, variables puestas en el propio `.bat`. PID en `pids\nexoqa-creacion.pid` y registro en `CYSN_QA\backend\logs\creacion.*.log`.
 - **Caddy** publica los dos sistemas en un solo dominio, `apiqa.apipalacio.com`:
   - `/api/agente/*` y `/api/health` → API QA (5082), sin prefijo, para no reconfigurar las tiendas.
   - `/qa/*` → API QA, quitando el prefijo (`/qa/api/auth/login` llega como `/api/auth/login`).
-  - Todo lo demás → PDMC (5083).
+  - Todo lo demás → API de PDMC (5083). Desde el cambio a `PDMC-API` la raíz ya no muestra la interfaz (404); solo responde `/api/*`.
   - El Caddyfile real (`Servidor/deployment/caddy/Caddyfile`) contiene también `api`, `api2`, `api3` y `api4`: el bloque `Caddyfile.apiqa` se **fusiona**, no se copia encima.
 - **Netlify** (desde el 2026-10-27). Los dos sitios están conectados a `PDB-sis/Union_de_sistemas-QA`, rama `main`:
-  - `https://sistemaunionqa.netlify.app` → **PDMC, la entrada principal**. Base directory `deployment/netlify-pdmc`, que solo tiene un `netlify.toml` que reenvía todo a `https://apiqa.apipalacio.com`. PDMC sigue ejecutándose en el servidor; no se puede separar porque sus páginas se generan en el servidor con Prisma. Límite: Netlify corta las peticiones reenviadas que tardan más de unos 26 s.
+  - `https://sistemaunionqa.netlify.app` → **PDMC, la entrada principal**. Base directory `deployment/netlify-pdmc`. Su `netlify.toml` compila `PDMC-APP/frontend` (`npm ci && npm run build -w frontend`, Node 22), publica la interfaz y reenvía `/api/*` a `https://apiqa.apipalacio.com/api/*`; las demás rutas cargan `index.html`. Antes del 2026-10-30 reenviaba todo al Next.js del servidor. Límite: Netlify corta las peticiones reenviadas que tardan más de unos 26 s.
   - `https://nexoqa-pdb.netlify.app` → **NEXO QA**. Base directory `CYSN_QA/frontend` (su `netlify.toml` fija Node 22, `dist` y la redirección de la SPA) y `VITE_API_URL=https://apiqa.apipalacio.com/qa`.
-  - En el servidor: `PDMC_AUTH_ADDITIONAL_ORIGINS=https://sistemaunionqa.netlify.app` y `PDMC_QA_SSO_DESTINATION=https://nexoqa-pdb.netlify.app` en `PDMC-APP\.env.local`, y `CYSN_CORS_ORIGINS=https://nexoqa-pdb.netlify.app` en `CYSN_QA\backend\.env`. Las tres líneas están también en `Servidor/`, para que coincidan. Si cambia una dirección de Netlify, hay que cambiarla en los dos sitios y reiniciar.
+  - En el servidor: `PDMC_AUTH_ADDITIONAL_ORIGINS=https://sistemaunionqa.netlify.app` y `PDMC_QA_SSO_DESTINATION=https://nexoqa-pdb.netlify.app` en `PDMC-API\backend\.env.local` (antes `PDMC-APP\.env.local`), y `CYSN_CORS_ORIGINS=https://nexoqa-pdb.netlify.app` en `CYSN_QA\backend\.env`. Desde el 2026-10-30 `Servidor/` no lleva ningún `.env`: se cambian solo en el servidor, y después hay que reiniciar.
 - Scripts PowerShell para crear la base unificada y levantar el backend QA.
 - Docker: instalación completa con `compose.yaml` e imágenes `sistemaspdb/*` (sección 5.5). PDMC local puede seguir usando su propio PostgreSQL 17 en Docker.
 
@@ -112,16 +110,15 @@ Navegador ─► Netlify: sistemaunionqa (reenvía a PDMC) · nexoqa-pdb (NEXO Q
 - Commits en español, en imperativo y descriptivos (ej.: *"Actualizar transferencias solo con INSERT, UPDATE y baja lógica"*).
 
 ### PDMC (TypeScript)
-- **ESLint 9** con `eslint-config-next` (`eslint.config.mjs`) + `tsc --noEmit` en modo estricto.
-- **Límites de capas obligatorios** (verificados por `npm run check:architecture`, que corre en `lint` y `build`):
-  - Alias: `@frontend/*`, `@backend/*` (→ `backend/src`), `@backend-http/*`, `@shared/*`.
-  - `frontend/` **no** puede importar `backend/`, Prisma, `pg`, `server-only`, módulos nativos de Node ni leer `process.env`.
-  - `shared/` solo puede referenciar tipos del servidor con `import type`.
-  - `backend/` no depende de `frontend/`.
-  - Solo el backend lee variables de entorno.
-- Módulos sensibles marcados con `import "server-only"`.
-- **Nunca** usar variables `NEXT_PUBLIC_` para conexiones o secretos.
-- Patrones: servicios por módulo con validación + transacción; controladores delgados; reglas puras en `shared/`.
+- **ESLint 9** por paquete (`eslint.config.js`) + `tsc --noEmit` en modo estricto.
+- **Paquetes independientes** (verificado por `npm run check:architecture`, que corre en `lint` y `build`):
+  - `frontend/` **no** importa el backend, Prisma, `pg` ni módulos de Node, y no lee variables de entorno.
+  - `contratos/` no depende ni del servidor ni de la interfaz.
+  - Ningún paquete importa a otro por ruta relativa: se usa `@pdmc/contratos/<ruta>`.
+  - Si cambia una respuesta de la API, se actualiza su tipo en `contratos/`.
+- Solo el backend lee variables de entorno; nunca hay conexiones ni secretos en la interfaz.
+- Patrones: servicios por módulo con validación + transacción; controladores delgados; reglas puras en `contratos/`.
+- Reglas propias del repositorio en `PDMC-APP/CLAUDE.md`.
 
 ### CYSN QA (Python / React)
 - Python con *type hints*, Pydantic para entrada/salida y SQLAlchemy ORM declarativo.
@@ -137,16 +134,17 @@ El directorio raíz **no** es un repositorio git; contiene varios repositorios y
 ```text
 Union de sistemas QA/
 ├── PDMC-APP/              ★ Repo principal de PDMC (github.com/controldeinconsistencias-code/PDMC-APP)
-│   ├── app/               Páginas y rutas /api de Next.js (adaptadores)
-│   ├── frontend/          Componentes, hooks y estilos
-│   ├── backend/http/      Controladores HTTP por módulo (incluye qa-sso/)
-│   ├── backend/src/       Servicios de negocio + db.ts (sync/ = sincronización)
-│   ├── backend/prisma/    schema.prisma y migraciones versionadas
-│   ├── backend/sqlserver/ Consultas de solo lectura y scripts para el DBA
-│   ├── backend/scripts/   Sincronizador, usuarios y comprobaciones de la base
-│   ├── shared/            Contratos y reglas puras
-│   ├── scripts/           Arranque del servidor, red y verificadores del proyecto
-│   ├── tests/             backend/, shared/ y frontend/ (*.test, *.integration, *.browser)
+│   ├── backend/           Paquete pdmc-backend: API Hono
+│   │   ├── src/http/      Rutas HTTP por módulo (incluye qa-sso/); src/server.ts monta todas
+│   │   ├── src/           Servicios de negocio + db.ts (sync/ = sincronización)
+│   │   ├── prisma/        schema.prisma y migraciones versionadas
+│   │   ├── sqlserver/     Consultas de solo lectura y scripts para el DBA
+│   │   ├── scripts/       Sincronizador, usuarios y comprobaciones de la base
+│   │   └── tests/         Pruebas unitarias y de integración
+│   ├── frontend/          Paquete pdmc-frontend: interfaz Vite + React (src/, public/, tests/)
+│   ├── contratos/         Paquete @pdmc/contratos: tipos, catálogos y reglas puras
+│   ├── scripts/           Arranque en red y Tailscale, verificadores de arquitectura y textos
+│   ├── tests/e2e/         Pruebas de navegador de punta a punta
 │   ├── docker/            Imagen y compose.yaml de PostgreSQL de PDMC
 │   └── docs/              ARQUITECTURA.md, sincronizacion-sqlserver.md, sesiones…
 ├── CYSN_QA/               ★ Repo de NEXO QA (github.com/adolfolinares2121-afk/CYSN_QA)
@@ -156,22 +154,26 @@ Union de sistemas QA/
 │   └── aportes/           Material de referencia (export de n8n, consultas originales)
 ├── consultaPDMC/          Consultas SQL Server originales (fuente de verdad de backend/sqlserver/consultas/)
 ├── deployment/            Crear-Base-Unificada.ps1, Aplicar-Migracion-CYSN.ps1, Iniciar-Backend-QA.ps1,
-│                          Revisar-Datos-Bodega.ps1, exportar_github.py, caddy/, netlify-pdmc/, requirements
+│                          Revisar-Datos-Bodega.ps1, exportar_github.py, preparar_servidor.py,
+│                          DESPLIEGUE-PDMC-API.md, caddy/, netlify-pdmc/, requirements
 ├── docker/ + compose.yaml Imágenes de Docker Hub (sección 5.5)
 ├── backups/               Dumps de estructura y unificada/ (scripts 00–03 de la base unificada)
 ├── logs/                  Logs de ejecución de PDMC y CYSN
-└── Servidor/              Paquete que se despliega en el servidor (ver abajo)
-    ├── PDMC-APP/          Copia completa de PDMC-APP (sin .git ni node_modules)
-    ├── CYSN_QA/           Solo backend/, agente_tienda/ y aportes/ (sin frontend)
-    ├── deployment/        Igual que deployment/ + lanzadores del servidor (Iniciar-PDMC.cmd,
-    │                      Iniciar-API-QA.cmd, Inicio-servicios-IAN.bat) y caddy/Caddyfile real
-    └── backups/unificada/ Scripts 00–03 de la base unificada
+├── respaldos-locales/     Respaldos de este equipo (Servidor/ anteriores, .env, dumps). No se publica
+├── ultimo cambio/         Copia de origin/main del repositorio público traída el 2026-10-30 (solo consulta)
+└── Servidor/              Paquete que se despliega en el servidor; lo genera preparar_servidor.py
+    ├── PDMC-API/          Solo la API de PDMC: package.json, package-lock.json, backend/ y contratos/
+    ├── CYSN_QA/backend/   Solo la API de NEXO QA (app/, migrations/, scripts/)
+    ├── deployment/        Scripts de deployment/, DESPLIEGUE-PDMC-API.md y lanzadores del servidor
+    │                      (Inicio-servicios-IAN.bat, su copia .anterior.bat, Iniciar-PDMC.cmd,
+    │                      Iniciar-API-QA.cmd) y caddy/Caddyfile real
+    ├── backups/unificada/ Scripts 00–04 de la base unificada
+    └── NexoQAAgente-*.zip El agente más reciente, para instalar en los sitios
 ```
 
-> Se desarrolla **solo** en **`PDMC-APP/`** y **`CYSN_QA/`**. `Servidor/` es el resultado que se copia al servidor: no se edita a mano, se actualiza copiando desde los proyectos reales.
+> Se desarrolla **solo** en **`PDMC-APP/`** y **`CYSN_QA/`**. `Servidor/` es el resultado que se copia al servidor: se rehace con `python deployment/preparar_servidor.py`, que toma lo confirmado en Git de los dos repositorios, se detiene si encuentra archivos que no deben viajar y mueve la versión anterior a `respaldos-locales/`. Solo se editan a mano los archivos propios del servidor (el `.bat`, los `.cmd`, el `Caddyfile` y `04_cysn_qa_catalogos.sql`), que el script conserva.
 >
-> - **CYSN QA:** al servidor va únicamente el backend (y el agente). El frontend React se compila con `npm run build` y se publica aparte.
-> - **PDMC:** no se puede enviar solo el backend. Es Next.js: páginas y `/api/*` forman un único proceso y un único `npm run build`, así que `frontend/` debe ir también al servidor.
+> - **Al servidor solo van las API** de PDMC y de NEXO QA (2026-10-30). Las dos interfaces se compilan y publican en Netlify.
 >
 > El 2026-10-21 se eliminaron las copias históricas (`PDMC-APP-prueba/`, `compañero/`, `Servidor_respaldo_20261015/`). Todos sus commits ya estaban en `PDMC-APP`.
 >
@@ -179,7 +181,7 @@ Union de sistemas QA/
 > - `Servidor.rar` (55 MB, del 2026-10-22): una copia nueva del paquete que **contiene los secretos de producción** (ver sección 7).
 > - `.integracion-pdmc/`, que solo tiene `node_modules`.
 >
-> ⚠️ El paquete `Servidor/` lleva hoy cosas que no deberían viajar: los `.env` con secretos, las carpetas `.git` de los dos repositorios (con el historial del `.env` de CYSN), `PDMC-APP/.secrets/`, `CYSN_QA/aportes`, `tests` y `.pytest_cache`. Además, `Servidor/backups/unificada/04_cysn_qa_catalogos.sql` no existe en `backups/unificada/` e inserta 3 usuarios con hash, entre ellos la cuenta de prueba `usuario_tienda_prueba`.
+> Desde el 2026-10-30, `Servidor/` ya no lleva `.env`, `.git`, `.secrets`, `aportes`, pruebas ni interfaces. Siguen dos avisos: `Servidor/backups/unificada/04_cysn_qa_catalogos.sql` no existe en `backups/unificada/` e inserta 3 usuarios con hash, entre ellos la cuenta de prueba `usuario_tienda_prueba`; y el `.bat` del servidor tiene escrita la contraseña de `postgres` del servicio China-Venezuela.
 
 ---
 
@@ -187,7 +189,7 @@ Union de sistemas QA/
 
 ### 5.1 PDMC-APP — entorno local
 
-Requisitos: Node.js 22, npm, Docker (o PostgreSQL 17).
+Requisitos: Node.js 22, npm, Docker (o PostgreSQL 17). `npm ci` en la raíz instala los tres paquetes; los comandos de base de datos, usuarios y sincronización son del backend (`-w backend`).
 
 ```powershell
 cd PDMC-APP
@@ -198,38 +200,39 @@ New-Item -ItemType Directory -Force .secrets
 Set-Content -LiteralPath .secrets\postgres-password -Value "CLAVE_SEGURA" -NoNewline
 docker compose --file docker/compose.yaml up -d
 
-Copy-Item .env.example .env.local   # completar DATABASE_URL y PDMC_AUTH_ORIGIN
-npm run db:migrate                  # prisma migrate deploy (nunca migrate reset)
-npm run db:check
+Copy-Item backend\.env.example backend\.env.local   # completar DATABASE_URL y PDMC_AUTH_ORIGIN
+npm run db:migrate -w backend       # prisma migrate deploy (nunca migrate reset)
+npm run db:check -w backend
 
 # Primer administrador (variables temporales; retirarlas después)
 $env:PDMC_SEED_ADMINISTRADOR_EMAIL="..."; $env:PDMC_SEED_ADMINISTRADOR_NOMBRE="..."; $env:PDMC_SEED_ADMINISTRADOR_PASSWORD="..."
-npm run crear-usuarios-iniciales
+npm run crear-usuarios-iniciales -w backend
 
-npm run dev                         # desarrollo
+npm run dev:backend                 # API en http://127.0.0.1:3000
+npm run dev:frontend                # interfaz en http://localhost:5173 (reenvía /api a la API)
 ```
 
 **Validación (lo mismo que ejecuta GitHub Actions):**
 
 ```powershell
-npm run lint              # ESLint + check:architecture + check:texts
+npm run lint              # ESLint de los tres paquetes + check:architecture + check:texts
 npm run typecheck
-npm test                  # tests/**/*.test.mjs
-npm run test:integration  # tests/**/*.integration.mjs (requiere PostgreSQL)
-npm run build
+npm test                  # pruebas unitarias de contratos, backend y frontend
+npm run test:integration  # backend/tests/*.integration.mjs (PostgreSQL local; cada prueba usa un esquema temporal)
+npm run build             # verificaciones + compilación del frontend (frontend/dist) + tipos del backend
 ```
 
 **Sincronización con SQL Server:**
 
 ```powershell
-npm run sync:crear-usuario     # cuenta de sistema sin contraseña (PDMC_SYNC_USUARIO_EMAIL)
-npm run sync:sqlserver:once    # una vuelta; filtrar con PDMC_SYNC_MODULOS=TRANSFERENCIAS
-npm run sync:sqlserver         # ciclo continuo
+npm run sync:crear-usuario -w backend     # cuenta de sistema sin contraseña (PDMC_SYNC_USUARIO_EMAIL)
+npm run sync:sqlserver:once -w backend    # una vuelta; filtrar con PDMC_SYNC_MODULOS=TRANSFERENCIAS
+npm run sync:sqlserver -w backend         # ciclo continuo
 ```
 
-**Producción:** `npm run build` → `npm start` (o `scripts/iniciar-pdmc-red.ps1` / `iniciar-pdmc-tailscale.ps1`).
+**Producción:** en el servidor solo la API (sección 5.4). En un solo equipo: `npm run build` → `npm start`, que sirve API e interfaz en el mismo puerto (o `scripts/iniciar-pdmc-red.ps1` / `iniciar-pdmc-tailscale.ps1`).
 
-Otros: `db:status`, `db:audit`, `administrar-usuario`, `administrar-accesos`.
+Otros (`-w backend`): `db:status`, `db:audit`, `administrar-usuario`, `administrar-accesos`.
 
 ### 5.2 CYSN_QA — entorno local
 
@@ -288,17 +291,17 @@ Aplica `backups/unificada/00…03_*.sql` y adapta las migraciones de CYSN de `pu
 **Copia del paquete (siempre así):** borrar `C:\temp\Servidor`, copiar la carpeta `Servidor/` (sin comprimir) a `C:\temp\Servidor` y ejecutar:
 
 ```powershell
-robocopy 'C:\temp\Servidor' 'C:\Users\Administrator\Documents\servicios IAN\ServicioQA' /E /XD .git .secrets __pycache__ .pytest_cache generated /XF .env .env.local config.env /NFL /NDL /NP
+robocopy 'C:\temp\Servidor' 'C:\Users\Administrator\Documents\servicios IAN\ServicioQA' /E /XD .git .secrets __pycache__ .pytest_cache generated node_modules /XF .env .env.local config.env /NFL /NDL /NP
 ```
 
-- **`generated` excluido:** `Servidor/PDMC-APP/generated` era un cliente Prisma viejo, del 2026-10-19, que pisaba el del servidor. El sincronizador falló con «Unknown argument `dimIdTienda`». Tras un despliegue con cambios en `schema.prisma`, hay que ejecutar en el servidor `npx prisma generate` en `PDMC-APP`.
-- **`.env`, `.env.local` y `config.env` excluidos:** el 2026-10-27 el `robocopy` pisó los del servidor y se perdieron las líneas de Netlify. Los cambios de `.env` se hacen a mano en el servidor y también en `Servidor/`.
+- **`generated` excluido:** `Servidor/PDMC-APP/generated` era un cliente Prisma viejo, del 2026-10-19, que pisaba el del servidor. El sincronizador falló con «Unknown argument `dimIdTienda`». Tras un despliegue con cambios en `schema.prisma`, hay que ejecutar en el servidor `npm run db:generate -w backend` en `PDMC-API`.
+- **`.env`, `.env.local` y `config.env` excluidos:** el 2026-10-27 el `robocopy` pisó los del servidor y se perdieron las líneas de Netlify. Los cambios de `.env` se hacen solo a mano en el servidor: `Servidor/` ya no lleva ninguno.
 - **Comprobación:** códigos SHA-256 de los archivos cambiados y la columna ERROR del resumen en 0. Después, reiniciar con el `.bat` (ver sección 2).
 - **Revisión de datos:** `deployment\Revisar-Datos-Bodega.ps1 [-DimId 2004]`. Solo lee. Muestra el último contacto del agente, los envíos, lo guardado en `cysn_qa`, la comparación con PDMC y el estado de las sincronizaciones de PDMC.
 
 1. **Backend QA:** `deployment\Iniciar-Backend-QA.ps1 [-SincronizarCreacion]` (crea venv, instala dependencias, levanta Uvicorn en `127.0.0.1:5082`, verifica `/api/health`).
 2. **Caddy:** añadir `deployment/caddy/Caddyfile.apiqa` al Caddyfile, `caddy validate` y `caddy reload`. Puertos 80/443 abiertos; backend solo en localhost.
-3. **PDMC:** `npm ci && npm run db:migrate && npm run build && npm start` con `.env.local` del servidor.
+3. **PDMC (API):** en `PDMC-API`, `npm ci --omit=dev`, `npm run db:generate -w backend` y `npm run db:migrate -w backend`, con `backend\.env.local` del servidor; la arranca el `.bat` (paso 10). El primer cambio de `PDMC-APP` (Next.js) a `PDMC-API` sigue `deployment/DESPLIEGUE-PDMC-API.md`: respaldo, instalación en paralelo, prueba en el puerto 5084, migración, `.bat` nuevo y, al final, la publicación en GitHub para que Netlify compile la interfaz.
 4. **Agentes:** cada migración de CYSN se aplica con `deployment\Aplicar-Migracion-CYSN.ps1 -Migracion 00X_..._up.sql -PgBin 'C:\Program Files\PostgreSQL\18\bin'`. En el servidor están aplicadas de la 001 a la 007. Cada sitio se registra con `python -m app.agentes crear --dim-id <dimID> [--codigo ...]`, desde `CYSN_QA\backend`; muestra el token una sola vez. Después se sigue `CYSN_QA/agente_tienda/README.md`. El servicio del sitio se instala desde PowerShell **como administrador**; sin eso da «Acceso denegado (5)».
 
 ---
@@ -382,7 +385,7 @@ robocopy 'C:\temp\Servidor' 'C:\Users\Administrator\Documents\servicios IAN\Serv
 - **Sin preparar el ciclo a mano (2026-10-29):** la pantalla Inventarios de NEXO QA no crea ciclos ni añade sucursales. Por eso «Ejecutar QA» crea «QA <fecha>» si no hay ciclo abierto (`POST /api/admin/ciclos/operativo`), añade todas las sucursales activas con inventario de agente, toma su inventario y omite (e informa) las que no lo tienen. «Visualizar inventario vs CREACION» añade la sucursal elegida y toma su inventario si aún no tiene carga.
 - **Frontend de NEXO QA en Netlify (2026-10-29):** `qaLegacyAuthBridge.ts` solo añadía el token a rutas que empiezan por `/api/qa/`. Con la API bajo `/qa`, las peticiones salían sin token (401), y API y PostgreSQL se veían en gris. Corregido teniendo en cuenta el prefijo de `VITE_API_URL`.
 - **Primera tienda piloto (fase 5), 2026-10-29: LIBERTAD (CALIDOSO, dimID 1011),** agente `AGT-LIBERTAD`, `TAREAS=inventario`. Leyó 25.885 productos de `BD_SPDV` y envió los 12.721 activos. «Visualizar» y «Ejecutar QA» en NEXO QA funcionan con ella. «casa matriz prueba» (sucursal 59) tiene inventario de agente del 22/10, pero no entra en los ciclos porque está inactiva o su empresa lo está.
-- **Mejora Continua con alcance nacional en PDMC (2026-10-29, commit `33f6d87`):** antes solo el administrador podía tener alcance nacional; Mejora Continua exigía una región. Ahora, al agregar el rol Mejora Continua en **Administración → Usuarios**, aparece la casilla «Alcance nacional (todas las regiones)» para cualquier usuario (`rolesConAlcanceNacional` en `shared/auth/model.ts`). Hace falta para «Actualizar ahora» (`backend/http/sincronizacion/route.ts` usa `access.national`): con Mejora Continua · Sin región responde «No tiene permiso para esta operación o ubicación». Tras cambiar los accesos, el usuario debe volver a iniciar sesión.
+- **No existen cuentas operativas de alcance nacional (regla de PDMC desde el 2026-10-30, commit `8f646bd`):** cada rol trabaja sobre su región, bodega o tienda, y quien cubra varias regiones recibe el rol una vez por región. Solo el Administrador va sin ubicación. Lo impone `asignacionValida` (`contratos/src/auth/permissions.ts`) y el CHECK `AsignacionAcceso_sin_alcance_nacional`. La migración `20261030120000_sin_alcance_nacional` copia en `Auditoria` (`RETIRAR_ALCANCE_NACIONAL`) y borra las asignaciones operativas sin ubicación: en el servidor hay que reasignar una región a esas personas. Esta regla reemplaza la casilla «Alcance nacional» para Mejora Continua del 2026-10-29 (`33f6d87`). «Actualizar ahora» ya no exige alcance nacional: basta con que el rol tenga el permiso del módulo (`4b1234c`). La cuenta del sincronizador no tiene asignaciones (`SystemAuthorization`). Ensayado el 2026-10-30 en la base local: retiró 1 asignación y la dejó en la auditoría.
 - **Agente por sitio (2026-10-22):** la migración 005 de CYSN permite agentes de bodega (solo con `dimID`, sin sucursal de CYSN) y añade la `linea` al inventario. La bodega MARACAIBO (2004) envía su inventario como `AGT-BODEGA-MARACAIBO`. El agente solo guarda los productos **activos**, mientras que el inventario central de PDMC incluye también los inactivos; hay que decidirlo en la fase 2b.
 - **Latido del agente (2026-10-21):** la API tiene un endpoint nuevo, `POST /api/agente/v1/latido`, y el agente lo llama en cada ciclo sin cambios. Así `ultimo_contacto_at` indica que el agente está vivo. El `.exe` nuevo está en `CYSN_QA/agente_tienda/dist/` y en `Servidor/NexoQAAgenteTienda-20261021.zip`. El agente `PRUEBA-CM` (sucursal 59) ya enviaba 7.442 productos con el `.exe` anterior.
 - **API QA en el servidor:** su `.venv` se creó el 2026-10-21 en `ServicioQA\CYSN_QA\backend`. Antes de esa fecha la API nunca había corrido en el servidor.
@@ -390,10 +393,11 @@ robocopy 'C:\temp\Servidor' 'C:\Users\Administrator\Documents\servicios IAN\Serv
 - Las sucursales de `cysn_qa.sucursal` no tienen `codigo`: se identifican por `id` o `nombre`.
 - Puede quedar la carpeta vacía `.integracion-pdmc/`, que pertenece a otro usuario de Windows: borrarla a mano con permisos de administrador.
 - **GitHub y Docker Hub (2026-10-29):**
-  - `PDMC-APP` `main` = `33f6d87` (alcance nacional de Mejora Continua), sobre la reorganización de otra persona (`deb4c3c`: Prisma en `backend/prisma`, pruebas en `tests/`). En el servidor, `npm ci` y las 47 migraciones están al día.
+  - `PDMC-APP` `main` = `0376d28` (2026-10-30): los 7 commits que otra persona subió al repositorio público el 29 y 30/10 (paquetes independientes, `@hono/node-server` 2.1.5, fechas y estados de transferencias, «Actualizar ahora» por rol y la regla sin alcance nacional). Pasaron lint, tipos, 80 pruebas unitarias, 54 de integración y la compilación. En el servidor desde el 2026-11-02, como `PDMC-API` (48 migraciones). La migración retiró el alcance nacional de `j4rb`, `daniela` y la cuenta `sincronizacion@pdmc.local`; a las dos personas hay que darles Mejora Continua por región.
+  - ⚠️ Esa persona trabaja directamente en `PDB-sis/Union_de_sistemas-QA`. Antes de cada `exportar_github.py`, revisar con `git fetch` si el repositorio público tiene commits nuevos: la exportación los sobrescribiría. El 2026-10-30 se trajeron a mano, incluidos `docker/pdmc/Dockerfile` y `entrypoint.sh`.
   - `CYSN_QA` `main` = `684a808` (fase 4, ciclos QA con el inventario del agente y mensaje cuando ninguna sucursal tiene inventario de agente).
   - `PDB-sis/Union_de_sistemas-QA` `main`: la copia pública generada con `deployment/exportar_github.py`, con la Release del agente `v2026.10.26`. **Falta la Release `v2026.10.28`** con `Servidor/NexoQAAgente-20261028.zip` (tarea `creacion`).
-  - Docker Hub: imágenes `sistemaspdb/*` en `2026.10.29` y `latest` (sección 5.5).
+  - Docker Hub: imágenes `sistemaspdb/*` en `2026.10.29` y `latest` (sección 5.5). Falta publicar la versión con los paquetes nuevos de PDMC después del despliegue.
 - **Fin de línea:** con `core.autocrlf=true`, cambiar de rama reescribe los `.sql` con CRLF y la prueba de copias exactas falla. Si pasa, se vuelve a copiar el archivo desde `consultaPDMC/`.
 
 ---

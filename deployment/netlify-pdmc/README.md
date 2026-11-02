@@ -1,8 +1,10 @@
-# Entrada de PDMC en Netlify
+# PDMC en Netlify
 
-Netlify reenvía todo a PDMC en el servidor (`https://apiqa.apipalacio.com`). Ver `netlify.toml`.
+Netlify compila y publica la interfaz de PDMC (`PDMC-APP/frontend`) y reenvía `/api/*` a la API de PDMC en el servidor (`https://apiqa.apipalacio.com`). El servidor solo ejecuta la API. Ver `netlify.toml`.
 
-En el `.env.local` de PDMC en el servidor:
+En Netlify basta con `Base directory = deployment/netlify-pdmc`: el comando de compilación, la carpeta publicada y la versión de Node salen de `netlify.toml`.
+
+En el `backend\.env.local` de PDMC en el servidor:
 
 ```
 PDMC_AUTH_ADDITIONAL_ORIGINS=https://<sitio de PDMC>.netlify.app
