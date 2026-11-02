@@ -1,6 +1,6 @@
 import {spawn} from "node:child_process";
 import {createWriteStream,createReadStream} from "node:fs";
-import {mkdir,stat,unlink,open,writeFile} from "node:fs/promises";
+import {mkdir,readdir,stat,unlink,open,writeFile} from "node:fs/promises";
 import type {Writable} from "node:stream";
 import {pipeline} from "node:stream/promises";
 import {dirname,resolve} from "node:path";
@@ -25,10 +25,25 @@ function run(command:Command,args:string[],env:NodeJS.ProcessEnv,output?:Writabl
 async function capture(bin:string,args:string[]){
   return new Promise<string>((done,reject)=>{const child=spawn(bin,args,{windowsHide:true,stdio:["ignore","pipe","ignore"]});let result="";const timer=setTimeout(()=>{child.kill();reject(new Error("DOCKER_TIMEOUT"))},15000);child.stdout.on("data",b=>{result+=b.toString();if(result.length>100000)child.kill()});child.on("error",e=>{clearTimeout(timer);reject(e)});child.on("close",code=>{clearTimeout(timer);if(code===0)done(result);else reject(new Error("DOCKER_FAILED"))})});
 }
+/**
+ * Dónde buscar pg_dump y pg_restore: las rutas configuradas, el PATH y, en Windows, la instalación
+ * estándar de PostgreSQL (C:\Program Files\PostgreSQL\<versión>\bin, la más reciente primero:
+ * pg_dump debe ser de la misma versión que el servidor o más nueva).
+ */
+export async function candidates(platform:NodeJS.Platform=process.platform):Promise<{dump:string;restore:string}[]>{
+  const list=[{dump:process.env.PDMC_PG_DUMP_PATH||"pg_dump",restore:process.env.PDMC_PG_RESTORE_PATH||"pg_restore"}];
+  if(platform==="win32"){
+    const base=resolve(process.env.ProgramFiles||"C:\\Program Files","PostgreSQL");
+    const versions=await readdir(/* turbopackIgnore: true */ base).catch(()=>[] as string[]);
+    for(const version of versions.filter(v=>/^\d+(\.\d+)?$/.test(v)).sort((a,b)=>Number(b)-Number(a)))
+      list.push({dump:resolve(base,version,"bin","pg_dump.exe"),restore:resolve(base,version,"bin","pg_restore.exe")});
+  }
+  return list;
+}
 async function commands(url:URL):Promise<{dump:Command;restore:Command;host:string;port:string}>{
-  const dump={bin:process.env.PDMC_PG_DUMP_PATH||"pg_dump",prefix:[]};
-  const restore={bin:process.env.PDMC_PG_RESTORE_PATH||"pg_restore",prefix:[]};
-  try{await capture(dump.bin,["--version"]);await capture(restore.bin,["--version"]);return {dump,restore,host:url.hostname,port:url.port||"5432"}}catch{}
+  for(const candidate of await candidates()){
+    try{await capture(candidate.dump,["--version"]);await capture(candidate.restore,["--version"]);return {dump:{bin:candidate.dump,prefix:[]},restore:{bin:candidate.restore,prefix:[]},host:url.hostname,port:url.port||"5432"}}catch{/* siguiente */}
+  }
   if(!["localhost","127.0.0.1","[::1]"].includes(url.hostname))throw new Error("POSTGRES_TOOLS_REQUIRED");
   const port=url.port||"5432",ids=(await capture("docker",["ps","--filter",`publish=${port}`,"--format","{{.ID}}"])).trim().split(/\s+/).filter(Boolean);
   const matches:{id:string;port:string}[]=[];
@@ -59,5 +74,12 @@ export async function createResetBackup(schema:string):Promise<ResetBackup>{
     const hash=createHash("sha256");for await(const chunk of createReadStream(/* turbopackIgnore: true */ file))hash.update(chunk);
     const sha256=hash.digest("hex");await writeFile(file+".sha256",sha256+"  "+nombre+"\n",{flag:"wx",mode:0o600});
     return {nombre,sha256,bytes};
-  }catch{if(file){await unlink(file).catch(()=>{});await unlink(file+".sha256").catch(()=>{});}throw new NegativosError(503,"RESPALDO_REQUERIDO","No se pudo crear y verificar el respaldo. No se borró ningún dato. Compruebe Docker o configure pg_dump y pg_restore en el servidor.");}
+  }catch(error){
+    if(file){await unlink(file).catch(()=>{});await unlink(file+".sha256").catch(()=>{});}
+    // La causa queda en el registro del servidor y, como código, en el mensaje (sin rutas ni claves).
+    const causa=error instanceof Error?error.message:String(error);
+    console.error(`[restablecimiento] respaldo fallido: ${causa}`);
+    const pista=causa==="POSTGRES_TOOLS_REQUIRED"?" No se encontraron pg_dump ni pg_restore: instale las herramientas de PostgreSQL o configure PDMC_PG_DUMP_PATH y PDMC_PG_RESTORE_PATH.":/^(BACKUP|VERIFY|EMPTY|DOCKER|SCHEMA)[A-Z_]*$/.test(causa)?` Causa: ${causa}.`:" Compruebe Docker o configure pg_dump y pg_restore en el servidor.";
+    throw new NegativosError(503,"RESPALDO_REQUERIDO",`No se pudo crear y verificar el respaldo. No se borró ningún dato.${pista}`);
+  }
 }
