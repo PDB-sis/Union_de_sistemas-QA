@@ -76,15 +76,17 @@ export class Authorization {
 }
 
 /**
- * Cargas automáticas del sincronizador. Actúan a nombre de la cuenta de sistema (sin contraseña,
- * nadie inicia sesión con ella) y sin asignaciones: no es una cuenta nacional. Solo puede
- * importar; cualquier otra consulta por ubicación la deniega, porque no tiene asignaciones.
+ * Cargas automáticas del sincronizador. Las ejecuta el servidor (el botón ya validó el rol de
+ * quien lo presiona) y quedan registradas a nombre de la cuenta PDMC_SYNC_USUARIO_EMAIL; no
+ * dependen de sus asignaciones, así que no hace falta ninguna cuenta nacional. Solo puede
+ * importar; cualquier otra consulta por ubicación sigue las asignaciones normales de la cuenta.
  */
 const importacionesDelSistema: readonly Permission[] = ["inventario.administrar", "transferencias.importar", "devoluciones.importar"];
 export class SystemAuthorization extends Authorization {
   async permitted(permission: Permission) {
     if (!this.userId || !importacionesDelSistema.includes(permission)) throw denied();
-    const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{activo:true,estado:true,passwordHash:true}});
-    if (!user?.activo || user.estado !== "ACTIVO" || user.passwordHash !== null) throw denied();
+    const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{activo:true,estado:true}});
+    // Un error de configuración del servidor, no de permisos de quien presiona el botón: se dice cuál.
+    if (!user?.activo || user.estado !== "ACTIVO") throw new AuthError(409, "CUENTA_SINCRONIZACION", "La cuenta de sincronización (PDMC_SYNC_USUARIO_EMAIL) está inactiva o bloqueada. Actívela o ejecute npm run sync:crear-usuario -w backend.");
   }
 }

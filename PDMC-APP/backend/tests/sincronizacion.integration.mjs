@@ -72,9 +72,13 @@ test('cuenta de sistema del sincronizador: sin asignaciones (no es nacional) y s
   await access.permitted('inventario.administrar');
   await assert.rejects(access.permitted('ubicaciones.administrar'),{status:403});
   await assert.rejects(access.warehouseWhere('negativos.leer'),{status:403});
-  // Una persona (con contraseña) no puede actuar como cuenta de sistema.
+  // Si el servidor configuró una cuenta normal (con contraseña, sin región), la carga también funciona:
+  // no depende de asignaciones ni de alcance nacional.
   const persona=await db.usuario.create({data:{email:`${randomUUID()}@sync.test`,nombre:'Persona',passwordHash:'x',estado:'ACTIVO',debeCambiarPassword:false}});
-  await assert.rejects(new SystemAuthorization(db,persona.id).permitted('inventario.administrar'),{status:403});
+  await new SystemAuthorization(db,persona.id).permitted('inventario.administrar');
+  // Una cuenta inactiva da un mensaje que dice qué corregir, no el genérico de permisos.
+  await db.usuario.update({where:{id:persona.id},data:{estado:'BLOQUEADO'}});
+  await assert.rejects(new SystemAuthorization(db,persona.id).permitted('inventario.administrar'),{code:'CUENTA_SINCRONIZACION'});
 });
 
 test('Actualizar ahora: sigue rechazando a los roles que no tienen el permiso',async()=>{
