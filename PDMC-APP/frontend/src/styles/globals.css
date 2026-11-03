@@ -1144,3 +1144,27 @@ article.pdmc-surface:hover {
 @media (prefers-reduced-motion: reduce) {
   .workspace-tab, .workspace-destination { transition: none; }
 }
+
+/* Celular. Los encabezados de módulo dejan que su texto se ajuste en lugar de ensanchar la página. */
+.module-canvas .module-hero > * { min-width: 0; flex: 1 1 auto; }
+
+/* En pantallas angostas, las tablas se desplazan de lado con la primera columna (número o código) fija. */
+@media (max-width: 639px) {
+  .overflow-x-auto > table th:first-child,
+  .overflow-x-auto > table td:first-child,
+  [data-slot="table-container"] th:first-child,
+  [data-slot="table-container"] td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--card);
+    box-shadow: 1px 0 0 var(--border);
+  }
+}
+
+/* Netlify agrega su insignia (iframe #nl-badge-frame) en la esquina inferior derecha de los sitios
+   de cuenta gratuita. La navegación inferior de la tienda sube por encima de ella y el final de cada
+   página deja su espacio; al ocultarla con su botón, todo vuelve a su lugar. */
+body:has(#nl-badge-frame) .store-liquid-nav { bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
+body:has(#nl-badge-frame) .store-workspace { padding-bottom: 12rem; }
+body:has(#nl-badge-frame) .workspace-content { padding-bottom: 6rem; }

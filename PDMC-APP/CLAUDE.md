@@ -44,7 +44,7 @@ Tres paquetes independientes (workspaces de npm), organizados como `CYSN_QA`. De
 - Inspeccionar antes de proponer. Separar lo implementado, lo pendiente y lo propuesto. No inventar tablas, campos ni conexiones.
 - Alcance acotado a lo pedido. Conservar datos y cambios previos. Usar migraciones y respaldos para cambios destructivos.
 - Textos en UTF-8 y en español, incluidos exportaciones e imágenes generadas (`npm run check:texts`).
-- Verificar con `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:integration`, `npm run build` y `npm run test:browser` (desde la raíz; cada paquete también tiene los suyos). Compilar no significa estar listo para uso nacional: también hay que verificar permisos, aislamiento regional, integridad y recuperación.
+- Verificar con `npm run lint`, `npm run typecheck`, `npm test`, `npm run test:integration`, `npm run build`, `npm run test:browser` y `npm run test:movil` (cada módulo y rol a 360 y 390 px, con la insignia de Netlify simulada) desde la raíz; cada paquete también tiene los suyos. Compilar no significa estar listo para uso nacional: también hay que verificar permisos, aislamiento regional, integridad y recuperación.
 - No publicar secretos, respaldos (`backend/backups/`, `backups/`) ni datos empresariales.
 
 ## Próximas etapas

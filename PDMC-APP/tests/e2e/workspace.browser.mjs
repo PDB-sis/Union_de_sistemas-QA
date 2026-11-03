@@ -131,14 +131,19 @@ try {
   await evaluate('document.querySelector(".workspace-destination").click()');
   await until(()=>evaluate('!document.querySelector(".workspace-explorer")'), "El selector no cerró");
   await contains("Regiones y entidades");
-  async function role(value) {
+  // Sin alcance nacional: cada rol operativo trabaja sobre su región, bodega o tienda.
+  async function role(value,ubicacionId) {
     await admin.query('UPDATE "Usuario" SET rol=$1 WHERE email=$2',[value,authEmail]);
-    await admin.query('UPDATE "AsignacionAcceso" SET rol=$1 WHERE "usuarioId"=(SELECT id FROM "Usuario" WHERE email=$2)',[value,authEmail]);
+    await admin.query('UPDATE "AsignacionAcceso" SET rol=$1,"ubicacionId"=$3 WHERE "usuarioId"=(SELECT id FROM "Usuario" WHERE email=$2)',[value,authEmail,ubicacionId]);
     await send("Page.navigate",{url:origin});
   }
   // Casos de ejemplo para el panel lateral y el paso automático al siguiente caso.
   const actorId=(await admin.query('SELECT id FROM "Usuario" WHERE email=$1',[authEmail])).rows[0].id;
-  const panelWarehouse=randomUUID();await admin.query('INSERT INTO "Bodega" (id,codigo,nombre,"updatedAt") VALUES ($1,$2,$3,now())',[panelWarehouse,"PANEL","Bodega del panel"]);
+  const transferRegion=randomUUID(),transferStore=randomUUID(),transferImport=randomUUID(),panelSite=randomUUID();
+  await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo) VALUES ($1,'R-PANEL','Región del panel','REGION')`,[transferRegion]);
+  // La bodega y la tienda de los casos de ejemplo pertenecen a la región del panel.
+  await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo,"regionId") VALUES ($1,'B-PANEL','Bodega del panel','BODEGA',$2),($3,'T-PANEL','Tienda del panel','TIENDA',$2)`,[panelSite,transferRegion,randomUUID()]);
+  const panelWarehouse=randomUUID();await admin.query('INSERT INTO "Bodega" (id,codigo,nombre,"ubicacionId","updatedAt") VALUES ($1,$2,$3,$4,now())',[panelWarehouse,"PANEL","Bodega del panel",panelSite]);
   const panelQuery=randomUUID();await admin.query('INSERT INTO "ConsultaInventario" (id,"usuarioId","nombreArchivo","fechaConsulta","hashArchivo","totalFilas") VALUES ($1,$2,$3,now(),$4,2)',[panelQuery,actorId,"panel.csv",randomBytes(32).toString("hex")]);
   for(const [index,code] of ["7700000000011","7700000000028"].entries()){
     const productId=randomUUID();
@@ -148,13 +153,11 @@ try {
     await admin.query(`INSERT INTO "Inconsistencia" (id,"sourceKey",fecha,sucursal,transferencia,"codigoBarra","tipoError","cantidadErrada","conteoFisico","existenciaSistemaConteo","conteoRegistradoAt","unidadesSinResolver","updatedAt") VALUES ($1,$2,now(),'Tienda del panel',$3,$4,'Faltante físico',2,3,5,now(),2,now())`,[randomUUID(),randomUUID(),`9100${index}`,code]);
   }
   // Transferencias de una tienda (caso Machiques): una exportada sin reporte y una aprobada que aún no se exporta.
-  const transferRegion=randomUUID(),transferStore=randomUUID(),transferImport=randomUUID();
-  await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo) VALUES ($1,'R-PANEL','Región del panel','REGION')`,[transferRegion]);
   await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo,"regionId") VALUES ($1,'T-MACHIQUES','MACHIQUES','TIENDA',$2)`,[transferStore,transferRegion]);
   await admin.query(`INSERT INTO "TransferenciaConsultaImport" (id,"nombreArchivo","hashArchivo","totalFilas",resumen) VALUES ($1,'prueba',$2,2,'{}'::jsonb)`,[transferImport,randomBytes(32).toString("hex")]);
   for(const [numero,estado] of [["82278","Aprobada"],["82200","Exportada"]])
     await admin.query(`INSERT INTO "TransferenciaConsulta" (id,numero,fecha,"codigoFacturador","codigoTiendaConsulta","tiendaId",estado,observacion,unidades,"cantidadCodigos","ultimaImportacionId","updatedAt") VALUES ($1,$2,current_date,'F1','T-MACHIQUES',$3,$4,'',10,1,$5,now())`,[randomUUID(),numero,transferStore,estado,transferImport]);
-  await role("MEJORA_CONTINUA");
+  await role("MEJORA_CONTINUA",transferRegion);
   await contains("Mi día"); await contains("Una visión clara.");
   await capture("operacion-light"); await noOverflow();
   assert.equal(await evaluate('document.querySelectorAll("aside").length'),0);
@@ -238,13 +241,13 @@ try {
   await until(()=>evaluate('document.documentElement.dataset.palette==="cielo"'),"La paleta no se conservó al recargar");
   await until(()=>evaluate(`document.querySelector('link[rel~="icon"]')?.getAttribute("href")==="/favicon-cielo.svg"`),"El ícono no siguió la paleta al recargar");
   await evaluate('localStorage.removeItem("pdmc-paleta"); document.documentElement.removeAttribute("data-palette")');
-  await role("RECTIFICACION");
+  await role("RECTIFICACION",transferRegion);
   await contains("Tu jornada de trabajo");
   assert.equal(await evaluate('document.querySelectorAll(".workspace-tab").length'),3);
   await nav("Negativos"); await contains("Control de negativos");
   await capture("rectificacion");
   assert.equal(await evaluate('document.querySelectorAll("aside").length'),0);
-  await role("TIENDA"); await contains("Portal de tienda"); await capture("tienda");
+  await role("TIENDA",transferStore); await contains("Portal de tienda"); await capture("tienda");
   assert.deepEqual(exceptions,[]);
   console.info("Navegación verificada: administración, mejora continua, rectificación y tienda; búsqueda, permisos visibles, móvil, temas y foco. Capturas en tests/e2e/.salida/workspace-preview.");
   await send("Browser.close").catch(()=>{});
