@@ -137,6 +137,11 @@ try {
         if (!abierto) { console.info(`? ${ancho}px ${rol} · ${tab}: la pestaña ya no está visible`); continue; }
         await revisar(rol, tab, ancho);
       }
+      // Ajustes de cuenta (modo y paleta de colores) desde el botón del encabezado de la tienda.
+      if (await evaluate(`(()=>{const b=document.querySelector('[aria-label="Ajustes de la cuenta"]');b?.click();return Boolean(b)})()`)) {
+        await until(() => evaluate(`document.body.textContent.includes("Paleta de colores")`), `Los ajustes no muestran la paleta: ${rol}`);
+        await revisar(rol, "ajustes-de-cuenta", ancho);
+      }
     }
   }
   console.info(fallas.length ? `\n${fallas.length} pantalla(s) con contenido fuera del ancho. Capturas en ${capturas}` : `\nTodas las pantallas caben en ${anchos.join(" y ")} px. Capturas en ${capturas}`);

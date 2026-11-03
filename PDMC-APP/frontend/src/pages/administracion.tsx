@@ -10,5 +10,5 @@ export default function Administracion() {
   if (carga.estado === "cargando") return <Cargando />;
   const { user, canManage, canAudit } = carga.datos;
   if (!canManage && !canAudit) return <main className="p-8"><h1>Acceso restringido</h1><p>No tiene permiso para abrir este espacio.</p></main>;
-  return <AdministrationPanel actorId={user.id} actorName={user.nombre} canManage={canManage} />;
+  return <AdministrationPanel actor={user} canManage={canManage} />;
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { roles, rolesDeSistema, type Rol } from "@pdmc/contratos/auth/model";
+import { roles, rolesDeSistema, type Rol, type UsuarioSesion } from "@pdmc/contratos/auth/model";
+import { AccountSettings } from "@/components/auth/account-settings";
 import { Button } from "@/components/ui/button";
 import { SincronizacionEstado } from "@/components/admin/sincronizacion";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import { WorkspaceHeader, WorkspaceNavigation } from "@/components/workspace-nav
 import { Dialog as Modal, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {ProjectResetPanel} from "./project-reset";
 import {ShieldCheck} from "lucide-react";
-import {IconoAuditoria,IconoInicio,IconoRegiones,IconoRestablecer,IconoSincronizacion,IconoUsuarios} from "@/components/brand/module-icons";
+import {IconoAuditoria,IconoCuenta,IconoInicio,IconoRegiones,IconoRestablecer,IconoSincronizacion,IconoUsuarios} from "@/components/brand/module-icons";
 
 type Grant={rol:Rol;ubicacionId:string|null;ubicacion?:{nombre:string;codigo:string;tipo:string}|null};
 type User={id:string;email:string;nombre:string;estado:string;activo:boolean;debeCambiarPassword:boolean;updatedAt:string;asignaciones:Grant[];vinculosOperativos:{perfilId:string;perfil:{codigo:string;nombre:string}}[];_count:{asignados:number}};
@@ -182,7 +183,7 @@ function SyncAccounts() {
     {action&&<SyncAccountAction {...action} done={done} close={()=>setAction(null)}/>}
   </>;
 }
-type AdminTab="inicio"|"usuarios"|"entidades"|"sincronizacion"|"auditoria"|"restablecer";
+type AdminTab="inicio"|"usuarios"|"entidades"|"sincronizacion"|"auditoria"|"restablecer"|"cuenta";
 function AdminHome({open}:{open:(tab:AdminTab)=>void}){
   const cards=[
     {tab:"usuarios" as const,title:"Usuarios y accesos",text:"Cree cuentas, asigne roles por región y administre su estado.",icon:IconoUsuarios},
@@ -192,16 +193,17 @@ function AdminHome({open}:{open:(tab:AdminTab)=>void}){
   ];
   return <div className="space-y-6"><section className="module-hero"><p className="text-xs font-bold uppercase tracking-[.18em] text-white/60">Centro administrativo nacional</p><h2 className="mt-3 max-w-2xl text-3xl font-bold tracking-tight">Configure la estructura de PDMC desde un solo lugar</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">Los cambios de usuarios, regiones y entidades quedan protegidos por permisos y registrados en auditoría.</p></section><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{cards.map(({tab,title,text,icon:Icon})=><button key={tab} onClick={()=>open(tab)} className="group rounded-3xl border bg-card p-5 text-left shadow-sm transition hover:-translate-y-1 hover:border-primary/40 hover:shadow-lg"><span className="grid size-11 place-items-center rounded-2xl bg-primary/10 text-primary"><Icon className="size-5"/></span><h3 className="mt-5 font-semibold">{title}</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">{text}</p><span className="mt-5 inline-block text-sm font-semibold text-primary">Abrir módulo</span></button>)}</div></div>;
 }
-export default function AdministrationPanel({actorId,actorName,canManage}:{actorId:string;actorName:string;canManage:boolean}) {
+export default function AdministrationPanel({actor,canManage}:{actor:UsuarioSesion;canManage:boolean}) {
+  const actorId=actor.id,actorName=actor.nombre;
   const [tab,setTab]=useState<AdminTab>(canManage?"inicio":"auditoria");
-  const tabs=canManage?[{id:"inicio" as const,label:"Inicio",icon:IconoInicio},{id:"usuarios" as const,label:"Usuarios",icon:IconoUsuarios},{id:"entidades" as const,label:"Regiones y entidades",icon:IconoRegiones},{id:"sincronizacion" as const,label:"Sincronización",icon:IconoSincronizacion},{id:"auditoria" as const,label:"Auditoría",icon:IconoAuditoria},{id:"restablecer" as const,label:"Restablecer proyecto",icon:IconoRestablecer}]:[{id:"auditoria" as const,label:"Auditoría operativa",icon:IconoAuditoria}];
+  const tabs=canManage?[{id:"inicio" as const,label:"Inicio",icon:IconoInicio},{id:"usuarios" as const,label:"Usuarios",icon:IconoUsuarios},{id:"entidades" as const,label:"Regiones y entidades",icon:IconoRegiones},{id:"sincronizacion" as const,label:"Sincronización",icon:IconoSincronizacion},{id:"auditoria" as const,label:"Auditoría",icon:IconoAuditoria},{id:"restablecer" as const,label:"Restablecer proyecto",icon:IconoRestablecer},{id:"cuenta" as const,label:"Mi cuenta",icon:IconoCuenta}]:[{id:"auditoria" as const,label:"Auditoría operativa",icon:IconoAuditoria},{id:"cuenta" as const,label:"Mi cuenta",icon:IconoCuenta}];
   const current=tabs.find(item=>item.id===tab)??tabs[0];
   return <div className="workspace min-h-screen bg-background"><SessionWatch/>
     <a className="workspace-skip" href="#administration-content">Ir al contenido</a>
     <header className="workspace-chrome"><WorkspaceHeader subtitle="Administración"><span className="hidden max-w-48 truncate text-sm text-muted-foreground md:block">{actorName}</span><ThemeToggle compact/><LogoutButton/></WorkspaceHeader><WorkspaceNavigation label="Módulos administrativos" value={tab} onChange={setTab} items={tabs}/></header>
     <main id="administration-content" tabIndex={-1} className="workspace-content">
       <div className="workspace-page-heading"><div><p className="workspace-eyebrow">{canManage ? "Administración nacional" : "Trazabilidad operativa"}</p><h1>{current.label}</h1><p className="workspace-page-description">{canManage ? "Personas, regiones y accesos. Una estructura conectada." : "Consulta los cambios y su historial."}</p></div><span className="workspace-role-tag"><ShieldCheck className="size-4"/>{canManage ? "Administrador" : "Auditoría"}</span></div>
-      <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">{canManage&&<SincronizacionEstado/>}<section className={tab==="inicio"?"":"rounded-3xl border bg-card p-4 shadow-sm sm:p-6"}>{tab==="inicio"?<AdminHome open={setTab}/>:tab==="usuarios"?<Users actorId={actorId}/>:tab==="entidades"?<Entities/>:tab==="sincronizacion"&&canManage?<SyncAccounts/>:tab==="restablecer"&&canManage?<ProjectResetPanel/>:<AuditLog/>}</section></div>
+      <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">{canManage&&<SincronizacionEstado/>}<section className={tab==="inicio"||tab==="cuenta"?"":"rounded-3xl border bg-card p-4 shadow-sm sm:p-6"}>{tab==="inicio"?<AdminHome open={setTab}/>:tab==="cuenta"?<AccountSettings user={actor}/>:tab==="usuarios"?<Users actorId={actorId}/>:tab==="entidades"?<Entities/>:tab==="sincronizacion"&&canManage?<SyncAccounts/>:tab==="restablecer"&&canManage?<ProjectResetPanel/>:<AuditLog/>}</section></div>
     </main>
   </div>;
 }
