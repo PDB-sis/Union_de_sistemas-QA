@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import type {PrismaClient} from "../../generated/prisma/client";
 import {parseDelimitedTable,normalizeHeader,NegativosError} from "../negativos/validation";
 import {Authorization,denied} from "../auth/authorization";
+import {hasPermission} from "@pdmc/contratos/auth/permissions";
 import {classifyTransfer,defaultSpecialAuthors} from "@pdmc/contratos/transferencias/classification";
 import {exportDeadline} from "@pdmc/contratos/tienda/model";
 import {planCabeceras,planDetalles,sinCambiosEnPlan} from "@pdmc/contratos/consultas/cambios";
@@ -73,10 +74,16 @@ ${options.desde?`desde ${options.desde.toISOString()}\n`:""}`).update(content).d
   }
   async status(){if(this.access)await this.access.permitted("transferencias.leer");return {total:await this.db.transferenciaConsulta.count({where:{bajaEn:null}}),ultima:await this.db.transferenciaConsultaImport.findFirst({orderBy:{importedAt:"desc"},select:{nombreArchivo:true,totalFilas:true,resumen:true,importedAt:true}})};}
   async detail(numero:string){
-    if(this.access)await this.access.permitted("transferencias.leer");
-    // El número puede repetirse entre bodegas: se prefiere la vigente.
-    const transfer=await this.db.transferenciaConsulta.findFirst({where:{numero},orderBy:[{bajaEn:{sort:"asc",nulls:"first"}},{fecha:"desc"}],include:{tienda:{select:{nombre:true}},facturador:{select:{nombre:true}},detalles:{include:{producto:{select:{referencia:true,descripcion:true,marca:true,talla:true}}},orderBy:[{numeroCaja:"asc"},{codigoBarra:"asc"}]}}});if(!transfer)throw new NegativosError(404,"TRANSFERENCIA","Transferencia no encontrada.");
-    if(this.access){const scope=await this.access.locationScope("transferencias.leer","TIENDA");if(!scope.national&&!scope.rows.some(item=>item.id===transfer.tiendaId))throw denied();const grants=await this.access.grants();if(grants.some(item=>item.rol==="FACTURACION")){const linked=await this.db.vinculoOperativo.findMany({where:{usuarioId:this.access.userId,perfilId:{not:null}},select:{perfilId:true}});if(!linked.some(item=>item.perfilId===transfer.facturadorId))throw denied();}}
+    // Quién puede abrir el detalle: quien lee transferencias de esa tienda; quien observa a los
+    // facturadores de esa tienda (Jefe de bodega); y el propio facturador, solo las suyas.
+    const grants=this.access?await this.access.grants():[];
+    const own=this.access&&hasPermission(grants,"facturacion.propio")&&!hasPermission(grants,"transferencias.leer");
+    const linkedIds=own?(await this.db.vinculoOperativo.findMany({where:{usuarioId:this.access!.userId,perfilId:{not:null}},select:{perfilId:true}})).map(item=>item.perfilId!):[];
+    const permission=hasPermission(grants,"transferencias.leer")?"transferencias.leer" as const:"facturacion.leer" as const;
+    if(this.access&&!own)await this.access.permitted(permission);
+    // El número puede repetirse entre bodegas: se prefiere la vigente (y, para el facturador, la suya).
+    const transfer=await this.db.transferenciaConsulta.findFirst({where:{numero,...(own?{facturadorId:{in:linkedIds}}:{})},orderBy:[{bajaEn:{sort:"asc",nulls:"first"}},{fecha:"desc"}],include:{tienda:{select:{nombre:true}},facturador:{select:{nombre:true}},detalles:{include:{producto:{select:{referencia:true,descripcion:true,marca:true,talla:true}}},orderBy:[{numeroCaja:"asc"},{codigoBarra:"asc"}]}}});if(!transfer)throw new NegativosError(404,"TRANSFERENCIA","Transferencia no encontrada.");
+    if(this.access&&!own){const scope=await this.access.locationScope(permission,"TIENDA");if(!scope.national&&!scope.rows.some(item=>item.id===transfer.tiendaId))throw denied();}
     return {numero:transfer.numero,fecha:transfer.fecha.toISOString().slice(0,10),estado:transfer.estado,tienda:transfer.tienda?.nombre??`Código sin vincular: ${transfer.codigoTiendaConsulta}`,facturador:transfer.facturador?.nombre??`Código ${transfer.codigoFacturador} sin vincular`,unidades:transfer.unidades,cantidadCodigos:transfer.cantidadCodigos,cajas:new Set(transfer.detalles.map(item=>item.numeroCaja)).size,items:transfer.detalles.map(item=>({codigoBarra:item.codigoBarra,cantidad:item.cantidad,numeroCaja:item.numeroCaja,referencia:item.producto?.referencia??null,descripcion:item.producto?.descripcion??null,marca:item.producto?.marca??null,talla:item.producto?.talla??null}))};
   }
 }

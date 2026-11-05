@@ -251,6 +251,12 @@ test("el facturador ve solo lo suyo; Mejora Continua y Jefe de bodega ven a los 
   assert.ok((await jefe.access.locationScope("panel.leer","TIENDA")).rows.some(r=>r.id===propia.id));
   const lejana=await user([{rol:"MEJORA_CONTINUA",ubicacionId:(await region()).id}]);
   assert.deepEqual(await nombres(lejana),[]);
+  // Detalle: el facturador abre las suyas (aunque el número se repita en otra bodega), no las de otro;
+  // Jefe de bodega abre las de las tiendas que surte; otra región no.
+  assert.equal((await new TransferQueryService(db,cuenta.access).detail(numero)).facturador,"Ana Facturadora");
+  await assert.rejects(new TransferQueryService(db,cuenta.access).detail(`${numero}L`),{status:404});
+  assert.equal((await new TransferQueryService(db,jefe.access).detail(`${numero}L`)).facturador,"Luis Facturador");
+  await assert.rejects(new TransferQueryService(db,lejana.access).detail(`${numero}L`),{status:403});
 });
 test("mejora continua regional puede trabajar la bodega técnica de negativos sin abrir otras regiones",async()=>{
   const region=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Región MC",tipo:"REGION"}}),otherRegion=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Otra región",tipo:"REGION"}});

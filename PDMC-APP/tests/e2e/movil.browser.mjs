@@ -147,6 +147,16 @@ try {
         await until(() => evaluate(`document.body.textContent.includes("Paleta de colores")`), `Los ajustes no muestran la paleta: ${rol}`);
         await revisar(rol, "ajustes-de-cuenta", ancho);
       }
+      // El facturador ve sus transferencias y abre el detalle de productos de una de ellas.
+      if (rol === "facturacion") {
+        await send("Page.navigate", { url: inicio });
+        await until(() => evaluate(hidratado(".workspace-tab")), "No volvió al espacio del facturador");
+        await evaluate(`[...document.querySelectorAll('.workspace-tab')].find(b=>b.innerText.includes('Transferencias')).click()`);
+        await until(() => evaluate(`document.body.textContent.includes("#120030")`), "El facturador no ve su transferencia #120030");
+        await evaluate(`[...document.querySelectorAll('button')].find(b=>b.offsetWidth&&b.textContent.trim()==='Detalle').click()`);
+        await until(() => evaluate(`Boolean(document.querySelector('[role="dialog"]')?.textContent.includes("Transferencia #120030"))`), "No abrió el detalle de la transferencia");
+        await revisar(rol, "detalle-de-transferencia", ancho);
+      }
     }
   }
   console.info(fallas.length ? `\n${fallas.length} pantalla(s) con contenido fuera del ancho. Capturas en ${capturas}` : `\nTodas las pantallas caben en ${anchos.join(" y ")} px. Capturas en ${capturas}`);
