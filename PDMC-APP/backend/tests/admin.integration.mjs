@@ -236,7 +236,7 @@ test("el facturador ve solo lo suyo; Mejora Continua y Jefe de bodega ven a los 
   const datos=await billerData(db,cuenta.id);
   assert.deepEqual(datos.perfiles.map(p=>p.nombre),["Ana Facturadora"]);
   assert.deepEqual(datos.transfers.map(t=>[t.id,t.biller]),[[numero,"Ana Facturadora"]]);
-  assert.deepEqual(datos.errorCases.map(e=>e.quantity),[3]);
+  assert.deepEqual(datos.errorCases.map(e=>[e.quantity,e.barcode,e.errorType]),[[3,"1","Faltante físico"]]);
   // Sin panel.leer el facturador no entra al panel de Mejora Continua ni a QA.
   assert.equal(await cuenta.access.has("panel.leer"),false);assert.equal(await cuenta.access.has("qa.acceder"),false);
   // Otra cuenta (Mejora Continua) no puede pedir los datos personales del facturador.

@@ -4,7 +4,8 @@ export type PendingReport = { id: string; date: string; exportDate?: string; dea
 /** porExportar: transferencias Abiertas o Aprobadas; la tienda las podrá reportar cuando lleguen a Exportada. */
 export type StoreRow = { name: string; total: number; exported: number; reported: number; pending: number; porExportar: number; units: number; compliance: number };
 export type Biller = { name: string; transfers: number; units: number; errors: number; errorUnits: number; affectedTransfers: number; resolved: number; errorPct: number };
-export type ErrorCase = { date: string; store: string; transfer: string; quantity: number; reason: string; resolved?: boolean; observation?: string };
+/** Error de facturación confirmado, con el producto afectado (código de barra y datos del catálogo). */
+export type ErrorCase = { date: string; store: string; transfer: string; quantity: number; reason: string; resolved?: boolean; observation?: string; errorType?: string; barcode?: string; reference?: string | null; description?: string | null; size?: string | null; brand?: string | null };
 export type Negative = { code: string; brand: string; name: string; system: number; physical: string; warehouse: string; reason: string; verdict: string; related?: string; resolved?: boolean; adjustment?: string; status?: string; reference?: string; size?: string; brandCode?: string; category?: string; line?: string; queryDate?: string; present?: boolean };
 export type DashboardData = {
   operationalStoreNames: readonly string[];

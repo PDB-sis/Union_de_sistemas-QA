@@ -47,7 +47,13 @@ for (const [i, [estado, observacion, codigo]] of [["Exportada", "CORRECCIÓN de 
 // El facturador NOREIMA tiene cuenta: sus transferencias quedan enlazadas a su perfil y una tiene un error confirmado.
 const noreima = await db.perfilLaboral.create({ data: { codigo: "NOREIMA", nombre: "Noreima Facturadora de Occidente", tipo: "FACTURACION" } });
 await db.transferenciaConsulta.updateMany({ where: { codigoFacturador: "NOREIMA" }, data: { facturadorId: noreima.id } });
-await db.inconsistencia.create({ data: { sourceKey: randomUUID().replaceAll("-", ""), fecha: hoy, sucursal: tiendas[0].nombre, tiendaId: tiendas[0].id, transferencia: "120030", codigoBarra: "7701234567890", tipoError: "Faltante físico", cantidadErrada: 4, responsable: "FACTURACION", motivo: "Error por facturador (Físico Faltante)" } });
+// La transferencia #120030 trae dos productos; uno tuvo error confirmado de facturación.
+const productos = [];
+for (const [codigoBarra, descripcion, talla] of [["7701234567890", "Franela cuello redondo manga corta algodón", "M"], ["7701234567891", "Pantalón jean clásico tiro alto", "32"]])
+  productos.push(await db.producto.create({ data: { codigoBarra, descripcion, referencia: `REF-${codigoBarra.slice(-4)}`, marca: "Marca de prueba", talla } }));
+const t120030 = await db.transferenciaConsulta.findFirstOrThrow({ where: { numero: "120030" } });
+for (const [i, producto] of productos.entries()) await db.transferenciaConsultaDetalle.create({ data: { transferenciaId: t120030.id, productoId: producto.id, codigoBarra: producto.codigoBarra, cantidad: 60, numeroCaja: String(i + 1) } });
+await db.inconsistencia.create({ data: { sourceKey: randomUUID().replaceAll("-", ""), fecha: hoy, sucursal: tiendas[0].nombre, tiendaId: tiendas[0].id, transferencia: "120030", codigoBarra: "7701234567890", productoId: productos[0].id, tipoError: "Faltante físico", cantidadErrada: 4, responsable: "FACTURACION", motivo: "Error por facturador (Físico Faltante)" } });
 const password = randomBytes(18).toString("base64url"), hash = await hashPassword(password);
 const roles = [
   ["administrador", "ADMINISTRADOR", null],
@@ -157,6 +163,7 @@ try {
         await until(() => evaluate(`document.body.textContent.includes("#120030")`), "El facturador no ve su transferencia #120030");
         await evaluate(`[...document.querySelectorAll('button')].find(b=>b.offsetWidth&&b.textContent.trim()==='Detalle').click()`);
         await until(() => evaluate(`Boolean(document.querySelector('[role="dialog"]')?.textContent.includes("Transferencia #120030"))`), "No abrió el detalle de la transferencia");
+        await until(() => evaluate(`Boolean(document.querySelector('[role="dialog"]')?.textContent.includes("1 producto con error confirmado"))`), "El detalle no marca el producto con error");
         await revisar(rol, "detalle-de-transferencia", ancho);
       }
     }

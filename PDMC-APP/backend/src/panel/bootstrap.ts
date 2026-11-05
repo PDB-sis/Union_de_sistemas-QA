@@ -1,6 +1,6 @@
 import type { UsuarioSesion } from "@pdmc/contratos/auth/model";
 import type { PanelFacturador, PanelInicio } from "@pdmc/contratos/panel";
-import type {DashboardData} from "@pdmc/contratos/dashboard-contract";
+import type {DashboardData,ErrorCase} from "@pdmc/contratos/dashboard-contract";
 import { dashboardData } from "./dashboard-data";
 import { Authorization } from "@backend/auth/authorization";
 import { getDb } from "@backend/db";
@@ -9,6 +9,11 @@ import { allows, permissions } from "@pdmc/contratos/auth/permissions";
 import { hasPermission } from "@pdmc/contratos/auth/permissions";
 import { transferDashboardData } from "@backend/transferencias/consulta";
 import { StoreService } from "@backend/tienda/service";
+
+// Error de facturación con el producto afectado: el facturador ve qué código falló y por qué.
+const issueSelect={fecha:true,sucursal:true,transferencia:true,cantidadErrada:true,motivo:true,tipoError:true,resuelto:true,comentarioAdmin:true,codigoBarra:true,referencia:true,producto:{select:{referencia:true,descripcion:true,talla:true,marca:true}}} as const;
+type IssueRow={fecha:Date|null;sucursal:string;transferencia:string;cantidadErrada:number;motivo:string|null;tipoError:string;resuelto:boolean;comentarioAdmin:string|null;codigoBarra:string;referencia:string|null;producto:{referencia:string|null;descripcion:string|null;talla:string|null;marca:string|null}|null};
+const toErrorCase=(row:IssueRow):ErrorCase=>({date:(row.fecha??new Date(0)).toISOString(),store:row.sucursal,transfer:row.transferencia,quantity:Math.abs(row.cantidadErrada),reason:row.motivo??row.tipoError,resolved:row.resuelto,observation:row.comentarioAdmin??undefined,errorType:row.tipoError,barcode:row.codigoBarra,reference:row.producto?.referencia??row.referencia,description:row.producto?.descripcion??null,size:row.producto?.talla??null,brand:row.producto?.marca??null});
 
 // Datos iniciales de cada espacio. Los sirve GET /api/panel (src/http/panel/route.ts);
 // el frontend decide la navegación con la respuesta (redirigir, acceso restringido, etc.).
@@ -45,8 +50,8 @@ export async function loadDashboard(user:UsuarioSesion):Promise<PanelInicio> {
     const allowedBillers=billerProfiles?.map(profile=>profile.nombre),allowedBillerIds=billerProfiles?.map(profile=>profile.id);
     const allowedTransfers=await getDb().transferenciaConsulta.findMany({where:{bajaEn:null,...(storeScope.national?{}:{tiendaId:{in:storeIds}}),...(allowedBillerIds?{facturadorId:{in:allowedBillerIds}}:{})},select:{numero:true}});
     const transferNumbers=new Set(allowedTransfers.map(row=>row.numero));
-    const rawIssues=await getDb().inconsistencia.findMany({where:{responsable:"FACTURACION",transferencia:{in:[...transferNumbers]},...(storeScope.national?{}:{tiendaId:{in:storeIds}})},select:{fecha:true,sucursal:true,transferencia:true,cantidadErrada:true,motivo:true,tipoError:true,resuelto:true,comentarioAdmin:true}});
-    const errorCases=rawIssues.map(row=>({date:(row.fecha??new Date(0)).toISOString(),store:row.sucursal,transfer:row.transferencia,quantity:Math.abs(row.cantidadErrada),reason:row.motivo??row.tipoError,resolved:row.resuelto,observation:row.comentarioAdmin??undefined}));
+    const rawIssues=await getDb().inconsistencia.findMany({where:{responsable:"FACTURACION",transferencia:{in:[...transferNumbers]},...(storeScope.national?{}:{tiendaId:{in:storeIds}})},select:issueSelect});
+    const errorCases=rawIssues.map(toErrorCase);
     const transferSource=await transferDashboardData(getDb(),errorCases,storeScope.national?undefined:storeIds,allowedBillerIds);
     const operationalStoreNames=storeScope.rows.map(store=>store.nombre);
     data={...baseData,errorCases,allowedBillers,operationalStoreNames,snapshot:{...baseData.snapshot,generatedAt:transferSource.lastImport?.importedAt.toISOString()??baseData.snapshot.generatedAt,exportDateColumnAvailable:true},aggregates:{...baseData.aggregates,totalTransfers:transferSource.aggregates.totalTransfers,exported:transferSource.aggregates.exported,reported:transferSource.aggregates.reported},transfers:transferSource.transfers,pendingReports:transferSource.pendingReports,stores:transferSource.stores,billers:transferSource.billers};
@@ -70,8 +75,8 @@ export async function billerData(db:PrismaClient,userId:string):Promise<Omit<Pan
   const propias=await db.transferenciaConsulta.findMany({where:{bajaEn:null,facturadorId:{in:ids}},select:{numero:true,tiendaId:true}});
   // Los números se repiten entre bodegas: el error cuenta solo si es de la misma tienda y número.
   const claves=new Set(propias.map(item=>`${item.tiendaId}:${item.numero}`));
-  const casos=await db.inconsistencia.findMany({where:{responsable:"FACTURACION",transferencia:{in:[...new Set(propias.map(item=>item.numero))]}},select:{fecha:true,sucursal:true,transferencia:true,tiendaId:true,cantidadErrada:true,motivo:true,tipoError:true,resuelto:true,comentarioAdmin:true}});
-  const errorCases=casos.filter(row=>!row.tiendaId||claves.has(`${row.tiendaId}:${row.transferencia}`)).map(row=>({date:(row.fecha??new Date(0)).toISOString(),store:row.sucursal,transfer:row.transferencia,quantity:Math.abs(row.cantidadErrada),reason:row.motivo??row.tipoError,resolved:row.resuelto,observation:row.comentarioAdmin??undefined}));
+  const casos=await db.inconsistencia.findMany({where:{responsable:"FACTURACION",transferencia:{in:[...new Set(propias.map(item=>item.numero))]}},select:{...issueSelect,tiendaId:true}});
+  const errorCases=casos.filter(row=>!row.tiendaId||claves.has(`${row.tiendaId}:${row.transferencia}`)).map(toErrorCase);
   const fuente=await transferDashboardData(db,errorCases,undefined,ids);
   return {perfiles,transfers:fuente.transfers,errorCases,actualizado:fuente.lastImport?.importedAt.toISOString()??null};
 }
