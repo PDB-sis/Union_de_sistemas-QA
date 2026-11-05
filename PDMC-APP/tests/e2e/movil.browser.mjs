@@ -99,6 +99,8 @@ try {
       if(r.width<=1||r.height<=1||s.visibility==='hidden'||el.closest('[aria-hidden=true],.sr-only')||!util(el)||(r.right<=W+1&&r.left>=-1)||dentro(el))continue;
       if([...el.children].some(c=>{const q=c.getBoundingClientRect();return q.right>W+1||q.left<-1}))continue;
       out.push(el.tagName.toLowerCase()+'.'+[...el.classList].slice(0,4).join('.')+' ['+Math.round(r.left)+'→'+Math.round(r.right)+'] '+(el.innerText||el.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,50))}
+    // Pestañas aplastadas: un grupo visible que quedó casi sin ancho porque otro control ocupa la fila.
+    for(const el of document.querySelectorAll('[role=tablist],nav')){const r=el.getBoundingClientRect(),st=getComputedStyle(el);if(st.display!=='none'&&el.querySelector('button')&&r.height>0&&r.width<60)out.push('pestañas sin ancho: '+(el.getAttribute('aria-label')||el.tagName.toLowerCase())+' ['+Math.round(r.width)+' px]')}
     // La insignia de Netlify ocupa unos 190×60 px de la esquina inferior derecha: ningún control fijo debe quedar debajo.
     const H=innerHeight,insignia={left:W-190,top:H-60};
     for(const el of document.querySelectorAll('button,a,input,select,[role=button]')){let fijo=false;for(let p=el;p;p=p.parentElement)if(getComputedStyle(p).position==='fixed'&&p.id!=='nl-badge-frame'){fijo=true;break}
