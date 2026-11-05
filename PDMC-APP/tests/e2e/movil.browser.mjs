@@ -44,6 +44,10 @@ const hoy = new Date(), dia = n => new Date(Date.UTC(hoy.getUTCFullYear(), hoy.g
 for (const [i, [estado, observacion, codigo]] of [["Exportada", "CORRECCIÓN de la transferencia 120034 por diferencia en caja 4 de la tienda Galerías", "NOREIMA"], ["Exportada", "Despacho regular de mercancía de temporada", "MARIA01"], ["Aprobada", "rotacion entre tiendas", "AUXILIAR4"], ["Abierta", "", "MARIA01"], ["Exportada", "Despacho", "NOREIMA"]].entries())
   await db.transferenciaConsulta.create({ data: { numero: String(120030 + i), fecha: dia(i), codigoFacturador: codigo, codigoTiendaConsulta: tiendas[i % 2].codigo, tiendaId: tiendas[i % 2].id, estado, observacion, unidades: 120 + i * 37, cantidadCodigos: 4 + i, ultimaImportacionId: carga.id, origenId: bodegaUbicacion.id, exportadaEn: estado === "Exportada" ? dia(i) : null } });
 
+// El facturador NOREIMA tiene cuenta: sus transferencias quedan enlazadas a su perfil y una tiene un error confirmado.
+const noreima = await db.perfilLaboral.create({ data: { codigo: "NOREIMA", nombre: "Noreima Facturadora de Occidente", tipo: "FACTURACION" } });
+await db.transferenciaConsulta.updateMany({ where: { codigoFacturador: "NOREIMA" }, data: { facturadorId: noreima.id } });
+await db.inconsistencia.create({ data: { sourceKey: randomUUID().replaceAll("-", ""), fecha: hoy, sucursal: tiendas[0].nombre, tiendaId: tiendas[0].id, transferencia: "120030", codigoBarra: "7701234567890", tipoError: "Faltante físico", cantidadErrada: 4, responsable: "FACTURACION", motivo: "Error por facturador (Físico Faltante)" } });
 const password = randomBytes(18).toString("base64url"), hash = await hashPassword(password);
 const roles = [
   ["administrador", "ADMINISTRADOR", null],
@@ -58,6 +62,7 @@ const roles = [
 for (const [nombre, rol, ubicacionId] of roles)
   await db.usuario.create({ data: { email: `${nombre}@movil.test`, nombre: `Usuario de ${nombre} con nombre largo`, rol, passwordHash: hash, estado: "ACTIVO", activo: true, debeCambiarPassword: false, asignaciones: { create: { rol, ubicacionId } } } });
 
+await db.vinculoOperativo.create({ data: { usuarioId: (await db.usuario.findUniqueOrThrow({ where: { email: "facturacion@movil.test" } })).id, perfilId: noreima.id } });
 const listener = createServer();
 await new Promise(r => listener.listen(0, "127.0.0.1", r));
 const port = listener.address().port; await new Promise(r => listener.close(r));

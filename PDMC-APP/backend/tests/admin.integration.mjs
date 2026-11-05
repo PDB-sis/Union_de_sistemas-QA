@@ -14,6 +14,7 @@ import {GET,POST,PATCH} from "../src/http/admin/[...path]/route.ts";
 import {POST as negativePost,PATCH as negativePatch} from "../src/http/operacion/negativos/[...path]/route.ts";
 import {TransferQueryService} from "../src/transferencias/consulta.ts";
 import {BillingObservationService} from "../src/facturacion/observaciones.ts";
+import {billerData} from "../src/panel/bootstrap.ts";
 import {ReturnsService} from "../src/devoluciones/service.ts";
 import {InconsistencyService} from "../src/inconsistencias/service.ts";
 import {NegativeOperations} from "../src/negativos/operations.ts";
@@ -216,6 +217,40 @@ test("mejora continua sin administración no puede otorgar ni restablecer cuenta
     await assert.rejects(limited.service.editUser(edit(a,[])),{status:403});
     await assert.rejects(limited.service.password({id:a.id,passwordTemporal:secret(),motivo}),{status:403});
     await assert.rejects(limited.service.status({id:a.id,estado:"INACTIVO",motivo}),{status:403});
+});
+test("el facturador ve solo lo suyo; Mejora Continua y Jefe de bodega ven a los facturadores de su territorio",async()=>{
+  const zona=await region(),otra=await region(),propia=await tienda(zona.id),ajena=await tienda(otra.id);
+  const bodega=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Bodega que despacha",tipo:"BODEGA",regionId:zona.id}});
+  const carga=await db.transferenciaConsultaImport.create({data:{nombreArchivo:"facturadores",hashArchivo:randomUUID().replaceAll("-",""),totalFilas:3,resumen:{}}});
+  const ana=await db.perfilLaboral.create({data:{codigo:`ANA${randomUUID().slice(0,6)}`,nombre:"Ana Facturadora",tipo:"FACTURACION"}});
+  const luis=await db.perfilLaboral.create({data:{codigo:`LUIS${randomUUID().slice(0,6)}`,nombre:"Luis Facturador",tipo:"FACTURACION"}});
+  const numero=`F${randomUUID().slice(0,8)}`;
+  const transferencia=(facturador,tiendaId,num=numero)=>db.transferenciaConsulta.create({data:{numero:num,fecha:new Date("2026-11-03"),codigoFacturador:facturador.codigo,facturadorId:facturador.id,codigoTiendaConsulta:"T",tiendaId,estado:"Exportada",unidades:50,cantidadCodigos:2,ultimaImportacionId:carga.id,origenId:bodega.id}});
+  await transferencia(ana,propia.id);await transferencia(luis,propia.id,`${numero}L`);
+  // El mismo número en otra tienda es otra transferencia (de otra bodega): su error no es de Ana.
+  await db.transferenciaConsulta.create({data:{numero,fecha:new Date("2026-11-03"),codigoFacturador:luis.codigo,facturadorId:luis.id,codigoTiendaConsulta:"T",tiendaId:ajena.id,estado:"Exportada",unidades:9,cantidadCodigos:1,ultimaImportacionId:carga.id}});
+  const error=(tiendaId,cantidad)=>db.inconsistencia.create({data:{sourceKey:randomUUID().replaceAll("-",""),fecha:new Date("2026-11-04"),sucursal:"Tienda",tiendaId,transferencia:numero,codigoBarra:"1",tipoError:"Faltante físico",cantidadErrada:cantidad,responsable:"FACTURACION"}});
+  await error(propia.id,3);await error(ajena.id,7);
+  const cuenta=await user([{rol:"FACTURACION",ubicacionId:zona.id}]);
+  await db.vinculoOperativo.create({data:{usuarioId:cuenta.id,perfilId:ana.id}});
+  const datos=await billerData(db,cuenta.id);
+  assert.deepEqual(datos.perfiles.map(p=>p.nombre),["Ana Facturadora"]);
+  assert.deepEqual(datos.transfers.map(t=>[t.id,t.biller]),[[numero,"Ana Facturadora"]]);
+  assert.deepEqual(datos.errorCases.map(e=>e.quantity),[3]);
+  // Sin panel.leer el facturador no entra al panel de Mejora Continua ni a QA.
+  assert.equal(await cuenta.access.has("panel.leer"),false);assert.equal(await cuenta.access.has("qa.acceder"),false);
+  // Otra cuenta (Mejora Continua) no puede pedir los datos personales del facturador.
+  const mc=await user([{rol:"MEJORA_CONTINUA",ubicacionId:zona.id}]);
+  await assert.rejects(billerData(db,mc.id),{status:403});
+  assert.equal(await mc.access.has("qa.acceder"),true);
+  // Mejora Continua de la región y Jefe de bodega de la bodega ven a los dos facturadores; otra región, a ninguno.
+  const nombres=async u=>(await new BillingObservationService(db,u.access).list({})).profiles.map(p=>p.nombre).filter(n=>n!=="Facturador de prueba").sort();
+  assert.deepEqual(await nombres(mc),["Ana Facturadora","Luis Facturador"]);
+  const jefe=await user([{rol:"JEFE_BODEGA",ubicacionId:bodega.id}]);
+  assert.deepEqual(await nombres(jefe),["Ana Facturadora","Luis Facturador"]);
+  assert.ok((await jefe.access.locationScope("panel.leer","TIENDA")).rows.some(r=>r.id===propia.id));
+  const lejana=await user([{rol:"MEJORA_CONTINUA",ubicacionId:(await region()).id}]);
+  assert.deepEqual(await nombres(lejana),[]);
 });
 test("mejora continua regional puede trabajar la bodega técnica de negativos sin abrir otras regiones",async()=>{
   const region=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Región MC",tipo:"REGION"}}),otherRegion=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Otra región",tipo:"REGION"}});

@@ -82,7 +82,7 @@ const titles: Record<Section, string> = {
   auditoria:"Auditoría operativa",
 };
 const sectionPermission:Partial<Record<Section,Parameters<ReturnType<typeof usePermission>>[0]>>={
-  metricas:"metricas.leer",transferencias:"transferencias.leer",devoluciones:"devoluciones.leer",incidencias:"inconsistencias.leer",negativos:"negativos.leer",facturacion:"facturacion.leer",inventario:"inventario.administrar",proyectos:"metricas.leer",auditoria:"auditoria.leer",
+  hoy:"transferencias.leer",qa:"qa.acceder",metricas:"metricas.leer",transferencias:"transferencias.leer",devoluciones:"devoluciones.leer",incidencias:"inconsistencias.leer",negativos:"negativos.leer",facturacion:"facturacion.leer",inventario:"inventario.administrar",proyectos:"metricas.leer",auditoria:"auditoria.leer",
 };
 const visibleSection=(section:Section,can:ReturnType<typeof usePermission>)=>!sectionPermission[section]||can(sectionPermission[section]!);
 const sectionDetails: Record<Section, { eyebrow: string; description: string }> = {
@@ -254,7 +254,9 @@ function AuditModule(){return <section className="module-hero"><div className="r
 function Dashboard() {
   const user = useCurrentUser(), can = usePermission();
   const { data, operationalStores, updateDate } = useDashboardData();
-  const initialSection:Section = user.rol === "FACTURACION" ? "facturacion" : user.rol === "AUDITORIA" ? "auditoria" : (user.rol === "JEFE_BODEGA" || user.rol === "RECEPCION") ? "facturacion" : "hoy";
+  const preferred:Section = user.rol === "AUDITORIA" ? "auditoria" : (user.rol === "JEFE_BODEGA" || user.rol === "RECEPCION") ? "facturacion" : "hoy";
+  // La primera sección es siempre una que el usuario puede abrir.
+  const initialSection:Section = visibleSection(preferred, can) ? preferred : (nav.find(([id]) => id !== "qa" && visibleSection(id, can))?.[0] ?? "cuenta");
   const [section, selectSection] = useState<Section>(initialSection);
   // /api/qa-sso redirige a CYSN QA (otra aplicación), no a una página de Next.js.
   const setSection = (next:Section) => { if(next === "qa"){window.location.assign("/api/qa-sso");return;} selectSection(next); };

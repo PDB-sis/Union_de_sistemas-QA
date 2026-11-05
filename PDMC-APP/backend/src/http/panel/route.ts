@@ -1,9 +1,9 @@
 import {endpoint} from "@backend/negativos/http";
 import {requireApiSession} from "@backend/auth/http";
 import {NegativosError} from "@backend/negativos/validation";
-import {loadAdministration,loadDashboard,loadStore} from "@backend/panel/bootstrap";
+import {loadAdministration,loadBiller,loadDashboard,loadStore} from "@backend/panel/bootstrap";
 
-// GET /api/panel?vista=inicio|tienda|administracion
+// GET /api/panel?vista=inicio|tienda|administracion|facturador
 // Reemplaza la carga que antes hacían las páginas de Next.js en el servidor: el frontend pide
 // los datos iniciales y navega según la respuesta (contrato en contratos/src/panel.ts).
 // La sesión con contraseña temporal se consulta con GET /api/auth/sesion.
@@ -14,6 +14,7 @@ export async function GET(request:Request){
     if(vista==="inicio")return loadDashboard(user);
     if(vista==="tienda")return loadStore(user);
     if(vista==="administracion")return loadAdministration(user);
+    if(vista==="facturador")return loadBiller(user);
     throw new NegativosError(404,"RUTA","Vista no encontrada.");
   });
 }

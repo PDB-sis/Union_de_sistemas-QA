@@ -26,9 +26,11 @@ export class BillingObservationService{
     if(allows(grants,permission))return {tipo:"FACTURACION",activo:true};
     const regionIds=relevant.filter(grant=>grant.ubicacion?.tipo==="REGION"&&grant.ubicacionId).map(grant=>grant.ubicacionId!);
     const locationIds=relevant.flatMap(grant=>grant.ubicacionId?[grant.ubicacionId]:[]);
+    // Un facturador pertenece al territorio de las tiendas a las que factura o de la bodega desde la que despacha.
     return {tipo:"FACTURACION",activo:true,OR:[
       {ubicacionId:{in:locationIds}},
       {ubicacion:{regionId:{in:regionIds}}},
+      {transferencias:{some:{bajaEn:null,OR:[{tiendaId:{in:locationIds}},{origenId:{in:locationIds}},{tienda:{regionId:{in:regionIds}}},{origen:{regionId:{in:regionIds}}}]}}},
       {vinculos:{some:{usuario:{asignaciones:{some:{ubicacionId:{in:locationIds}}}}}}},
     ]};
   }

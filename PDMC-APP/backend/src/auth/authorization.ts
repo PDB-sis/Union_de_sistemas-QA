@@ -37,9 +37,10 @@ export class Authorization {
     const grants=await this.grants();
     if(!hasPermission(grants,permission))throw denied();
     const national=allows(grants,permission),selected=grants.filter(g=>permissionMatrix[g.rol].includes(permission));
-    // Quien trabaja en una bodega (p. ej. Rectificación) ve las inconsistencias de las tiendas que esa bodega surte.
+    // Quien trabaja en una bodega (Jefe de bodega, Rectificación, Recepción) ve las tiendas que esa
+    // bodega surte: sus inconsistencias, sus transferencias y los facturadores que las despacharon.
     const bodegas=selected.filter(g=>g.ubicacion?.tipo==="BODEGA").map(g=>g.ubicacionId!);
-    const surtidas=!national&&type==="TIENDA"&&permission.startsWith("inconsistencias.")&&bodegas.length
+    const surtidas=!national&&type==="TIENDA"&&bodegas.length
       ?(await this.db.transferenciaConsulta.findMany({where:{origenId:{in:bodegas},tiendaId:{not:null}},distinct:["tiendaId"],select:{tiendaId:true}})).map(row=>row.tiendaId!):[];
     const rows=await this.db.ubicacion.findMany({where:national?{tipo:type}:{tipo:type,OR:[
       {id:{in:[...selected.filter(g=>g.ubicacion?.tipo===type).map(g=>g.ubicacionId!),...surtidas]}},

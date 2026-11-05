@@ -1,9 +1,10 @@
 import type { UsuarioSesion } from "@pdmc/contratos/auth/model";
-import type { PanelInicio } from "@pdmc/contratos/panel";
+import type { PanelFacturador, PanelInicio } from "@pdmc/contratos/panel";
 import type {DashboardData} from "@pdmc/contratos/dashboard-contract";
 import { dashboardData } from "./dashboard-data";
 import { Authorization } from "@backend/auth/authorization";
 import { getDb } from "@backend/db";
+import type { PrismaClient } from "../../generated/prisma/client";
 import { allows, permissions } from "@pdmc/contratos/auth/permissions";
 import { hasPermission } from "@pdmc/contratos/auth/permissions";
 import { transferDashboardData } from "@backend/transferencias/consulta";
@@ -26,6 +27,7 @@ export async function loadDashboard(user:UsuarioSesion):Promise<PanelInicio> {
   const grants = await access.grants();
   if(grants.some(grant=>grant.rol==="ADMINISTRADOR"&&grant.ubicacionId===null))return {redirigir:"/administracion"};
   if (hasPermission(grants,"tienda.panel") && !hasPermission(grants,"panel.leer")) return {redirigir:"/tienda"};
+  if (hasPermission(grants,"facturacion.propio") && !hasPermission(grants,"panel.leer")) return {redirigir:"/facturador"};
   const available = permissions.filter(p=>hasPermission(grants,p));
   const national = permissions.filter(p=>allows(grants,p));
   const locations = await getDb().bodega.findMany({where:{activa:true},select:{id:true,codigo:true,ubicacion:{select:{id:true,regionId:true}}}});
@@ -50,4 +52,26 @@ export async function loadDashboard(user:UsuarioSesion):Promise<PanelInicio> {
     data={...baseData,errorCases,allowedBillers,operationalStoreNames,snapshot:{...baseData.snapshot,generatedAt:transferSource.lastImport?.importedAt.toISOString()??baseData.snapshot.generatedAt,exportDateColumnAvailable:true},aggregates:{...baseData.aggregates,totalTransfers:transferSource.aggregates.totalTransfers,exported:transferSource.aggregates.exported,reported:transferSource.aggregates.reported},transfers:transferSource.transfers,pendingReports:transferSource.pendingReports,stores:transferSource.stores,billers:transferSource.billers};
   }
   return {data,user,capabilities:{available,national,warehouses}};
+}
+
+/**
+ * Espacio del facturador: solo sus transferencias (por su código corporativo vinculado), sus errores
+ * confirmados y, desde el frontend, sus observaciones. No depende de la región: un facturador ve todo
+ * lo que facturó, y nada de otros facturadores.
+ */
+export async function loadBiller(user:UsuarioSesion):Promise<PanelFacturador>{
+  return {user,...await billerData(getDb(),user.id)};
+}
+
+export async function billerData(db:PrismaClient,userId:string):Promise<Omit<PanelFacturador,"user">>{
+  await new Authorization(db,userId).permitted("facturacion.propio");
+  const perfiles=await db.perfilLaboral.findMany({where:{tipo:"FACTURACION",activo:true,vinculos:{some:{usuarioId:userId}}},select:{id:true,codigo:true,nombre:true},orderBy:{nombre:"asc"}});
+  const ids=perfiles.map(perfil=>perfil.id);
+  const propias=await db.transferenciaConsulta.findMany({where:{bajaEn:null,facturadorId:{in:ids}},select:{numero:true,tiendaId:true}});
+  // Los números se repiten entre bodegas: el error cuenta solo si es de la misma tienda y número.
+  const claves=new Set(propias.map(item=>`${item.tiendaId}:${item.numero}`));
+  const casos=await db.inconsistencia.findMany({where:{responsable:"FACTURACION",transferencia:{in:[...new Set(propias.map(item=>item.numero))]}},select:{fecha:true,sucursal:true,transferencia:true,tiendaId:true,cantidadErrada:true,motivo:true,tipoError:true,resuelto:true,comentarioAdmin:true}});
+  const errorCases=casos.filter(row=>!row.tiendaId||claves.has(`${row.tiendaId}:${row.transferencia}`)).map(row=>({date:(row.fecha??new Date(0)).toISOString(),store:row.sucursal,transfer:row.transferencia,quantity:Math.abs(row.cantidadErrada),reason:row.motivo??row.tipoError,resolved:row.resuelto,observation:row.comentarioAdmin??undefined}));
+  const fuente=await transferDashboardData(db,errorCases,undefined,ids);
+  return {perfiles,transfers:fuente.transfers,errorCases,actualizado:fuente.lastImport?.importedAt.toISOString()??null};
 }
