@@ -151,7 +151,7 @@ function Entities() {
     {create&&<EntityForm done={done} close={()=>setCreate(false)}/>} {link&&<LinkForm entity={link} clase={clase} done={done} close={()=>setLink(null)}/>} {edit&&<EntityEditForm entity={edit} clase={clase} done={done} close={()=>setEdit(null)}/>} {remove&&<DeleteEntityForm entity={remove} clase={clase} done={done} close={()=>setRemove(null)}/>}
   </>;
 }
-function AuditLog() {
+export function AuditLog() {
   const [filters,setFilters]=useState({q:"",usuarioId:"",accion:"",entidad:"",entidadId:"",desde:"",hasta:""}),[skip,setSkip]=useState(0),[selected,setSelected]=useState<Audit|null>(null);
   const params=new URLSearchParams({skip:String(skip)});
   for(const [k,v] of Object.entries(filters))if(v)params.set(k,k==="desde"||k==="hasta"?new Date(k==="hasta"?`${v}T23:59:59`:`${v}T00:00:00`).toISOString():v);

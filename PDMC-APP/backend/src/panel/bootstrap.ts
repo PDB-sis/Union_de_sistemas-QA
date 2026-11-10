@@ -6,7 +6,8 @@ import { Authorization } from "@backend/auth/authorization";
 import { getDb } from "@backend/db";
 import type { PrismaClient } from "../../generated/prisma/client";
 import { allows, permissions } from "@pdmc/contratos/auth/permissions";
-import { hasPermission } from "@pdmc/contratos/auth/permissions";
+import { asignacionValida, hasPermission } from "@pdmc/contratos/auth/permissions";
+import { espaciosDe } from "@pdmc/contratos/auth/espacios";
 import { transferDashboardData } from "@backend/transferencias/consulta";
 import { StoreService } from "@backend/tienda/service";
 
@@ -56,7 +57,9 @@ export async function loadDashboard(user:UsuarioSesion):Promise<PanelInicio> {
     const operationalStoreNames=storeScope.rows.map(store=>store.nombre);
     data={...baseData,errorCases,allowedBillers,operationalStoreNames,snapshot:{...baseData.snapshot,generatedAt:transferSource.lastImport?.importedAt.toISOString()??baseData.snapshot.generatedAt,exportDateColumnAvailable:true},aggregates:{...baseData.aggregates,totalTransfers:transferSource.aggregates.totalTransfers,exported:transferSource.aggregates.exported,reported:transferSource.aggregates.reported},transfers:transferSource.transfers,pendingReports:transferSource.pendingReports,stores:transferSource.stores,billers:transferSource.billers};
   }
-  return {data,user,capabilities:{available,national,warehouses}};
+  // Cada rol operativo entra a su propio espacio (contratos/src/auth/espacios.ts).
+  const espacios=espaciosDe([...new Set(grants.filter(asignacionValida).map(grant=>grant.rol))]);
+  return {data,user,capabilities:{available,national,warehouses},espacios};
 }
 
 /**

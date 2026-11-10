@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import { useStoredInitialState } from "@/hooks/use-stored-initial-state";
 import { formatoFecha } from "@/lib/fechas";
 import {
@@ -26,10 +26,13 @@ import { InventoryPanel } from "@/components/inventario/panel";
 import { InconsistencyPanel } from "@/components/inconsistencias/panel";
 import { InconsistencySummaryProvider, useInconsistencySummary } from "@/components/inconsistencias/summary";
 import { AccountSettings } from "@/components/auth/account-settings";
+import { MiDia } from "@/components/mi-dia";
+import { AuditLog } from "@/components/admin/panel";
+import { espacios, seccionPermitida, type EspacioOperativo } from "@pdmc/contratos/auth/espacios";
 import { NegativeSummaryProvider, useNegativeSummary } from "@/components/negativos/summary";
 import { SessionWatch } from "@/components/auth/session-watch";
 import { TransferenciasFuente } from "@/components/transferencias/fuente";
-import { IconoAuditoria, IconoCuenta, IconoDevoluciones, IconoFacturacion, IconoInconsistencias, IconoInventario, IconoMetricas, IconoMiDia, IconoNegativos, IconoProyectos, IconoQA, IconoTransferencias } from "@/components/brand/module-icons";
+import { IconoAuditoria, IconoDevoluciones, IconoFacturacion, IconoInconsistencias, IconoInventario, IconoMetricas, IconoMiDia, IconoNegativos, IconoProyectos, IconoQA, IconoTransferencias } from "@/components/brand/module-icons";
 import { PermissionContext, type Capabilities, usePermission } from "@/components/auth/permissions";
 import type { UsuarioSesion } from "@pdmc/contratos/auth/model";
 import { transferTypeLabel, type TransferType } from "@pdmc/contratos/transferencias/classification";
@@ -47,10 +50,18 @@ type Project = { id: string; name: string; next: string; status: "Pendiente" | "
 import type {DashboardData} from "@pdmc/contratos/dashboard-contract";
 export type {DashboardData} from "@pdmc/contratos/dashboard-contract";
 const DataContext = createContext<DashboardData | null>(null);
+// Espacio de trabajo del rol (contratos/src/auth/espacios.ts) y los demás espacios de la cuenta.
+const SpaceContext = createContext<{ actual: EspacioOperativo; todos: EspacioOperativo[] }>({ actual: "mejora-continua", todos: [] });
 function useDashboardData() {
+  const value = useOptionalDashboardData();
+  if (!value) throw new Error("Missing authenticated data");
+  return value;
+}
+// Rectificación no lee el panel (sin panel.leer): sus secciones no dependen de estos datos.
+function useOptionalDashboardData() {
   const data = useContext(DataContext);
-  if (!data) throw new Error("Missing authenticated data");
   return useMemo(() => {
+    if (!data) return null;
     const operationalStores = new Set<string>(data.operationalStoreNames);
     return { data, updateDate: stableDateTime(data.snapshot.generatedAt), operationalStores,
       operationalPending: data.pendingReports.filter(x => operationalStores.has(x.store)),
@@ -82,7 +93,7 @@ const titles: Record<Section, string> = {
   auditoria:"Auditoría operativa",
 };
 const sectionPermission:Partial<Record<Section,Parameters<ReturnType<typeof usePermission>>[0]>>={
-  hoy:"transferencias.leer",qa:"qa.acceder",metricas:"metricas.leer",transferencias:"transferencias.leer",devoluciones:"devoluciones.leer",incidencias:"inconsistencias.leer",negativos:"negativos.leer",facturacion:"facturacion.leer",inventario:"inventario.administrar",proyectos:"metricas.leer",auditoria:"auditoria.leer",
+  qa:"qa.acceder",metricas:"metricas.leer",transferencias:"transferencias.leer",devoluciones:"devoluciones.leer",incidencias:"inconsistencias.leer",negativos:"negativos.leer",facturacion:"facturacion.leer",inventario:"inventario.administrar",proyectos:"metricas.leer",auditoria:"auditoria.leer",
 };
 const visibleSection=(section:Section,can:ReturnType<typeof usePermission>)=>!sectionPermission[section]||can(sectionPermission[section]!);
 const sectionDetails: Record<Section, { eyebrow: string; description: string }> = {
@@ -232,33 +243,32 @@ function Projects() {
 }
 
 function ModuleNavigation({ section, change }: { section: Section; change: (section: Section) => void }) {
-  const { data } = useDashboardData();
-  const can = usePermission();
+  const data = useOptionalDashboardData()?.data;
+  const can = usePermission(), { actual } = useContext(SpaceContext);
   const summary = useNegativeSummary();
   const inconsistencies = useInconsistencySummary();
   const counts: Partial<Record<Section, number | string>> = {
-    transferencias: data.pendingReports.length,
+    transferencias: data?.pendingReports.length,
     incidencias: inconsistencies.data?.pendientes ?? (inconsistencies.error ? "!" : "…"),
     negativos: summary.data?.resumen.actuales ?? (summary.error ? "!" : "…"),
     // Errores de facturación confirmados que siguen sin corregirse.
-    facturacion: data.errorCases.filter(item => !item.resolved).length,
+    facturacion: data?.errorCases.filter(item => !item.resolved).length,
   };
-  return <WorkspaceNavigation value={section} onChange={change} items={nav.filter(([id]) => visibleSection(id, can)).map(([id, label, icon]) => ({
+  return <WorkspaceNavigation value={section} onChange={change} items={espacios[actual].secciones.flatMap(id => { const entry = nav.find(([key]) => key === id); return entry && seccionPermitida(actual, id) && visibleSection(id, can) ? [entry] : []; }).map(([id, label, icon]) => ({
     id, label, icon, description: sectionDetails[id].description, count: counts[id],
     testId: id === "negativos" ? "sidebar-negative-count" : undefined,
     countLabel: id === "negativos" ? "Códigos de la última fotografía; no suma el historial" : "Registros pendientes de seguimiento",
   }))} />;
 }
 
-function AuditModule(){return <section className="module-hero"><div className="relative z-10 max-w-2xl"><Badge className="border-white/15 bg-white/10 text-white"><IconoAuditoria/>Trazabilidad empresarial</Badge><h2 className="mt-4 text-3xl font-bold tracking-tight">Historial de cambios operativos</h2><p className="mt-2 text-sm leading-6 text-white/70">Revisa modificaciones de transferencias, tiendas, negativos, inconsistencias, usuarios y demás procesos registrados por PDMC.</p><Link to="/administracion" className="mt-6 inline-flex h-11 items-center rounded-xl bg-brand-glow px-5 text-sm font-semibold text-brand-deep shadow-lg transition hover:brightness-110">Abrir auditoría detallada</Link></div></section>}
 
 function Dashboard() {
   const user = useCurrentUser(), can = usePermission();
-  const { data, operationalStores, updateDate } = useDashboardData();
-  const preferred:Section = user.rol === "AUDITORIA" ? "auditoria" : (user.rol === "JEFE_BODEGA" || user.rol === "RECEPCION") ? "facturacion" : "hoy";
-  // La primera sección es siempre una que el usuario puede abrir.
-  const initialSection:Section = visibleSection(preferred, can) ? preferred : (nav.find(([id]) => id !== "qa" && visibleSection(id, can))?.[0] ?? "cuenta");
-  const [section, selectSection] = useState<Section>(initialSection);
+  const context = useOptionalDashboardData(), data = context?.data ?? null, operationalStores = context?.operationalStores ?? new Set<string>();
+  const { actual, todos } = useContext(SpaceContext), space = espacios[actual], navigate = useNavigate();
+  // Cada espacio empieza en su Mi día y solo abre sus propias secciones.
+  const [section, selectSection] = useState<Section>("hoy");
+  const allowed = (id: Section) => space.secciones.includes(id) && seccionPermitida(actual, id) && visibleSection(id, can);
   // /api/qa-sso redirige a CYSN QA (otra aplicación), no a una página de Next.js.
   const setSection = (next:Section) => { if(next === "qa"){window.location.assign("/api/qa-sso");return;} selectSection(next); };
   const [reportOpen, setReportOpen] = useState(false);
@@ -270,7 +280,8 @@ function Dashboard() {
   return <div className="workspace min-h-screen bg-background text-foreground">
     <a className="workspace-skip" href="#workspace-content">Ir al contenido</a>
     <header className="workspace-chrome">
-      <WorkspaceHeader subtitle="Centro operativo">
+      <WorkspaceHeader subtitle={space.titulo}>
+        {todos.length > 1 && <select aria-label="Cambiar de espacio" className="h-9 max-w-40 rounded-full border bg-card px-3 text-xs font-semibold" value={actual} onChange={event => navigate(espacios[event.target.value as EspacioOperativo].ruta)}>{todos.map(id => <option key={id} value={id}>{espacios[id].titulo}</option>)}</select>}
         <ConnectionStatus className="hidden md:flex" />
         <ThemeToggle compact />
         <button onClick={() => setSection("cuenta")} aria-label="Abrir ajustes de cuenta" title={user.nombre} className={`topbar-account ${section === "cuenta" ? "ring-2 ring-primary/40" : ""}`}>
@@ -282,36 +293,18 @@ function Dashboard() {
     </header>
     <main id="workspace-content" tabIndex={-1} className="workspace-content min-h-screen">
       <div className="workspace-page-heading">
-        <div><p className="workspace-eyebrow">{detail.eyebrow}</p><h1>{titles[section]}</h1><p className="workspace-page-description">{detail.description}</p></div>
-        <div className="workspace-update"><span className="workspace-live-dot"/><div><span>Última actualización</span><time>{updateDate}</time></div></div>
+        <div><p className="workspace-eyebrow">{section === "hoy" ? space.titulo : detail.eyebrow}</p><h1>{titles[section]}</h1><p className="workspace-page-description">{section === "hoy" ? space.proposito : detail.description}</p></div>
+        {context && <div className="workspace-update"><span className="workspace-live-dot"/><div><span>Última actualización</span><time>{context.updateDate}</time></div></div>}
       </div>
       <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">
-        {section === "cuenta" && <AccountSettings user={user}/>} {section === "hoy" && <Today go={setSection} report={() => report()} />}{section === "metricas" && can("metricas.leer") && <MetricsPanel/>}{section === "transferencias" && can("transferencias.leer") && <Transfers report={report} />}{section === "devoluciones" && can("devoluciones.leer") && <ReturnsPanel/>}{section === "incidencias" && can("inconsistencias.leer") && <InconsistencyPanel canEdit={can("inconsistencias.editar")} canCount={can("inconsistencias.conteo")} showProductProblems={can("productos.problemas.leer")}/>} {section === "negativos" && can("negativos.leer") && <NegativePanel/>}{section === "facturacion" && can("facturacion.leer") && <BillingPanel transfers={data.transfers} errorCases={data.errorCases} allowedBillers={data.allowedBillers ?? []} restricted={user.rol === "FACTURACION"} />}{section === "inventario" && can("inventario.administrar") && <InventoryPanel/>}{section === "proyectos" && can("metricas.leer") && <Projects />}{section === "auditoria"&&can("auditoria.leer")&&<AuditModule/>}
+        {section === "cuenta" && <AccountSettings user={user}/>} {section === "hoy" && (actual === "mejora-continua" ? context && <Today go={setSection} report={() => report()} /> : <MiDia espacio={actual} nombre={user.nombre} data={data} go={setSection} />)}{section === "metricas" && allowed("metricas") && <MetricsPanel/>}{section === "transferencias" && allowed("transferencias") && context && <Transfers report={report} />}{section === "devoluciones" && allowed("devoluciones") && <ReturnsPanel/>}{section === "incidencias" && allowed("incidencias") && <InconsistencyPanel canEdit={can("inconsistencias.editar")} canCount={can("inconsistencias.conteo")} showProductProblems={can("productos.problemas.leer")}/>} {section === "negativos" && allowed("negativos") && <NegativePanel/>}{section === "facturacion" && allowed("facturacion") && data && <BillingPanel transfers={data.transfers} errorCases={data.errorCases} allowedBillers={data.allowedBillers ?? []} restricted={user.rol === "FACTURACION"} />}{section === "inventario" && allowed("inventario") && <InventoryPanel/>}{section === "proyectos" && allowed("proyectos") && <Projects />}{section === "auditoria" && allowed("auditoria") && <section className="rounded-3xl border bg-card p-4 shadow-sm sm:p-6"><AuditLog/></section>}
       </div>
     </main>
-    {reportOpen && <ReportDialog key={reportStore} open={reportOpen} close={setReportOpen} initialStore={reportStore} />}
+    {reportOpen && context && <ReportDialog key={reportStore} open={reportOpen} close={setReportOpen} initialStore={reportStore} />}
     <Toaster richColors position="top-right" />
   </div>;
 }
-export default function DashboardClient({data,user,capabilities}:{data:DashboardData|null;user:UsuarioSesion;capabilities:Capabilities}) {
-  return <PermissionContext.Provider value={capabilities}><UserContext.Provider value={user}><NegativeSummaryProvider><InconsistencySummaryProvider><DataContext.Provider value={data}><SessionWatch/>{data?<Dashboard/>:<ScopedDashboard/>}</DataContext.Provider></InconsistencySummaryProvider></NegativeSummaryProvider></UserContext.Provider></PermissionContext.Provider>;
+export default function DashboardClient({data,user,capabilities,espacio,espacios:todos}:{data:DashboardData|null;user:UsuarioSesion;capabilities:Capabilities;espacio:EspacioOperativo;espacios:EspacioOperativo[]}) {
+  return <PermissionContext.Provider value={capabilities}><UserContext.Provider value={user}><SpaceContext.Provider value={{actual:espacio,todos}}><NegativeSummaryProvider><InconsistencySummaryProvider><DataContext.Provider value={data}><SessionWatch/><Dashboard key={espacio}/></DataContext.Provider></InconsistencySummaryProvider></NegativeSummaryProvider></SpaceContext.Provider></UserContext.Provider></PermissionContext.Provider>;
 }
 
-function ScopedDashboard() {
-  const can=usePermission(),user=useCurrentUser(),negativeSummary=useNegativeSummary(),inconsistencySummary=useInconsistencySummary();
-  const initial=can("inconsistencias.leer")?"incidencias":"negativos";
-  const [view,setView]=useState<"negativos"|"incidencias"|"cuenta">(initial);
-  const destinations = [
-    ...(can("negativos.leer") ? [{ id: "negativos" as const, label: "Negativos", icon: IconoNegativos, count: negativeSummary.data?.resumen.actuales ?? (negativeSummary.error ? "!" : "…"), testId: "sidebar-negative-count", description: negativeSummary.data ? `${negativeSummary.data.resumen.sinConteo} sin conteo · ${negativeSummary.data.resumen.conConteo} con conteo` : "Conteo y seguimiento de existencias" }] : []),
-    ...(can("inconsistencias.leer") ? [{ id: "incidencias" as const, label: "Inconsistencias", icon: IconoInconsistencias, count: inconsistencySummary.data?.pendientes ?? (inconsistencySummary.error ? "!" : "…"), description: inconsistencySummary.data ? `${inconsistencySummary.data.sinConteo} sin conteo · ${inconsistencySummary.data.conConteo} con conteo` : "Revisión de diferencias reportadas" }] : []),
-    { id: "cuenta" as const, label: "Mi cuenta", icon: IconoCuenta, description: "Perfil, seguridad y sesión" },
-  ];
-  return <div className="workspace min-h-screen">
-    <a className="workspace-skip" href="#workspace-content">Ir al contenido</a>
-    <header className="workspace-chrome"><WorkspaceHeader subtitle="Control operativo"><span className="hidden max-w-48 truncate text-sm text-muted-foreground sm:block">{user.nombre}</span><ThemeToggle compact /></WorkspaceHeader><WorkspaceNavigation items={destinations} value={view} onChange={setView} /></header>
-    <main id="workspace-content" tabIndex={-1} className="workspace-content">
-      <div className="workspace-page-heading"><div><p className="workspace-eyebrow">Tu jornada de trabajo</p><h1>{titles[view]}</h1><p className="workspace-page-description">{sectionDetails[view].description}</p></div></div>
-      <div className="module-canvas mx-auto max-w-[1600px] space-y-6 p-3 sm:p-6 lg:p-8">{view === "cuenta" ? <AccountSettings user={user} /> : view === "incidencias" && can("inconsistencias.leer") ? <InconsistencyPanel canEdit={can("inconsistencias.editar")} canCount={can("inconsistencias.conteo")} showProductProblems={can("productos.problemas.leer")} /> : can("negativos.leer") ? <NegativePanel /> : <p role="status">Su cuenta no tiene permisos asignados.</p>}</div>
-    </main>
-  </div>;
-}

@@ -242,8 +242,10 @@ try {
   await until(()=>evaluate(`document.querySelector('link[rel~="icon"]')?.getAttribute("href")==="/favicon-cielo.svg"`),"El ícono no siguió la paleta al recargar");
   await evaluate('localStorage.removeItem("pdmc-paleta"); document.documentElement.removeAttribute("data-palette")');
   await role("RECTIFICACION",transferRegion);
-  await contains("Tu jornada de trabajo");
-  assert.equal(await evaluate('document.querySelectorAll(".workspace-tab").length'),3);
+  // Rectificación entra a su propio espacio: su Mi día (conteos pendientes), Negativos e Inconsistencias.
+  await until(()=>evaluate('location.pathname==="/rectificacion"'),"Rectificación no entró a su espacio");
+  await contains("Tus prioridades de hoy"); await contains("Negativos por contar");
+  assert.deepEqual(await evaluate('[...document.querySelectorAll(".workspace-tab")].map(b=>b.querySelector("span").textContent.trim())'),["Mi día","Negativos","Inconsistencias"]);
   await nav("Negativos"); await contains("Control de negativos");
   await capture("rectificacion");
   assert.equal(await evaluate('document.querySelectorAll("aside").length'),0);

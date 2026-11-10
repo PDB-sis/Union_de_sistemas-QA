@@ -12,6 +12,7 @@ const Inicio = lazy(() => import("@/pages/inicio"));
 const Tienda = lazy(() => import("@/pages/tienda"));
 const Administracion = lazy(() => import("@/pages/administracion"));
 const Facturador = lazy(() => import("@/pages/facturador"));
+const Espacio = lazy(() => import("@/pages/espacio"));
 const Login = lazy(() => import("@/pages/login"));
 const CambiarContrasena = lazy(() => import("@/pages/cambiar-contrasena"));
 
@@ -32,6 +33,8 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/tienda" element={<Tienda />} />
             <Route path="/administracion" element={<Administracion />} />
             <Route path="/facturador" element={<Facturador />} />
+            {/* Un espacio por rol operativo (contratos/src/auth/espacios.ts). */}
+            {(["mejora-continua","jefe-bodega","recepcion","rectificacion","auditoria"] as const).map(espacio => <Route key={espacio} path={`/${espacio}`} element={<Espacio espacio={espacio} />} />)}
             <Route path="/login" element={<Login />} />
             <Route path="/cambiar-contrasena" element={<CambiarContrasena />} />
             <Route path="*" element={<NoEncontrada />} />
