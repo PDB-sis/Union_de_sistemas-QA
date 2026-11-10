@@ -68,7 +68,7 @@ export type NegativeListing = {
 
 export type HistorialNegativo = {
   id: string; negativoId: string; usuarioId: string | null; accion: string; motivo: string;
-  valorAnterior: unknown; valorNuevo: unknown; createdAt: Fecha;
+  valorAnterior: unknown; valorNuevo: unknown; createdAt: Fecha; usuario?: { nombre: string } | null;
 };
 
 export type NegativeDetail = {

@@ -69,6 +69,14 @@ for (const [nombre, rol, ubicacionId] of roles)
   await db.usuario.create({ data: { email: `${nombre}@movil.test`, nombre: `Usuario de ${nombre} con nombre largo`, rol, passwordHash: hash, estado: "ACTIVO", activo: true, debeCambiarPassword: false, asignaciones: { create: { rol, ubicacionId } } } });
 
 await db.vinculoOperativo.create({ data: { usuarioId: (await db.usuario.findUniqueOrThrow({ where: { email: "facturacion@movil.test" } })).id, perfilId: noreima.id } });
+// Un negativo de la bodega con su historial, para revisar el expediente y la auditoría en el celular.
+const mejora = await db.usuario.findUniqueOrThrow({ where: { email: "mejora@movil.test" } }), bodegaFisica = await db.bodega.findUniqueOrThrow({ where: { codigo: "999997" } });
+const consulta = randomUUID(), negativo = randomUUID();
+await db.$executeRawUnsafe(`INSERT INTO "ConsultaInventario" (id,"usuarioId","nombreArchivo","fechaConsulta","hashArchivo","totalFilas") VALUES ($1::uuid,$2::uuid,'movil.csv',now(),$3,1)`, consulta, mejora.id, randomBytes(32).toString("hex"));
+await db.$executeRawUnsafe(`INSERT INTO "InventarioActual" (id,"consultaId","productoId",existencia,activo) VALUES ($1::uuid,$2::uuid,$3::uuid,-3,true)`, randomUUID(), consulta, productos[1].id);
+await db.$executeRawUnsafe(`INSERT INTO "Negativo" (id,"productoId","bodegaId",estado,"primeraDeteccion","ultimaDeteccion","updatedAt") VALUES ($1::uuid,$2::uuid,$3::uuid,'Nuevo',now(),now(),now())`, negativo, productos[1].id, bodegaFisica.id);
+await db.$executeRawUnsafe(`INSERT INTO "HistorialNegativo" (id,"negativoId","usuarioId",accion,motivo,"valorAnterior","valorNuevo") VALUES ($1::uuid,$2::uuid,NULL,'ACTUALIZAR_DESDE_INVENTARIO','Detectado en la consulta de inventario',NULL,'{"estado":"NUEVO","existencia":"-3.0000"}'::jsonb),($3::uuid,$2::uuid,$4::uuid,'EDITAR_SEGUIMIENTO','Revisión de la bodega','{"estado":"NUEVO","observaciones":""}'::jsonb,'{"estado":"EN_INVESTIGACION","observaciones":"Se revisará en el próximo conteo"}'::jsonb)`, randomUUID(), negativo, randomUUID(), mejora.id);
+await db.$executeRawUnsafe(`INSERT INTO "Auditoria" (id,"usuarioId",entidad,"entidadId",accion,motivo,origen,"valorAnterior","valorNuevo") VALUES ($1::uuid,$2::uuid,'Negativo',$3::uuid,'EDITAR_SEGUIMIENTO','Revisión de la bodega',$4,'{"estado":"NUEVO","observaciones":""}'::jsonb,'{"estado":"EN_INVESTIGACION","observaciones":"Se revisará en el próximo conteo"}'::jsonb)`, randomUUID(), mejora.id, negativo, `WEB PATCH /api/operacion/negativos/casos/${negativo}`);
 const listener = createServer();
 await new Promise(r => listener.listen(0, "127.0.0.1", r));
 const port = listener.address().port; await new Promise(r => listener.close(r));
@@ -154,6 +162,32 @@ try {
       if (await evaluate(`(()=>{const b=document.querySelector('[aria-label="Ajustes de la cuenta"]');b?.click();return Boolean(b)})()`)) {
         await until(() => evaluate(`document.body.textContent.includes("Paleta de colores")`), `Los ajustes no muestran la paleta: ${rol}`);
         await revisar(rol, "ajustes-de-cuenta", ancho);
+      }
+      // La auditoría se lee clara: el detalle muestra qué cambió, antes y después.
+      if (rol === "administrador") {
+        await send("Page.navigate", { url: inicio });
+        await until(() => evaluate(hidratado(".workspace-tab")), "No volvió a Administración");
+        await evaluate(`[...document.querySelectorAll('.workspace-tab')].find(b=>b.innerText.includes('Auditoría')).click()`);
+        await until(() => evaluate(`[...document.querySelectorAll('ol[aria-label="Registros de auditoría"] > li')].some(li=>li.textContent.includes("Actualizó el seguimiento"))`), "La auditoría no muestra la acción en lenguaje claro");
+        await evaluate(`[...document.querySelectorAll('ol[aria-label="Registros de auditoría"] > li')].find(li=>li.textContent.includes("Actualizó el seguimiento")).querySelector('button').click()`);
+        await until(() => evaluate(`Boolean(document.querySelector('[role="dialog"]')?.textContent.includes("Qué cambió"))&&document.querySelector('[role="dialog"]').textContent.includes("En investigación")`), "El detalle de auditoría no muestra el cambio en claro");
+        await revisar(rol, "detalle-de-auditoria", ancho);
+      }
+      // El expediente de un negativo en el celular ocupa toda la pantalla, por encima del encabezado.
+      if (rol === "rectificacion") {
+        await send("Page.navigate", { url: inicio });
+        await until(() => evaluate(hidratado(".workspace-tab")), "No volvió al panel de rectificación");
+        await evaluate(`[...document.querySelectorAll('.workspace-tab')].find(b=>b.innerText.includes('Negativos')).click()`);
+        await until(() => evaluate(`[...document.querySelectorAll('button')].some(b=>b.offsetWidth&&/Registrar conteo|Documentar y decidir/.test(b.textContent))`), "No aparece el negativo de prueba");
+        await evaluate(`[...document.querySelectorAll('button')].find(b=>b.offsetWidth&&/Registrar conteo|Documentar y decidir/.test(b.textContent)).click()`);
+        await until(() => evaluate(`Boolean(document.querySelector('aside[aria-label="Expediente del negativo"]')?.textContent.includes("Historial del caso"))`), "No abrió el expediente");
+        if (ancho < 1280) {
+          const hoja = await evaluate(`(()=>{const a=document.querySelector('aside[aria-label="Expediente del negativo"]'),r=a.getBoundingClientRect(),arriba=document.elementFromPoint(innerWidth/2,30);let p=a.parentElement,t=[];while(p){const s=getComputedStyle(p);if(s.transform!=="none"||s.filter!=="none"||s.backdropFilter!=="none"||s.contain!=="none"||s.willChange!=="auto")t.push(p.className.slice(0,40)+":"+s.transform+"/"+s.filter+"/"+s.backdropFilter);p=p.parentElement}return {top:Math.round(r.top),alto:Math.round(r.height),pantalla:innerHeight,encima:a.contains(arriba),arriba:arriba?.className?.slice(0,40),t}})()`);
+          if (hoja.top !== 0 || hoja.alto < hoja.pantalla - 1 || !hoja.encima) fallas.push({ ancho, rol, pantalla: "expediente-negativo", cortados: [`la hoja no cubre la pantalla: ${JSON.stringify(hoja)}`], total: 1, documento: ancho, ancho });
+          console.info(`${hoja.top === 0 && hoja.encima ? "✓" : "✗"} ${ancho}px rectificacion · expediente a pantalla completa ${JSON.stringify(hoja)}`);
+        }
+        await evaluate(`document.querySelector('aside[aria-label="Expediente del negativo"] details')?.setAttribute("open","")`);
+        await revisar(rol, "expediente-negativo", ancho);
       }
       // El facturador ve sus transferencias y abre el detalle de productos de una de ellas.
       if (rol === "facturacion") {

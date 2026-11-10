@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { roles, rolesDeSistema, type Rol, type UsuarioSesion } from "@pdmc/contratos/auth/model";
 import { AccountSettings } from "@/components/auth/account-settings";
+import { DetalleAuditoria, IconoAccion, autorAuditoria, fechaAuditoria } from "@/components/auditoria/registro";
+import { accionAuditoria, accionesAuditoria, entidadAuditoria, entidadesAuditoria, origenAuditoria } from "@pdmc/contratos/auditoria/catalogo";
 import { Button } from "@/components/ui/button";
 import { SincronizacionEstado } from "@/components/admin/sincronizacion";
 import { Input } from "@/components/ui/input";
@@ -152,10 +154,37 @@ function Entities() {
 function AuditLog() {
   const [filters,setFilters]=useState({q:"",usuarioId:"",accion:"",entidad:"",entidadId:"",desde:"",hasta:""}),[skip,setSkip]=useState(0),[selected,setSelected]=useState<Audit|null>(null);
   const params=new URLSearchParams({skip:String(skip)});
-  for(const [k,v] of Object.entries(filters))if(v)params.set(k,k==="desde"||k==="hasta"?new Date(v).toISOString():v);
+  for(const [k,v] of Object.entries(filters))if(v)params.set(k,k==="desde"||k==="hasta"?new Date(k==="hasta"?`${v}T23:59:59`:`${v}T00:00:00`).toISOString():v);
   const {data,loading,error,refresh}=useList<Audit>(`auditoria?${params}`);
   const change=useCallback((k:string,v:string)=>{setFilters(f=>({...f,[k]:v}));setSkip(0)},[]);
-  return <><div className="grid gap-3 md:grid-cols-3">{Object.entries({q:"Buscar acción, motivo u origen",accion:"Acción exacta",entidad:"Entidad exacta",entidadId:"Identificador de entidad (UUID)",desde:"Desde",hasta:"Hasta"}).map(([k,label])=><label className="text-sm" key={k}>{label}<Input type={["desde","hasta"].includes(k)?"datetime-local":"text"} value={filters[k as keyof typeof filters]} onChange={e=>change(k,e.target.value)}/></label>)}</div><div className="my-3"><Picker path="usuarios" label="Usuario de auditoría" value={filters.usuarioId} onChange={id=>change("usuarioId",id)}/></div><Button variant="outline" onClick={refresh}>Actualizar auditoría</Button><ListStatus loading={loading} error={error} empty={!data.total}/>{!loading&&!error&&<div className="mt-4 overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-muted"><tr>{["Fecha","Usuario","Acción","Entidad / identificador","Origen","Detalle"].map(h=><th key={h} className="p-3">{h}</th>)}</tr></thead><tbody>{data.rows.map(a=><tr key={a.id} className="border-b"><td className="p-3">{new Date(a.createdAt).toLocaleString("es-VE")}</td><td className="p-3">{a.usuario?.nombre??"Sistema / no registrado"}</td><td className="p-3">{a.accion}</td><td className="p-3">{a.entidad}<p className="font-mono text-xs">{a.entidadId}</p></td><td className="p-3 text-xs">{a.origen}</td><td className="p-3"><Button variant="outline" onClick={()=>setSelected(a)}>Antes / después</Button></td></tr>)}</tbody></table></div>}<Pager skip={skip} total={data.total} setSkip={setSkip}/>{selected&&<Dialog title="Detalle de auditoría" close={()=>setSelected(null)}><p className="mb-4">{selected.motivo}</p><div className="grid gap-4 md:grid-cols-2">{[["Antes",selected.valorAnterior],["Después",selected.valorNuevo]].map(([label,value])=><section key={String(label)}><h3 className="font-semibold">{String(label)}</h3><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted p-3 text-xs">{JSON.stringify(value,null,2)}</pre></section>)}</div></Dialog>}</>;
+  const active=Object.values(filters).some(Boolean);
+  // Auditoría en lenguaje claro: qué pasó, quién, cuándo, sobre qué y desde dónde; el detalle muestra qué cambió.
+  return <>
+    <div className="grid gap-3 md:grid-cols-[2fr_1fr]">
+      <label className="grid gap-1 text-sm">Buscar<Input value={filters.q} placeholder="Motivo, acción u origen" onChange={e=>change("q",e.target.value)}/></label>
+      <label className="grid gap-1 text-sm">Qué pasó<select aria-label="Qué pasó" className={selectClass} value={filters.accion} onChange={e=>change("accion",e.target.value)}><option value="">Todas las acciones</option>{accionesAuditoria.map(a=><option key={a.codigo} value={a.codigo}>{a.texto}</option>)}</select></label>
+    </div>
+    <details className="mt-3 rounded-xl border px-4 py-3 text-sm" open={Boolean(filters.entidad||filters.desde||filters.hasta||filters.usuarioId||filters.entidadId)}><summary className="cursor-pointer font-semibold">Más filtros</summary><div className="mt-3 grid gap-3 md:grid-cols-3">
+      <label className="grid gap-1 text-sm">Sobre qué<select aria-label="Sobre qué" className={selectClass} value={filters.entidad} onChange={e=>change("entidad",e.target.value)}><option value="">Todos los registros</option>{entidadesAuditoria.map(a=><option key={a.codigo} value={a.codigo}>{a.texto}</option>)}</select></label>
+      <label className="grid gap-1 text-sm">Desde el día<Input type="date" value={filters.desde} onChange={e=>change("desde",e.target.value)}/></label>
+      <label className="grid gap-1 text-sm">Hasta el día<Input type="date" value={filters.hasta} onChange={e=>change("hasta",e.target.value)}/></label>
+      <div className="md:col-span-3"><Picker path="usuarios" label="Persona" value={filters.usuarioId} onChange={id=>change("usuarioId",id)}/></div>
+      <label className="grid gap-1 text-sm md:col-span-3">Identificador del registro (de "Datos técnicos")<Input value={filters.entidadId} onChange={e=>change("entidadId",e.target.value)}/></label>
+    </div></details>
+    <div className="mt-3 flex flex-wrap items-center gap-2"><Button variant="outline" onClick={refresh}>Actualizar</Button>{active&&<Button variant="ghost" onClick={()=>{setFilters({q:"",usuarioId:"",accion:"",entidad:"",entidadId:"",desde:"",hasta:""});setSkip(0)}}>Quitar filtros</Button>}{!loading&&!error&&<span className="text-sm text-muted-foreground">{data.total.toLocaleString("es-VE")} registro(s)</span>}</div>
+    <ListStatus loading={loading} error={error} empty={!data.total}/>
+    {!loading&&!error&&<ol aria-label="Registros de auditoría" className="mt-4 divide-y rounded-2xl border bg-card">{data.rows.map(a=><li key={a.id} className="grid gap-2 p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center sm:gap-4">
+      <IconoAccion accion={a.accion}/>
+      <div className="min-w-0">
+        <p className="font-semibold leading-5"><span>{autorAuditoria(a)}</span> <span className="font-normal text-muted-foreground">·</span> {accionAuditoria(a.accion).texto}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{fechaAuditoria(a.createdAt)} · {entidadAuditoria(a.entidad)} · {origenAuditoria(a.origen)}</p>
+        {a.motivo&&<p className="mt-1 line-clamp-2 text-sm">{a.motivo}</p>}
+      </div>
+      <Button variant="outline" size="sm" className="w-fit" onClick={()=>setSelected(a)}>Ver detalle</Button>
+    </li>)}</ol>}
+    <Pager skip={skip} total={data.total} setSkip={setSkip}/>
+    {selected&&<Dialog title="Detalle de auditoría" close={()=>setSelected(null)}><DetalleAuditoria registro={selected}/></Dialog>}
+  </>;
 }
 type SyncRow={region:{id:string;codigo:string;nombre:string;sitios:number};cuenta:{id:string;email:string;nombre:string;estado:string;activo:boolean;createdAt:string}|null};
 function SyncAccountAction({row,action,done,close}:{row:SyncRow;action:"crear"|"ACTIVO"|"INACTIVO";done:()=>void;close:()=>void}) {
@@ -202,8 +231,8 @@ export default function AdministrationPanel({actor,canManage}:{actor:UsuarioSesi
     <a className="workspace-skip" href="#administration-content">Ir al contenido</a>
     <header className="workspace-chrome"><WorkspaceHeader subtitle="Administración"><span className="hidden max-w-48 truncate text-sm text-muted-foreground md:block">{actorName}</span><ThemeToggle compact/><LogoutButton/></WorkspaceHeader><WorkspaceNavigation label="Módulos administrativos" value={tab} onChange={setTab} items={tabs}/></header>
     <main id="administration-content" tabIndex={-1} className="workspace-content">
-      <div className="workspace-page-heading"><div><p className="workspace-eyebrow">{canManage ? "Administración nacional" : "Trazabilidad operativa"}</p><h1>{current.label}</h1><p className="workspace-page-description">{canManage ? "Personas, regiones y accesos. Una estructura conectada." : "Consulta los cambios y su historial."}</p></div><span className="workspace-role-tag"><ShieldCheck className="size-4"/>{canManage ? "Administrador" : "Auditoría"}</span></div>
-      <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">{canManage&&<SincronizacionEstado/>}<section className={tab==="inicio"||tab==="cuenta"?"":"rounded-3xl border bg-card p-4 shadow-sm sm:p-6"}>{tab==="inicio"?<AdminHome open={setTab}/>:tab==="cuenta"?<AccountSettings user={actor}/>:tab==="usuarios"?<Users actorId={actorId}/>:tab==="entidades"?<Entities/>:tab==="sincronizacion"&&canManage?<SyncAccounts/>:tab==="restablecer"&&canManage?<ProjectResetPanel/>:<AuditLog/>}</section></div>
+      <div className="workspace-page-heading"><div><p className="workspace-eyebrow">{canManage ? "Administración nacional" : "Trazabilidad operativa"}</p><h1>{current.label}</h1><p className="workspace-page-description">{{inicio:"Personas, regiones y accesos. Una estructura conectada.",usuarios:"Cuentas, roles y a qué región, bodega o tienda tiene acceso cada persona.",entidades:"Regiones, bodegas y tiendas del territorio.",sincronizacion:"Cargas automáticas desde SQL Server y cuentas de sincronización por región.",auditoria:"Quién hizo qué, cuándo, desde dónde y qué cambió.",restablecer:"Borrado total protegido, con respaldo verificado.",cuenta:"Perfil, seguridad, modo y paleta de colores."}[tab]}</p></div><span className="workspace-role-tag"><ShieldCheck className="size-4"/>{canManage ? "Administrador" : "Auditoría"}</span></div>
+      <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">{canManage&&(tab==="inicio"||tab==="sincronizacion")&&<SincronizacionEstado/>}<section className={tab==="inicio"||tab==="cuenta"?"":"rounded-3xl border bg-card p-4 shadow-sm sm:p-6"}>{tab==="inicio"?<AdminHome open={setTab}/>:tab==="cuenta"?<AccountSettings user={actor}/>:tab==="usuarios"?<Users actorId={actorId}/>:tab==="entidades"?<Entities/>:tab==="sincronizacion"&&canManage?<SyncAccounts/>:tab==="restablecer"&&canManage?<ProjectResetPanel/>:<AuditLog/>}</section></div>
     </main>
   </div>;
 }

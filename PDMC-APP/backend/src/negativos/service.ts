@@ -13,7 +13,7 @@ export class NegativosService {
       const negativo = await tx.negativo.findFirst({ where: { id, bodegaId, fusionadoEnId: null }, include: { producto: true, bodegaProducto: true } });
       if (!negativo) throw new NegativosError(404, "NO_ENCONTRADO", "Negativo inexistente en esta bodega.");
       const [historial,total,inventario,inconsistencias,canCount,canEdit] = await Promise.all([
-        tx.historialNegativo.findMany({ where: { negativoId: id }, skip, take, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
+        tx.historialNegativo.findMany({ where: { negativoId: id }, include: { usuario: { select: { nombre: true } } }, skip, take, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
         tx.historialNegativo.count({ where: { negativoId: id } }),
         tx.inventarioActual.aggregate({ where: { productoId: negativo.productoId }, _sum: { existencia: true } }),
         tx.inconsistencia.findMany({where:{codigoBarra:negativo.producto.codigoBarra,resuelto:false},orderBy:[{fecha:"desc"},{updatedAt:"desc"}],take:10,select:{id:true,transferencia:true,sucursal:true,tipoError:true,cantidadErrada:true,fecha:true}}),

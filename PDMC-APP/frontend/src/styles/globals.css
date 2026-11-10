@@ -815,11 +815,14 @@ article.pdmc-surface:hover {
 
 @media (prefers-reduced-motion: no-preference) {
   .workspace main > div > * {
-    animation: pdmc-enter 320ms cubic-bezier(.2,.75,.25,1) both;
+    /* backwards: la animación no deja ningún transform aplicado al terminar. */
+    animation: pdmc-enter 320ms cubic-bezier(.2,.75,.25,1) backwards;
   }
   @keyframes pdmc-enter {
     from { opacity: 0; transform: translateY(7px); }
-    to { opacity: 1; transform: translateY(0); }
+    /* Un transform que queda aplicado encierra a los elementos fijos (las hojas del celular)
+       dentro del módulo, debajo del encabezado flotante: por eso la animación no lo conserva. */
+    to { opacity: 1; transform: none; }
   }
 }
 
@@ -1168,3 +1171,11 @@ article.pdmc-surface:hover {
 body:has(#nl-badge-frame) .store-liquid-nav { bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
 body:has(#nl-badge-frame) .store-workspace { padding-bottom: 12rem; }
 body:has(#nl-badge-frame) .workspace-content { padding-bottom: 6rem; }
+
+/* Expediente de un negativo o una inconsistencia en celular y tablet: hoja de pantalla completa,
+   sólida, por encima del encabezado flotante; el fondo no se desplaza mientras está abierta. */
+@media (max-width: 1279.98px) {
+  .case-sheet { background: var(--background); border-radius: 0; box-shadow: none; padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)); }
+  body:has(.case-sheet) { overflow: hidden; }
+  body:has(#nl-badge-frame) .case-sheet { padding-bottom: 5.5rem; }
+}
