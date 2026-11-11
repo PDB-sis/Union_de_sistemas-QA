@@ -41,8 +41,3 @@ export function hasPermission(grants: readonly Grant[], permission: Permission) 
   return grants.some(g => asignacionValida(g) && permissionMatrix[g.rol]?.includes(permission));
 }
 
-export function allowsGeneralNegatives(grants: readonly Grant[], permission: Permission) {
-  return permission.startsWith("negativos.") && grants.some(g =>
-    g.rol === "MEJORA_CONTINUA" && asignacionValida(g) && permissionMatrix.MEJORA_CONTINUA.includes(permission)
-  );
-}

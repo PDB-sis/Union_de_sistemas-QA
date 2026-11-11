@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "../../generated/prisma/client";
-import { allows, allowsGeneralNegatives, hasPermission, permissionMatrix, type Permission, type Resource } from "@pdmc/contratos/auth/permissions";
+import { allows, hasPermission, permissionMatrix, type Permission, type Resource } from "@pdmc/contratos/auth/permissions";
 import { AuthError } from "./service";
 import { dimInventario } from "../sync/agente";
 
@@ -20,8 +20,8 @@ export class Authorization {
   }
   async has(permission:Permission){return hasPermission(await this.grants(),permission);}
   /**
-   * La bodega general de Negativos guarda el inventario del sitio PDMC_INVENTARIO_DIM_ID: la ven
-   * quienes cubren ese sitio (su bodega o su región), además de Mejora Continua.
+   * La bodega general de Negativos guarda el inventario del sitio PDMC_INVENTARIO_DIM_ID: la ven solo
+   * quienes cubren ese sitio (su bodega o su región). Otra región no ve esos negativos ni ese inventario.
    */
   private site?:Promise<Resource|null>;
   generalSite():Promise<Resource|null>{
@@ -29,9 +29,14 @@ export class Authorization {
   }
   async allowsGeneral(grants:Awaited<ReturnType<Authorization["grants"]>>,permission:Permission){
     if(!permission.startsWith("negativos."))return false;
-    if(allowsGeneralNegatives(grants,permission))return true;
     const site=await this.generalSite();
     return Boolean(site&&allows(grants,permission,site));
+  }
+  /** El inventario de PDMC es el del sitio PDMC_INVENTARIO_DIM_ID: solo para quien cubre ese sitio. */
+  async inventory(permission:Permission="inventario.administrar"){
+    await this.permitted(permission);
+    const site=await this.generalSite();
+    if(!site||!allows(await this.grants(),permission,site))throw new AuthError(403,"INVENTARIO_REGION","El inventario y los negativos de tu región todavía no están conectados a PDMC: hoy PDMC lee el inventario de una sola bodega, de otra región.");
   }
   async locationScope(permission:Permission,type:"REGION"|"BODEGA"|"TIENDA") {
     const grants=await this.grants();
@@ -104,6 +109,8 @@ export class Authorization {
 const importacionesDelSistema: readonly Permission[] = ["inventario.administrar", "transferencias.importar", "devoluciones.importar"];
 export class SystemAuthorization extends Authorization {
   constructor(db: PrismaClient, userId: string, private sitio?: Resource) { super(db, userId); }
+  // La sincronización ya carga solo los sitios de su región (permitted, más abajo).
+  async inventory(permission: Permission = "inventario.administrar") { await this.permitted(permission); }
   async permitted(permission: Permission) {
     if (!this.userId || !importacionesDelSistema.includes(permission)) throw denied();
     const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{email:true,activo:true,estado:true,asignaciones:{include:{ubicacion:true}}}});

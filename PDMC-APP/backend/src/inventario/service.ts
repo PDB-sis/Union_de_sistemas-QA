@@ -57,18 +57,18 @@ export function validateInventory(raw:unknown){
 export class InventoryService{
   constructor(private db:PrismaClient,private access:Authorization){}
   async summary(){
-    await this.access.permitted("inventario.administrar");
+    await this.access.inventory("inventario.administrar");
     const now=new Date(),week=negativeWeekRange(now),window=negativeCutWindow(now);
     const [latest,total,codes,mappings,bodegas,lastPhoto,weekCuts]=await Promise.all([this.db.consultaInventario.findFirst({orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]}),this.db.inventarioActual.count(),this.db.inventarioActual.groupBy({by:["productoId"]}),this.db.lineaInventario.findMany({include:{bodegaProducto:true},orderBy:{linea:"asc"}}),this.db.bodegaProducto.findMany({orderBy:{nombre:"asc"}}),this.db.fotoNegativos.findFirst({orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}]}),this.db.fotoNegativos.count({where:{fechaCorte:week}})]);
     return {latest,total,codigos:codes.length,bodegasAsignadas:new Set(mappings.filter(x=>x.bodegaProductoId).map(x=>x.bodegaProductoId)).size,mappings,bodegas,negativos:{ultimaFoto:lastPhoto,cortesSemana:weekCuts,maximoSemanal:2,ventana:window.tipo,puedePublicar:weekCuts<2}};
   }
   async products(raw:unknown){
-    await this.access.permitted("inventario.administrar");const input=z.object({linea:z.string().trim().min(1).max(200),q:z.string().trim().max(200).default(""),skip:z.coerce.number().int().min(0).default(0),take:z.coerce.number().int().min(1).max(100).default(25)}).strict().parse(raw);
+    await this.access.inventory("inventario.administrar");const input=z.object({linea:z.string().trim().min(1).max(200),q:z.string().trim().max(200).default(""),skip:z.coerce.number().int().min(0).default(0),take:z.coerce.number().int().min(1).max(100).default(25)}).strict().parse(raw);
     const where={subcategoria:{equals:input.linea,mode:"insensitive" as const},...(input.q?{producto:{OR:[{codigoBarra:{contains:input.q,mode:"insensitive" as const}},{referencia:{contains:input.q,mode:"insensitive" as const}},{descripcion:{contains:input.q,mode:"insensitive" as const}}]}}:{})};
     const [rows,total]=await this.db.$transaction([this.db.inventarioActual.findMany({where,skip:input.skip,take:input.take,orderBy:{producto:{codigoBarra:"asc"}},include:{producto:{include:{excepcionBodega:{include:{bodegaProducto:true}}}},bodegaProducto:true}}),this.db.inventarioActual.count({where})]);return {rows,total,skip:input.skip,take:input.take};
   }
   async assignProduct(raw:unknown){
-    await this.access.permitted("inventario.administrar");const input=z.object({productoId:uuid,bodegaProductoId:uuid.nullable(),version:z.number().int().min(0)}).strict().parse(raw);
+    await this.access.inventory("inventario.administrar");const input=z.object({productoId:uuid,bodegaProductoId:uuid.nullable(),version:z.number().int().min(0)}).strict().parse(raw);
     return this.db.$transaction(async tx=>{
       const product=await tx.producto.findUnique({where:{id:input.productoId},include:{excepcionBodega:true}});if(!product)throw new NegativosError(404,"PRODUCTO","Producto inexistente.");
       const before=product.excepcionBodega;if((before?.version??0)!==input.version)throw new NegativosError(409,"VERSION","La excepción cambió. Actualice la vista.");
@@ -81,7 +81,7 @@ export class InventoryService{
     },{timeout:30_000});
   }
   async assign(raw:unknown){
-    await this.access.permitted("inventario.administrar");const input=z.object({id:uuid,bodegaProductoId:uuid.nullable(),version:z.number().int().min(1)}).strict().parse(raw);
+    await this.access.inventory("inventario.administrar");const input=z.object({id:uuid,bodegaProductoId:uuid.nullable(),version:z.number().int().min(1)}).strict().parse(raw);
     return this.db.$transaction(async tx=>{
       const before=await tx.lineaInventario.findUnique({where:{id:input.id}});if(!before)throw new NegativosError(404,"LINEA","Línea inexistente.");
       if(before.version!==input.version)throw new NegativosError(409,"VERSION","La asignación cambió. Actualice la vista.");
@@ -94,13 +94,13 @@ export class InventoryService{
       await tx.auditoria.create({data:{usuarioId:this.access.userId,entidad:"LineaInventario",entidadId:before.id,accion:"ASIGNAR_BODEGA_LINEA",motivo:"Asignación manual de línea de inventario",valorAnterior:{linea:before.linea,bodegaProductoId:before.bodegaProductoId},valorNuevo:{linea:after.linea,bodegaProductoId:after.bodegaProductoId}}});return after;
     });
   }
-  async preview(raw:unknown){await this.access.permitted("inventario.administrar");return validateInventory(raw).summary;}
+  async preview(raw:unknown){await this.access.inventory("inventario.administrar");return validateInventory(raw).summary;}
   async createWarehouse(raw:unknown){
-    await this.access.permitted("inventario.administrar");const {nombre}=z.object({nombre:z.string().trim().min(1).max(200)}).strict().parse(raw);
+    await this.access.inventory("inventario.administrar");const {nombre}=z.object({nombre:z.string().trim().min(1).max(200)}).strict().parse(raw);
     return this.db.$transaction(async tx=>{const existing=await tx.bodegaProducto.findFirst({where:{nombre:{equals:nombre,mode:"insensitive"}}});if(existing)return existing;const created=await tx.bodegaProducto.create({data:{nombre}});await tx.auditoria.create({data:{usuarioId:this.access.userId,entidad:"BodegaProducto",entidadId:created.id,accion:"CREAR_BODEGA_PRODUCTO",motivo:"Bodega creada desde la asignación de líneas de inventario",valorNuevo:{nombre}}});return created;});
   }
   async import(raw:unknown){
-    await this.access.permitted("inventario.administrar");const validated=validateInventory(raw);
+    await this.access.inventory("inventario.administrar");const validated=validateInventory(raw);
     if(validated.summary.rechazados)throw new NegativosError(422,"FILAS_INVALIDAS","Corrija las filas rechazadas antes de importar.",validated.summary);
     if(!validated.rows.length)throw new NegativosError(422,"INVENTARIO_VACIO","La carga debe contener al menos una fila válida.");
     const hash=createHash("sha256").update(validated.input.contenido,"utf8").digest("hex");

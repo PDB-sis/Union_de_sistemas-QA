@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {allows,allowsGeneralNegatives,hasPermission} from "@pdmc/contratos/auth/permissions";
+import {allows,hasPermission} from "@pdmc/contratos/auth/permissions";
 import {assignmentsSchema} from "../src/auth/access-management.ts";
 const grant=(rol,ubicacionId=null,tipo="TIENDA")=>({rol,ubicacionId,ubicacion:ubicacionId?{tipo}:null});
 test("denegación por defecto, alcance por región y combinación sin producto cruzado",()=>{
@@ -24,20 +24,12 @@ test("no hay alcance nacional operativo: un rol sin ubicación no concede nada; 
     assert.equal(allows([grant(rol)],"negativos.leer"),false,rol);
     assert.equal(hasPermission([grant(rol)],"negativos.leer"),false,rol);
   }
-  assert.equal(allowsGeneralNegatives([grant("MEJORA_CONTINUA")],"negativos.editar"),false);
   assert.equal(allows([grant("ADMINISTRADOR")],"ubicaciones.administrar"),true);
   assert.equal(allows([grant("ADMINISTRADOR")],"negativos.leer",{id:"A",regionId:"R"}),true);
 });
 
-test("Mejora Continua regional puede accionar la bodega general de negativos",()=>{
-  const regional=[grant("MEJORA_CONTINUA","R","REGION")];
-  assert.equal(allowsGeneralNegatives(regional,"negativos.editar"),true);
-  assert.equal(allowsGeneralNegatives(regional,"negativos.estado"),true);
-  assert.equal(allowsGeneralNegatives(regional,"negativos.aprobar"),true);
-  assert.equal(allowsGeneralNegatives(regional,"negativos.ajustar"),true);
-  assert.equal(allowsGeneralNegatives([grant("RECTIFICACION","R","REGION")],"negativos.editar"),false);
-  assert.equal(allowsGeneralNegatives(regional,"inconsistencias.editar"),false);
-});
+// La bodega general de negativos ya no es de todo Mejora Continua: solo de quien cubre el sitio del
+// inventario (backend/tests/admin.integration.mjs: "cada región ve solo los negativos de su inventario").
 test("asignaciones requieren rol válido y alcance explícito; rechazan duplicados",()=>{
   assert.throws(()=>assignmentsSchema.parse([{rol:"TIENDA"}]));
   assert.throws(()=>assignmentsSchema.parse([{rol:"ROOT",ubicacionCodigo:null}]));

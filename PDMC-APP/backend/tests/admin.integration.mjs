@@ -258,13 +258,21 @@ test("el facturador ve solo lo suyo; Mejora Continua y Jefe de bodega ven a los 
   assert.equal((await new TransferQueryService(db,jefe.access).detail(`${numero}L`)).facturador,"Luis Facturador");
   await assert.rejects(new TransferQueryService(db,lejana.access).detail(`${numero}L`),{status:403});
 });
-test("mejora continua regional puede trabajar la bodega técnica de negativos sin abrir otras regiones",async()=>{
-  const region=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Región MC",tipo:"REGION"}}),otherRegion=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Otra región",tipo:"REGION"}});
-  const otherLocation=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Bodega ajena",tipo:"BODEGA",regionId:otherRegion.id}});
-  const general=await db.bodega.create({data:{codigo:"PDMC_GENERAL",nombre:"Negativos generales"}}),other=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Bodega regional ajena",ubicacionId:otherLocation.id}});
-  const mc=await user([{rol:"MEJORA_CONTINUA",ubicacionId:region.id}]),scope=await mc.access.filter("negativos.leer");
-  const visible=await db.bodega.findMany({where:{id:scope},select:{id:true}}),ids=new Set(visible.map(row=>row.id));
-  assert.equal(ids.has(general.id),true);assert.equal(ids.has(other.id),false);
+test("cada región ve solo los negativos y el inventario de su bodega: Margarita no ve los de Occidente",async()=>{
+  const previo=process.env.PDMC_INVENTARIO_DIM_ID;process.env.PDMC_INVENTARIO_DIM_ID="7104";
+  try{
+    const occidente=await region(),margarita=await region();
+    const sitio=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Bodega Maracaibo",tipo:"BODEGA",regionId:occidente.id,dimIdTienda:7104}});
+    const general=await db.bodega.upsert({where:{codigo:"PDMC_GENERAL"},update:{},create:{codigo:"PDMC_GENERAL",nombre:"Negativos"}});
+    const ve=async u=>(await db.bodega.findMany({where:{id:await u.access.filter("negativos.leer")},select:{id:true}})).some(b=>b.id===general.id);
+    const mcOccidente=await user([{rol:"MEJORA_CONTINUA",ubicacionId:occidente.id}]),mcMargarita=await user([{rol:"MEJORA_CONTINUA",ubicacionId:margarita.id}]);
+    assert.equal(await ve(mcOccidente),true);
+    assert.equal(await ve(mcMargarita),false);
+    // El inventario es el de esa bodega: Margarita recibe un aviso claro, no el inventario de Occidente.
+    await mcOccidente.access.inventory();
+    await assert.rejects(mcMargarita.access.inventory(),{status:403,code:"INVENTARIO_REGION"});
+    assert.ok(sitio.id);
+  }finally{if(previo===undefined)delete process.env.PDMC_INVENTARIO_DIM_ID;else process.env.PDMC_INVENTARIO_DIM_ID=previo}
 });
 test("rectificación de la región o la bodega del inventario ve los negativos; la de otra región no",async()=>{
   const previo=process.env.PDMC_INVENTARIO_DIM_ID;process.env.PDMC_INVENTARIO_DIM_ID="7004";
