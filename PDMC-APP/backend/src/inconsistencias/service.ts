@@ -8,6 +8,7 @@ import {countVisibility,countWorkflow} from "@pdmc/contratos/workflow/count-rout
 import {currentMonth,monthRange} from "@pdmc/contratos/month";
 import {denied,Authorization} from "../auth/authorization";
 import {NegativosError,uuid} from "../negativos/validation";
+import {lineasDisponibles,productoEnLinea} from "../inventario/lineas";
 const option=<T extends readonly [string,...string[]]>(values:T)=>z.preprocess(v=>typeof v==="string"?canonicalOption(v,values):v,z.union([z.enum(values),z.literal(""),z.null()])).transform(v=>v||null);
 
 export const editSchema=z.object({
@@ -44,7 +45,14 @@ export class InconsistencyService{
     const workflow=input.cola==="pendientes"&&canEdit?"conteo":input.cola==="gestion"&&canEdit?"gestion":automaticWorkflow;
     const source:Prisma.InconsistenciaWhereInput={};
     const territory:Prisma.InconsistenciaWhereInput=storeScope.national?{}:{OR:[{tiendaId:{in:storeScope.rows.map(store=>store.id)}},...storeScope.rows.map(store=>({tiendaId:null,sucursal:{equals:store.nombre,mode:"insensitive" as const}}))]};
-    const summaryFlow:Prisma.InconsistenciaWhereInput={AND:[territory,...(input.bodegaProductoId?[{OR:[{bodegaProductoId:input.bodegaProductoId},{bodegaProductoId:null,producto:{inventarios:{some:{bodegaProductoId:input.bodegaProductoId}}}}]}]:[])],fecha:monthRange(input.mes),...(input.sucursal?{sucursal:input.sucursal}:{}),...(input.linea?{producto:{linea:input.linea}}:{}),...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{})};
+    // Línea: la que reportan las bodegas de la región de cada tienda (puede variar entre bodegas);
+    // sin bodega con ese producto en su inventario, la línea general del producto.
+    const tiendasVisibles=await this.db.ubicacion.findMany({where:{tipo:"TIENDA",...(storeScope.national?{}:{id:{in:storeScope.rows.map(store=>store.id)}})},select:{regionId:true}});
+    const regiones=[...new Set(tiendasVisibles.map(t=>t.regionId).filter((id):id is string=>Boolean(id)))];
+    const bodegasRegion=regiones.length?await this.db.ubicacion.findMany({where:{tipo:"BODEGA",regionId:{in:regiones}},select:{id:true,regionId:true}}):[];
+    const sitiosDeRegion=(regionId:string)=>bodegasRegion.filter(b=>b.regionId===regionId).map(b=>b.id);
+    const porLinea:Prisma.InconsistenciaWhereInput[]=input.linea?[{OR:[...regiones.map(regionId=>({tienda:{regionId},producto:productoEnLinea(input.linea,sitiosDeRegion(regionId))})),{tiendaId:null,producto:productoEnLinea(input.linea,[])},{tienda:{regionId:null},producto:productoEnLinea(input.linea,[])}]}]:[];
+    const summaryFlow:Prisma.InconsistenciaWhereInput={AND:[territory,...porLinea,...(input.bodegaProductoId?[{OR:[{bodegaProductoId:input.bodegaProductoId},{bodegaProductoId:null,producto:{inventarios:{some:{bodegaProductoId:input.bodegaProductoId}}}}]}]:[])],fecha:monthRange(input.mes),...(input.sucursal?{sucursal:input.sucursal}:{}),...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{})};
     // Toda corrección registrada (no solo el ajuste) pasa por Verificación antes de cerrarse.
     const enGestion:Prisma.InconsistenciaWhereInput={conteoFisico:{not:null},ajustado:false,correccionEjecutadaAt:null,formaCorreccion:null};
     const enCorreccion:Prisma.InconsistenciaWhereInput={conteoFisico:{not:null},ajustado:false,correccionEjecutadaAt:null,formaCorreccion:{not:null,notIn:[SIN_CORRECCION]}};
@@ -55,11 +63,11 @@ export class InconsistencyService{
       ...flow,
       ...(input.estado==="pendientes"?{resuelto:false}:input.estado==="resueltos"?{resuelto:true}:input.estado==="ajuste"?{OR:[{ajustar:{not:null}},{ajustado:true}]}:{}),
       ...(input.sucursal?{sucursal:input.sucursal}:{}),
-      ...(input.linea?{producto:{linea:input.linea}}:{}),
       ...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{}),
       AND:[
         // La cola va en AND para no pisar otros filtros con OR.
         ...(input.flujo==="trabajo"&&canEdit?[queue]:[]),
+        ...porLinea,
         ...(!storeScope.national?[{OR:[{tiendaId:{in:storeScope.rows.map(store=>store.id)}},...storeScope.rows.map(store=>({tiendaId:null,sucursal:{equals:store.nombre,mode:"insensitive" as const}}))]}]:[]),
         ...(input.bodegaProductoId?[{OR:[{bodegaProductoId:input.bodegaProductoId},{bodegaProductoId:null,producto:{inventarios:{some:{bodegaProductoId:input.bodegaProductoId}}}}]}]:[]),
         ...(input.q?[{OR:[{transferencia:{contains:input.q,mode:"insensitive" as const}},{codigoBarra:{contains:input.q,mode:"insensitive" as const}},{referencia:{contains:input.q,mode:"insensitive" as const}},{comentarioAdmin:{contains:input.q,mode:"insensitive" as const}}]}]:[]),
@@ -72,9 +80,9 @@ export class InconsistencyService{
       this.db.inconsistencia.findMany({where:territory,distinct:["sucursal"],select:{sucursal:true},orderBy:{sucursal:"asc"}}),
       this.db.bodegaProducto.findMany({select:{id:true,nombre:true},orderBy:{nombre:"asc"}}),
       // Líneas de los productos con inconsistencias del territorio, para filtrar por línea.
-      this.db.producto.findMany({where:{linea:{not:null},inconsistencias:{some:territory}},distinct:["linea"],select:{linea:true},orderBy:{linea:"asc"}}),
+      lineasDisponibles(this.db,bodegasRegion.map(b=>b.id),{inconsistencias:{some:territory}}),
     ]);
-    return {workflow,rows,total,skip:input.skip,take:input.take,summary:{total:summary[0],pendientes:summary[1],resueltos:summary[2],ajustados:summary[3],sinConteo:summary[4],conConteo:summary[5],porCorregir:summary[6],porVerificar:summary[7]},stores:stores.map(x=>x.sucursal),warehouses,lines:lines.map(x=>x.linea!).filter(Boolean),options:INCONSISTENCY_OPTIONS};
+    return {workflow,rows,total,skip:input.skip,take:input.take,summary:{total:summary[0],pendientes:summary[1],resueltos:summary[2],ajustados:summary[3],sinConteo:summary[4],conConteo:summary[5],porCorregir:summary[6],porVerificar:summary[7]},stores:stores.map(x=>x.sucursal),warehouses,lines,options:INCONSISTENCY_OPTIONS};
   }
   async update(raw:unknown){
     await this.access.permitted("inconsistencias.editar");const input=editSchema.parse(raw);

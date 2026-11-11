@@ -85,6 +85,8 @@ const mejora = await db.usuario.findUniqueOrThrow({ where: { email: "mejora@movi
 const consulta = randomUUID(), negativo = randomUUID();
 await db.$executeRawUnsafe(`INSERT INTO "ConsultaInventario" (id,"usuarioId","nombreArchivo","fechaConsulta","hashArchivo","totalFilas","ubicacionId") VALUES ($1::uuid,$2::uuid,'movil.csv',now(),$3,1,$4::uuid)`, consulta, mejora.id, randomBytes(32).toString("hex"), bodegaUbicacion.id);
 await db.$executeRawUnsafe(`INSERT INTO "InventarioActual" (id,"consultaId","ubicacionId","productoId",existencia,activo) VALUES ($1::uuid,$2::uuid,$4::uuid,$3::uuid,-3,true)`, randomUUID(), consulta, productos[1].id, bodegaUbicacion.id);
+// La bodega reporta su propia línea para el producto, distinta de la general («Caballero»).
+await db.inventarioActual.updateMany({ where: { productoId: productos[1].id }, data: { subcategoria: "CABALLERO JEAN" } });
 await db.$executeRawUnsafe(`INSERT INTO "Negativo" (id,"productoId","bodegaId",estado,"primeraDeteccion","ultimaDeteccion","updatedAt") VALUES ($1::uuid,$2::uuid,$3::uuid,'Nuevo',now(),now(),now())`, negativo, productos[1].id, bodegaFisica.id);
 await db.$executeRawUnsafe(`INSERT INTO "HistorialNegativo" (id,"negativoId","usuarioId",accion,motivo,"valorAnterior","valorNuevo") VALUES ($1::uuid,$2::uuid,NULL,'ACTUALIZAR_DESDE_INVENTARIO','Detectado en la consulta de inventario',NULL,'{"estado":"NUEVO","existencia":"-3.0000"}'::jsonb),($3::uuid,$2::uuid,$4::uuid,'EDITAR_SEGUIMIENTO','Revisión de la bodega','{"estado":"NUEVO","observaciones":""}'::jsonb,'{"estado":"EN_INVESTIGACION","observaciones":"Se revisará en el próximo conteo"}'::jsonb)`, randomUUID(), negativo, randomUUID(), mejora.id);
 await db.$executeRawUnsafe(`INSERT INTO "Auditoria" (id,"usuarioId",entidad,"entidadId",accion,motivo,origen,"valorAnterior","valorNuevo") VALUES ($1::uuid,$2::uuid,'Negativo',$3::uuid,'EDITAR_SEGUIMIENTO','Revisión de la bodega',$4,'{"estado":"NUEVO","observaciones":""}'::jsonb,'{"estado":"EN_INVESTIGACION","observaciones":"Se revisará en el próximo conteo"}'::jsonb)`, randomUUID(), mejora.id, negativo, `WEB PATCH /api/operacion/negativos/casos/${negativo}`);
@@ -201,9 +203,9 @@ try {
           await evaluate(`document.querySelector('button[aria-label^="Ajustes de «"]').click()`);
           await until(() => evaluate(`Boolean(document.querySelector('select[aria-label^="Estado de «"]'))`), "Los ajustes de la tarea no abren");
           await revisar(rol, "proyecto-tareas", ancho);
-          // Filtro por línea en negativos: ofrece las líneas con casos y filtra por la elegida.
-          const lineas = await evaluate(`Promise.all(["", "Caballero", "Dama"].map(l=>fetch('/api/operacion/negativos/lista'+String.fromCharCode(63)+new URLSearchParams({filtro:'all',vista:'historial',linea:l})).then(r=>r.json()).then(b=>b.data)))`);
-          if (!lineas[0].lineas.includes("Caballero") || lineas[1].total !== lineas[0].total || lineas[2].total !== 0) fallas.push({ ancho, rol, pantalla: "negativos-linea", cortados: [`líneas ${JSON.stringify(lineas[0].lineas)} · total ${lineas[0].total}/${lineas[1].total}/${lineas[2].total}`], total: 1, documento: ancho, ancho });
+          // Filtro por línea en negativos: usa la línea que reporta la bodega del caso, no la general del producto.
+          const lineas = await evaluate(`Promise.all(["", "caballero jean", "Caballero"].map(l=>fetch('/api/operacion/negativos/lista'+String.fromCharCode(63)+new URLSearchParams({filtro:'all',vista:'historial',linea:l})).then(r=>r.json()).then(b=>b.data)))`);
+          if (!lineas[0].lineas.includes("CABALLERO JEAN") || lineas[0].lineas.includes("Caballero") || !lineas[0].total || lineas[1].total !== lineas[0].total || lineas[2].total !== 0) fallas.push({ ancho, rol, pantalla: "negativos-linea", cortados: [`líneas ${JSON.stringify(lineas[0].lineas)} · total ${lineas[0].total}/${lineas[1].total}/${lineas[2].total}`], total: 1, documento: ancho, ancho });
         } else if (!(await evaluate(`document.body.textContent.includes("solo lectura")&&document.querySelector('[aria-label="Título del proyecto"]').readOnly`))) fallas.push({ ancho, rol, pantalla: "proyecto", cortados: ["el lector puede editar"], total: 1, documento: ancho, ancho });
         await revisar(rol, "proyecto-compartido", ancho);
       }

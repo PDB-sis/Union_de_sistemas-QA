@@ -115,10 +115,17 @@ test('API de Tienda: permisos, territorio, cruce atómico, auditoría, idempoten
   const appSection=await payload(await INCONSISTENCY_GET(new Request('https://pdmc.example.test/api/inconsistencias?estado=todos',{headers:{cookie:userA.cookie}})));
   assert.equal(appSection.response.status,200);assert.equal(appSection.body.data.total,1);
   // Filtro por línea del producto: la lista ofrece las líneas con casos y filtra por la elegida.
+  // Mientras la bodega de la región no reporta línea para el producto, se usa la general.
   assert.deepEqual(appSection.body.data.lines,['Dama']);
-  const porLinea=async linea=>(await payload(await INCONSISTENCY_GET(new Request(`https://pdmc.example.test/api/inconsistencias?estado=todos&linea=${linea}`,{headers:{cookie:userA.cookie}})))).body.data;
+  const porLinea=async linea=>(await payload(await INCONSISTENCY_GET(new Request(`https://pdmc.example.test/api/inconsistencias?estado=todos&linea=${encodeURIComponent(linea)}`,{headers:{cookie:userA.cookie}})))).body.data;
   assert.equal((await porLinea('Dama')).total,1);
   const caballero=await porLinea('Caballero');assert.equal(caballero.total,0);assert.equal(caballero.summary.total,0);
+  // Si la bodega de la región reporta otra línea para ese código, manda la de la bodega.
+  await db.inventarioActual.updateMany({where:{ubicacionId:bodegaRegion.id,productoId:productA.id},data:{subcategoria:'DAMA OCCIDENTE'}});
+  const conLineaDeBodega=await porLinea('dama occidente');
+  assert.equal(conLineaDeBodega.total,1);assert.deepEqual(conLineaDeBodega.lines,['DAMA OCCIDENTE']);
+  assert.equal((await porLinea('Dama')).total,0);
+  await db.inventarioActual.updateMany({where:{ubicacionId:bodegaRegion.id,productoId:productA.id},data:{subcategoria:null}});
 
   const successId=randomUUID();
   const success=await payload(await POST(request('sin-incidencias',userA,{solicitudId:successId,tiendaId:storeA.id,transferencia:'78749'})));
