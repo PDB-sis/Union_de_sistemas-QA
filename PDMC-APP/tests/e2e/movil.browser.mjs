@@ -155,6 +155,13 @@ try {
       await fill("Usuario", `${rol}@movil.test`); await fill("Contraseña", password);
       await evaluate(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Iniciar sesión').click()`);
       await until(() => evaluate(`location.pathname!=='/login'&&(${hidratado(".workspace-tab, .store-liquid-nav button")})`), `No entró: ${rol}`);
+      // Al iniciar sesión, cada rol entra a SU espacio y a su página de inicio (Mi día), no a otro módulo.
+      const esperado = { administrador: ["/administracion", "Inicio"], mejora: ["/mejora-continua", "Mi día"], tienda: ["/tienda", "Inicio"], rectificacion: ["/rectificacion", "Mi día"], jefe: ["/jefe-bodega", "Mi día"], recepcion: ["/recepcion", "Mi día"], auditoria: ["/auditoria", "Mi día"], facturacion: ["/facturador", "Mi desempeño"] }[rol];
+      await until(() => evaluate(`Boolean(document.querySelector('.workspace-tab[aria-current="page"], .store-liquid-nav button[aria-current="page"]'))`), `${rol} no marca su página activa`);
+      const llegada = await evaluate(`({ruta:location.pathname,activa:document.querySelector('.workspace-tab[aria-current="page"], .store-liquid-nav button[aria-current="page"]').innerText.split('\\n')[0].trim()})`);
+      const bien = llegada.ruta === esperado[0] && llegada.activa === esperado[1];
+      console.info(`${bien ? "✓" : "✗"} ${ancho}px ${rol} · entra a ${llegada.ruta} · ${llegada.activa}${bien ? "" : ` (esperado ${esperado.join(" · ")})`}`);
+      if (!bien) fallas.push({ ancho, rol, pantalla: "entrada", cortados: [`entró a ${llegada.ruta} · ${llegada.activa}`], total: 1, documento: ancho, ancho });
       const tabs = await evaluate(`[...document.querySelectorAll('.workspace-tab, .store-liquid-nav button')].filter(b=>b.offsetWidth).map(b=>b.innerText.split('\\n')[0].trim())`);
       const inicio = await evaluate("location.href");
       for (const tab of tabs.filter(t => t !== "QA")) {

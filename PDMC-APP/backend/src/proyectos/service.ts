@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Prisma, PrismaClient } from "../../generated/prisma/client";
 import { Authorization } from "../auth/authorization";
 import { NegativosError, uuid } from "../negativos/validation";
-import { BLOQUES, COLORES, ESTADOS_PROYECTO, PRIORIDADES, type Bloque } from "@pdmc/contratos/proyectos/modelo";
+import { BLOQUES, COLORES, ESTADOS_PROYECTO, PLANTILLAS, PRIORIDADES, plantillas, type Bloque } from "@pdmc/contratos/proyectos/modelo";
 
 // Proyectos compartidos ("mini Notion"): cada proyecto lo ven su propietario y sus miembros.
 // Propietario y editores cambian la página, las tareas y los miembros; los lectores solo ven y comentan.
@@ -11,7 +11,7 @@ import { BLOQUES, COLORES, ESTADOS_PROYECTO, PRIORIDADES, type Bloque } from "@p
 const fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional();
 const texto = (max: number) => z.string().trim().max(max);
 const bloque = z.object({ id: z.string().min(1).max(40), tipo: z.enum(BLOQUES), texto: z.string().max(4000).default(""), hecho: z.boolean().optional() }).strict();
-const crear = z.object({ titulo: texto(160).min(1), resumen: texto(500).optional() }).strict();
+const crear = z.object({ titulo: texto(160).min(1).optional(), resumen: texto(500).optional(), plantilla: z.enum(PLANTILLAS).default("blanco") }).strict();
 const editar = z.object({
   version: z.number().int().min(1), titulo: texto(160).min(1).optional(), resumen: texto(500).nullable().optional(),
   color: z.enum(COLORES).optional(), estado: z.enum(ESTADOS_PROYECTO).optional(), prioridad: z.enum(PRIORIDADES).optional(),
@@ -55,7 +55,7 @@ export class ProjectService {
     const usuarioId = await this.usuario();
     const filas = await this.db.proyecto.findMany({
       where: { OR: [{ propietarioId: usuarioId }, { miembros: { some: { usuarioId } } }] },
-      select: { id: true, titulo: true, resumen: true, color: true, estado: true, prioridad: true, fechaObjetivo: true, updatedAt: true, propietarioId: true, propietario: persona, miembros: { select: { permiso: true, usuario: persona } }, tareas: { select: { estado: true } } },
+      select: { id: true, version: true, titulo: true, resumen: true, color: true, estado: true, prioridad: true, fechaObjetivo: true, updatedAt: true, propietarioId: true, propietario: persona, miembros: { select: { permiso: true, usuario: persona } }, tareas: { select: { estado: true } } },
       orderBy: [{ updatedAt: "desc" }], take: 500,
     });
     return filas.map(({ tareas, miembros, ...fila }) => ({
@@ -84,12 +84,14 @@ export class ProjectService {
     };
   }
 
+  /** Crea un proyecto, en blanco o desde una plantilla (página y tareas sugeridas). */
   async create(raw: unknown) {
-    const usuarioId = await this.usuario(), input = crear.parse(raw);
-    const contenido: Bloque[] = [{ id: "inicio", tipo: "parrafo", texto: "" }];
+    const usuarioId = await this.usuario(), input = crear.parse(raw), plantilla = plantillas[input.plantilla];
+    const contenido: Bloque[] = plantilla.bloques.map((bloque, indice) => ({ ...bloque, id: `b${indice + 1}` }));
     return this.db.$transaction(async tx => {
-      const proyecto = await tx.proyecto.create({ data: { titulo: input.titulo, resumen: input.resumen || null, propietarioId: usuarioId, contenido } });
-      await this.auditar(tx, proyecto.id, "CREAR_PROYECTO", `Proyecto «${proyecto.titulo}» creado`, undefined, { titulo: proyecto.titulo });
+      const proyecto = await tx.proyecto.create({ data: { titulo: input.titulo || plantilla.titulo, resumen: input.resumen || null, color: plantilla.color, propietarioId: usuarioId, contenido,
+        tareas: { create: plantilla.tareas.map((titulo, orden) => ({ titulo, orden })) } } });
+      await this.auditar(tx, proyecto.id, "CREAR_PROYECTO", `Proyecto «${proyecto.titulo}» creado${input.plantilla === "blanco" ? "" : ` con la plantilla ${plantilla.nombre}`}`, undefined, { titulo: proyecto.titulo });
       return { id: proyecto.id };
     });
   }
@@ -195,6 +197,29 @@ export class ProjectService {
   private async validarResponsable(id: string, responsableId: string) {
     const proyecto = await this.db.proyecto.findUniqueOrThrow({ where: { id }, select: { propietarioId: true, miembros: { select: { usuarioId: true } } } });
     if (responsableId !== proyecto.propietarioId && !proyecto.miembros.some(m => m.usuarioId === responsableId)) throw new NegativosError(422, "RESPONSABLE", "El responsable debe ser alguien con acceso al proyecto. Compártelo primero.");
+  }
+
+  /** Tareas pendientes asignadas a la persona, en todos los proyectos a los que tiene acceso. */
+  async myTasks() {
+    const usuarioId = await this.usuario();
+    const tareas = await this.db.proyectoTarea.findMany({
+      where: { responsableId: usuarioId, estado: { not: "HECHA" }, proyecto: { estado: { not: "ARCHIVADO" }, OR: [{ propietarioId: usuarioId }, { miembros: { some: { usuarioId } } }] } },
+      select: { id: true, titulo: true, estado: true, fechaLimite: true, proyecto: { select: { id: true, titulo: true, color: true } } },
+      orderBy: [{ fechaLimite: { sort: "asc", nulls: "last" } }, { createdAt: "asc" }], take: 200,
+    });
+    return tareas.map(t => ({ ...t, fechaLimite: t.fechaLimite?.toISOString().slice(0, 10) ?? null }));
+  }
+
+  /** Copia un proyecto (página y tareas, sin miembros ni comentarios) como un proyecto nuevo propio. */
+  async duplicate(id: string) {
+    const { usuarioId } = await this.proyecto(id);
+    const original = await this.db.proyecto.findUniqueOrThrow({ where: { id }, include: { tareas: { orderBy: { orden: "asc" } } } });
+    return this.db.$transaction(async tx => {
+      const copia = await tx.proyecto.create({ data: { titulo: `${original.titulo} (copia)`.slice(0, 160), resumen: original.resumen, color: original.color, prioridad: original.prioridad, contenido: original.contenido as Prisma.InputJsonValue, propietarioId: usuarioId,
+        tareas: { create: original.tareas.map(t => ({ titulo: t.titulo, orden: t.orden, fechaLimite: t.fechaLimite })) } } });
+      await this.auditar(tx, copia.id, "CREAR_PROYECTO", `Proyecto «${copia.titulo}» creado como copia de «${original.titulo}»`);
+      return { id: copia.id };
+    });
   }
 
   /** Personas con quienes se puede compartir: cuentas activas (no la de sincronización). */

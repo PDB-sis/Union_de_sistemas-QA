@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useNegativeSummary } from "@/components/negativos/summary";
 import { useInconsistencySummary } from "@/components/inconsistencias/summary";
 import { LineaAuditoria, type RegistroAuditoria } from "@/components/auditoria/registro";
+import { MisTareas } from "@/components/proyectos/modulo";
 
 type Tono = "danger" | "warning" | "info" | "success";
 type Tarea = { id: string; valor: number | null; titulo: string; detalle: string; accion: string; seccion: Seccion; tono: Tono };
@@ -41,6 +42,10 @@ function Hoja({ nombre, espacio, tareas, go, children }: { nombre: string; espac
         <Button variant="outline" size="sm" className="mt-3 h-auto min-h-8 w-full whitespace-normal py-1.5 text-left sm:w-fit" onClick={() => go(tarea.seccion)}>{tarea.accion}<ArrowRight /></Button>
       </article>)}</div>
       {!pendientes.length && tareas.every(tarea => tarea.valor !== null) && <p className="flex items-center gap-2 rounded-2xl border border-success-200 bg-success-50/60 p-4 text-sm font-semibold text-success-800 dark:border-success-900 dark:bg-success-950/25 dark:text-success-200"><CheckCircle2 className="size-5" />Todo al día. Revisa de nuevo más tarde o cuando la sincronización traiga datos nuevos.</p>}
+    </section>
+    <section aria-labelledby="titulo-mis-tareas" className="space-y-3">
+      <div className="flex items-center justify-between gap-3"><h3 id="titulo-mis-tareas" className="text-lg font-bold">Tareas de tus proyectos</h3><Button variant="ghost" size="sm" onClick={() => go("proyectos")}>Ver proyectos<ArrowRight /></Button></div>
+      <MisTareas limite={5} abrir={() => go("proyectos")} />
     </section>
     {children}
   </div>;

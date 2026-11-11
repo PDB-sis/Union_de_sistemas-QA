@@ -8,6 +8,8 @@ export const dynamic="force-dynamic";
 
 // /api/proyectos            GET lista · POST crear
 // /api/proyectos/personas   GET directorio para compartir
+// /api/proyectos/mis-tareas GET tareas pendientes asignadas a la persona
+// /api/proyectos/:id/duplicar POST copiar el proyecto
 // /api/proyectos/importar   POST proyectos guardados en el navegador
 // /api/proyectos/:id        GET detalle · PATCH cambios
 // /api/proyectos/:id/miembros[/:usuarioId]   POST compartir · DELETE quitar
@@ -21,6 +23,7 @@ export async function GET(request:Request,context:Context){
   const path=await partes(context);
   return endpoint(request,async(_,access)=>{const service=new ProjectService(getDb(),access);
     if(!path.length)return service.list();
+    if(path[0]==="mis-tareas"&&path.length===1)return service.myTasks();
     if(path[0]==="personas"&&path.length===1)return service.people(Object.fromEntries(new URL(request.url).searchParams.entries()));
     if(path.length===1)return service.get(path[0]);
     return noExiste();});
@@ -30,6 +33,7 @@ export async function POST(request:Request,context:Context){
   return endpoint(request,async(_,access)=>{const service=new ProjectService(getDb(),access),body=await jsonBody(request);
     if(!path.length)return service.create(body);
     if(path[0]==="importar"&&path.length===1)return service.importLocal(body);
+    if(path.length===2&&path[1]==="duplicar")return service.duplicate(path[0]);
     if(path.length===2&&path[1]==="miembros")return service.addMember(path[0],body);
     if(path.length===2&&path[1]==="tareas")return service.addTask(path[0],body);
     if(path.length===2&&path[1]==="comentarios")return service.comment(path[0],body);

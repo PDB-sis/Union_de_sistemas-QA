@@ -89,3 +89,27 @@ test("el directorio para compartir no muestra la cuenta de sincronización ni a 
   assert.equal(importados,1);
   assert.equal((await ana.proyectos.list()).find(p=>p.titulo==="Proyecto del navegador").estado,"EN_CURSO");
 });
+
+test("plantillas, mis tareas de todos mis proyectos y duplicar sin miembros",async()=>{
+  const ana=await persona("Ana Plantillas"),luis=await persona("Luis Tareas");
+  const {id}=await ana.proyectos.create({plantilla:"mejora"});
+  const plan=await ana.proyectos.get(id);
+  assert.equal(plan.titulo,"Plan de mejora");assert.equal(plan.color,"verde");
+  assert.ok(plan.contenido.some(b=>b.tipo==="titulo"&&b.texto==="Objetivo"));
+  assert.equal(plan.tareas.length,4);
+  await ana.proyectos.addMember(id,{usuarioId:luis.id});
+  await ana.proyectos.updateTask(id,plan.tareas[1].id,{responsableId:luis.id,fechaLimite:"2026-11-14"});
+  await ana.proyectos.updateTask(id,plan.tareas[0].id,{responsableId:luis.id,fechaLimite:"2026-11-12"});
+  await ana.proyectos.updateTask(id,plan.tareas[2].id,{responsableId:luis.id,estado:"HECHA"});
+  // Mis tareas: solo las pendientes asignadas a mí, de la más próxima a la más lejana.
+  assert.deepEqual((await luis.proyectos.myTasks()).map(t=>[t.titulo,t.fechaLimite,t.proyecto.titulo]),[["Medir la situación actual","2026-11-12","Plan de mejora"],["Identificar las causas principales","2026-11-14","Plan de mejora"]]);
+  assert.deepEqual(await ana.proyectos.myTasks(),[]);
+  // Si deja de tener acceso, sus tareas de ese proyecto ya no aparecen.
+  await luis.proyectos.removeMember(id,luis.id);
+  assert.deepEqual(await luis.proyectos.myTasks(),[]);
+  // Duplicar: una copia propia con la página y las tareas, sin miembros.
+  await ana.proyectos.addMember(id,{usuarioId:luis.id,permiso:"LECTOR"});
+  const copia=await luis.proyectos.get((await luis.proyectos.duplicate(id)).id);
+  assert.equal(copia.titulo,"Plan de mejora (copia)");assert.equal(copia.acceso,"PROPIETARIO");assert.equal(copia.miembros.length,0);assert.equal(copia.tareas.length,4);
+  assert.ok(copia.tareas.every(t=>t.estado==="PENDIENTE"&&t.responsableId===null));
+});
