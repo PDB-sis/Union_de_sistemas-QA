@@ -59,6 +59,15 @@ test("respaldo obligatorio, espera, transacción y conservación de un solo admi
   const product=await db.producto.create({data:{codigoBarra:randomUUID()}});
   const primary=await db.negativo.create({data:{productoId:product.id,bodegaId:b.id,primeraDeteccion:new Date(),ultimaDeteccion:new Date()}});
   const merged=await db.producto.create({data:{codigoBarra:randomUUID()}});await db.negativo.create({data:{productoId:merged.id,bodegaId:b.id,fusionadoEnId:primary.id,primeraDeteccion:new Date(),ultimaDeteccion:new Date()}});
+  // Datos de los módulos nuevos: un proyecto compartido con tareas y comentarios, y el inventario de una
+  // bodega con su fotografía (fase 2b-2). El restablecimiento también los borra.
+  const zona=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Región a borrar",tipo:"REGION"}});
+  const sitio=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Bodega a borrar",tipo:"BODEGA",regionId:zona.id,dimIdTienda:7700}});
+  const proyecto=await db.proyecto.create({data:{titulo:"Proyecto a borrar",propietarioId:other.user.id,contenido:[{id:"a",tipo:"parrafo",texto:"x"}],miembros:{create:{usuarioId:a.user.id,permiso:"LECTOR"}},tareas:{create:{titulo:"Tarea",responsableId:other.user.id}},comentarios:{create:{autorId:a.user.id,texto:"Comentario"}}}});
+  const consulta=await db.consultaInventario.create({data:{usuarioId:other.user.id,nombreArchivo:"inv.csv",fechaConsulta:new Date(),hashArchivo:randomUUID().replaceAll("-",""),totalFilas:1,ubicacionId:sitio.id}});
+  await db.inventarioActual.create({data:{consultaId:consulta.id,ubicacionId:sitio.id,productoId:product.id,existencia:-1,activo:true}});
+  await db.fotoNegativos.create({data:{consultaId:consulta.id,ubicacionId:sitio.id,fechaCorte:new Date("2026-11-09T00:00:00Z"),tipoCorte:"LUNES",totalCodigos:1,totalUnidades:1}});
+  assert.ok(proyecto.id);
   const fail=new ProjectReset(db,a.access,a.token,async()=>{throw new Error("Respaldo fallido de prueba")});
   const c=await fail.prepare({password});
   await assert.rejects(fail.execute({...payload(c),confirmacion:"BORRAR"}));
@@ -79,6 +88,7 @@ test("respaldo obligatorio, espera, transacción y conservación de un solo admi
   assert.equal((await consultasDesde(db)).toISOString().slice(0,10),new Date().toLocaleDateString("en-CA",{timeZone:"America/Caracas"}));
   const kept=await db.usuario.findUniqueOrThrow({where:{id:a.user.id}});assert.equal(kept.passwordHash,encoded);assert.equal(kept.rol,"ADMINISTRADOR");
   assert.equal(await db.asignacionAcceso.count(),1);assert.equal(await db.sesionUsuario.count(),0);assert.equal(await db.producto.count(),0);assert.equal(await db.bodega.count(),0);assert.equal(await db.negativo.count(),0);assert.equal(await db.auditoria.count({where:{accion:"RESTABLECER_PROYECTO"}}),1);
+  for(const tabla of ["proyecto","proyectoMiembro","proyectoTarea","proyectoComentario","consultaInventario","inventarioActual","fotoNegativos","ubicacion"])assert.equal(await db[tabla].count(),0,tabla);
   await assert.rejects(service.execute(payload(c)),{code:"CONFIRMACION"});
 });
 
