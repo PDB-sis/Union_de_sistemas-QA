@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import type { Prisma, PrismaClient } from "../../generated/prisma/client";
 import { NegativosError } from "../negativos/validation";
 import { toCsv } from "./csv";
-import { cargaInventario, cargasAgente, firmaAgente, firmaInventario, type TareaAgente } from "./agente";
+import { cargaInventario, cargasAgente, firmaAgente, firmaInventario, sitiosConInventario, type TareaAgente } from "./agente";
+import { adoptarInventarioHeredado } from "../inventario/sitios";
 import type { Modulo, OpcionesEjecucion } from "./modulos";
 import { cuentaDelSitio } from "./cuentas";
 import { restablecimientoPendiente } from "../admin/reset";
@@ -116,21 +117,42 @@ function motivoDeRechazo(comprobacion: Promise<void>) {
   });
 }
 
-/** Fuente inventario del agente: un solo sitio (PDMC_INVENTARIO_DIM_ID); solo productos activos. */
+/**
+ * Fuente inventario de los agentes (fase 2b-2): una carga por cada bodega que envía inventario,
+ * a nombre de la cuenta de sincronización de su región. Una bodega sin cuenta o con un error se
+ * omite con aviso y se reintenta; las demás regiones siguen. La primera carga de una bodega publica
+ * su primera fotografía de negativos, para que la región empiece completa.
+ */
 async function desdeInventarioAgente(db: PrismaClient, modulo: Modulo, ultimoHash: string | null, opciones: OpcionesEjecucion): Promise<Aplicado> {
-  const { firma, filas } = await firmaInventario(db);
-  // Publicar la fotografía de negativos siempre se aplica, aunque el inventario no haya cambiado.
-  if (!opciones.publicarNegativos && modulo.omitirSiIgual && firma === ultimoHash) return { hash: firma, totalFilas: filas, result: { sinCambios: true } };
-  // Sin inventario del agente todavía: no es un fallo; el inventario vigente se conserva.
-  if (!filas && !opciones.publicarNegativos) return { hash: firma, totalFilas: 0, result: { sinCambios: true, resumen: { aviso: "El agente del sitio PDMC_INVENTARIO_DIM_ID todavía no ha enviado inventario." } } };
-  const carga = await cargaInventario(db);
-  const ubicacion = await db.ubicacion.findUnique({ where: { dimIdTienda: carga.dim }, select: { id: true } });
-  if (!ubicacion) throw new Error(`El sitio con dimID_Tienda ${carga.dim} (PDMC_INVENTARIO_DIM_ID) no está en el catálogo de PDMC: sincronice SUCURSALES.`);
-  // El inventario se importa a nombre de la cuenta de sincronización de la región del sitio.
-  const resuelta = await cuentaDelSitio(db, ubicacion.id);
-  if ("aviso" in resuelta) throw new Error(resuelta.aviso);
-  const result = await modulo.importar(db, carga.csv, { ...opciones, acceso: resuelta.acceso, sitio: { ubicacionId: ubicacion.id, dimIdTienda: carga.dim } });
-  return { hash: firma, totalFilas: carga.filas, result: { ...result, resumen: { cuenta: resuelta.cuenta, region: resuelta.region, importacion: result.resumen } } };
+  // Los datos de antes (un solo sitio) se asignan a su bodega antes de cargar.
+  await adoptarInventarioHeredado(db);
+  const { bodegas, fueraDelCatalogo } = await sitiosConInventario(db);
+  const firmas = await Promise.all(bodegas.map(async bodega => ({ bodega, ...(await firmaInventario(db, bodega.dim)) })));
+  const firma = createHash("sha256").update(JSON.stringify(["inventario-sitios", ...firmas.map(f => [f.dim, f.firma])])).digest("hex");
+  const totalFilas = firmas.reduce((suma, f) => suma + f.filas, 0);
+  const avisoCatalogo = fueraDelCatalogo.length ? `Los sitios ${fueraDelCatalogo.join(", ")} envían inventario pero no están en el catálogo de PDMC: sincronice SUCURSALES.` : undefined;
+  if (!opciones.publicarNegativos && modulo.omitirSiIgual && firma === ultimoHash) return { hash: firma, totalFilas, result: { sinCambios: true } };
+  if (!bodegas.length) return { hash: firma, totalFilas: 0, result: { sinCambios: true, resumen: { aviso: avisoCatalogo ?? "Ningún agente de bodega ha enviado inventario todavía." } } };
+  const porSitio = [];
+  let sinCambios = true, omitidos = 0;
+  for (const { bodega, filas } of firmas) {
+    if (!filas) { porSitio.push({ dimIdTienda: bodega.dim, sitio: bodega.nombre, filas, omitido: "El agente todavía no envió productos activos." }); continue; }
+    const resuelta = await cuentaDelSitio(db, bodega.id);
+    if ("aviso" in resuelta) { omitidos++; porSitio.push({ dimIdTienda: bodega.dim, sitio: bodega.nombre, filas, omitido: resuelta.aviso }); continue; }
+    try {
+      const carga = await cargaInventario(db, bodega.dim);
+      const primera = !(await db.fotoNegativos.count({ where: { ubicacionId: bodega.id } }));
+      const result = await modulo.importar(db, carga.csv, { ...opciones, publicarNegativos: opciones.publicarNegativos || primera, acceso: resuelta.acceso, sitio: { ubicacionId: bodega.id, dimIdTienda: bodega.dim } });
+      sinCambios &&= result.sinCambios;
+      porSitio.push({ dimIdTienda: bodega.dim, sitio: bodega.nombre, filas: carga.filas, cuenta: resuelta.cuenta, region: resuelta.region, ...(primera ? { primeraFotografia: true } : {}), importacion: result.resumen });
+    } catch (error) {
+      // Un error de una bodega (por ejemplo, el límite de fotografías) no detiene a las demás.
+      omitidos++;
+      porSitio.push({ dimIdTienda: bodega.dim, sitio: bodega.nombre, filas, omitido: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  if (omitidos === firmas.filter(f => f.filas).length && omitidos) throw new Error(porSitio.map(s => `${s.sitio}: ${"omitido" in s ? s.omitido : ""}`).join(" · "));
+  return { hash: omitidos ? createHash("sha256").update(`${firma}:incompleta`).digest("hex") : firma, totalFilas, result: { sinCambios: sinCambios && !omitidos, resumen: { fuente: "agente", sitios: porSitio, ...(omitidos ? { bodegasOmitidas: omitidos } : {}), ...(avisoCatalogo ? { aviso: avisoCatalogo } : {}) } } };
 }
 
 /**

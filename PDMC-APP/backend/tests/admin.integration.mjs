@@ -128,13 +128,13 @@ test("en un caso cerrado se puede comentar, pero cambiar lo que justificó el ci
   await assert.rejects(service.update({...base,version:r.version,ajustado:false,ajustar:null,cantidadAjuste:null,numeroAjuste:null,veredicto:null}),{status:422,code:"CIERRE_INCOMPLETO"});
 });
 test("un negativo ajustado solo se soluciona con inventario posterior y sin existencia negativa",async()=>{
-  const a=await user(),ops=new NegativeOperations(db,a.access),b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Verificación de ajuste"}});
+  const a=await user(),ops=new NegativeOperations(db,a.access),sitio=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Verificación de ajuste",tipo:"BODEGA",regionId:(await region()).id}}),b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Verificación de ajuste",ubicacionId:sitio.id}});
   const product=await db.producto.create({data:{codigoBarra:randomUUID(),descripcion:"Producto verificado"}});
   let n=await db.negativo.create({data:{bodegaId:b.id,productoId:product.id,primeraDeteccion:new Date(),ultimaDeteccion:new Date(),estado:"AJUSTE_AUTORIZADO",conteoFisico:"0",existenciaSistemaConteo:"-2",motivo:"ROTACION"}});
   const edit=async(estado,extra={})=>{n=await ops.editar(n.id,{bodegaId:b.id,version:n.version,estado,conteoFisico:"0",motivo:"ROTACION",documentoRelacionado:"",veredicto:"",numeroAjuste:"AJ-1",observaciones:"",...extra});return n;};
   await assert.rejects(ops.editar(n.id,{bodegaId:b.id,version:n.version,estado:"SOLUCIONADO",conteoFisico:"0",motivo:"ROTACION",documentoRelacionado:"",veredicto:"",numeroAjuste:"AJ-1",observaciones:""}),{status:422,code:"CAMBIO_NO_PERMITIDO"});
   await edit("AJUSTE_REALIZADO");
-  const inventario=async(fechaConsulta,existencia)=>{const consulta=await db.consultaInventario.create({data:{usuarioId:a.id,nombreArchivo:"verificacion.csv",fechaConsulta,fechaImportacion:new Date(Date.now()+86_400_000),hashArchivo:randomUUID().replaceAll("-","")+randomUUID().replaceAll("-",""),totalFilas:1}});await db.inventarioActual.deleteMany({where:{productoId:product.id}});await db.inventarioActual.create({data:{consultaId:consulta.id,productoId:product.id,existencia,activo:true}});};
+  const inventario=async(fechaConsulta,existencia)=>{const consulta=await db.consultaInventario.create({data:{usuarioId:a.id,nombreArchivo:"verificacion.csv",fechaConsulta,fechaImportacion:new Date(Date.now()+86_400_000),hashArchivo:randomUUID().replaceAll("-","")+randomUUID().replaceAll("-",""),totalFilas:1,ubicacionId:sitio.id}});await db.inventarioActual.deleteMany({where:{productoId:product.id}});await db.inventarioActual.create({data:{consultaId:consulta.id,ubicacionId:sitio.id,productoId:product.id,existencia,activo:true}});};
   await inventario(new Date(Date.now()-3_600_000),"0");
   await assert.rejects(ops.editar(n.id,{bodegaId:b.id,version:n.version,estado:"SOLUCIONADO",conteoFisico:"0",motivo:"ROTACION",documentoRelacionado:"",veredicto:"",numeroAjuste:"AJ-1",observaciones:""}),{status:422,code:"VERIFICACION_PENDIENTE",message:/anterior al ajuste/});
   await inventario(new Date(Date.now()+3_600_000),"-1");
@@ -143,7 +143,7 @@ test("un negativo ajustado solo se soluciona con inventario posterior y sin exis
   assert.equal((await edit("SOLUCIONADO")).estado,"SOLUCIONADO");
 });
 test("el cierre masivo de ajustes verifica todo el lote y no modifica ninguno si uno falla",async()=>{
-  const a=await user(),ops=new NegativeOperations(db,a.access),b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Verificación masiva"}});
+  const a=await user(),ops=new NegativeOperations(db,a.access),sitio=await db.ubicacion.create({data:{codigo:randomUUID(),nombre:"Verificación masiva",tipo:"BODEGA",regionId:(await region()).id}}),b=await db.bodega.create({data:{codigo:randomUUID(),nombre:"Verificación masiva",ubicacionId:sitio.id}});
   const casos=[];
   for(const existencia of ["0","-1"]){
     const product=await db.producto.create({data:{codigoBarra:randomUUID(),descripcion:"Producto en lote"}});
@@ -151,8 +151,8 @@ test("el cierre masivo de ajustes verifica todo el lote y no modifica ninguno si
     n=await ops.editar(n.id,{bodegaId:b.id,version:n.version,estado:"AJUSTE_REALIZADO",conteoFisico:"0",motivo:"ROTACION",documentoRelacionado:"",veredicto:"",numeroAjuste:"AJ-L",observaciones:""});
     casos.push({n,product,existencia});
   }
-  const consulta=await db.consultaInventario.create({data:{usuarioId:a.id,nombreArchivo:"lote.csv",fechaConsulta:new Date(Date.now()+3_600_000),fechaImportacion:new Date(Date.now()+2*86_400_000),hashArchivo:randomUUID().replaceAll("-","")+randomUUID().replaceAll("-",""),totalFilas:2}});
-  for(const c of casos)await db.inventarioActual.create({data:{consultaId:consulta.id,productoId:c.product.id,existencia:c.existencia,activo:true}});
+  const consulta=await db.consultaInventario.create({data:{usuarioId:a.id,nombreArchivo:"lote.csv",fechaConsulta:new Date(Date.now()+3_600_000),fechaImportacion:new Date(Date.now()+2*86_400_000),hashArchivo:randomUUID().replaceAll("-","")+randomUUID().replaceAll("-",""),totalFilas:2,ubicacionId:sitio.id}});
+  for(const c of casos)await db.inventarioActual.create({data:{consultaId:consulta.id,ubicacionId:sitio.id,productoId:c.product.id,existencia:c.existencia,activo:true}});
   const lote=()=>casos.map(c=>({id:c.n.id,version:c.n.version}));
   await assert.rejects(ops.masivo({bodegaId:b.id,estado:"SOLUCIONADO",casos:lote()}),{status:422,code:"VERIFICACION_PENDIENTE",message:/Sigue en/});
   assert.equal((await db.negativo.findUnique({where:{id:casos[0].n.id}})).estado,"AJUSTE_REALIZADO","ningún caso del lote cambia");

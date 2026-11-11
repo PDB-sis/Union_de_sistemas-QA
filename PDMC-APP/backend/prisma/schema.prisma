@@ -202,6 +202,9 @@ model Ubicacion {
   region                    Ubicacion?                         @relation("RegionUbicaciones", fields: [regionId], references: [id], onDelete: Restrict)
   ubicaciones               Ubicacion[]                        @relation("RegionUbicaciones")
   bodega                    Bodega?
+  consultasInventario       ConsultaInventario[]               @relation("ConsultaInventarioSitio")
+  inventarioActual          InventarioActual[]                 @relation("InventarioActualSitio")
+  fotosNegativos            FotoNegativos[]                    @relation("FotoNegativosSitio")
   asignaciones              AsignacionAcceso[]
   vinculos                  VinculoOperativo[]
   perfiles                  PerfilLaboral[]
@@ -342,11 +345,15 @@ model ConsultaInventario {
   fechaImportacion DateTime           @default(now()) @db.Timestamptz(3)
   hashArchivo      String             @unique @db.VarChar(64)
   totalFilas       Int
+  /// Bodega (sitio) cuyo inventario es: cada región tiene el suyo (fase 2b-2).
+  ubicacionId      String?            @db.Uuid
   usuario          Usuario            @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  ubicacion        Ubicacion?         @relation("ConsultaInventarioSitio", fields: [ubicacionId], references: [id], onDelete: Restrict)
   inventarioActual InventarioActual[]
   fotoNegativos    FotoNegativos[]
 
   @@index([fechaConsulta, fechaImportacion])
+  @@index([ubicacionId, fechaConsulta])
 }
 
 // Corte operativo de negativos. Se genera con las consultas de lunes y jueves.
@@ -355,14 +362,18 @@ model FotoNegativos {
   // Una misma carga puede originar varios cortes si el inventario no cambió
   // entre una ventana y la siguiente.
   consultaId    String             @db.Uuid
-  fechaCorte    DateTime           @unique @db.Date
+  /// Bodega de la fotografía; la fecha de corte es única dentro de cada bodega.
+  ubicacionId   String?            @db.Uuid
+  fechaCorte    DateTime           @db.Date
   tipoCorte     String             @db.VarChar(20)
   totalCodigos  Int
   totalUnidades Decimal            @db.Decimal(18, 4)
   createdAt     DateTime           @default(now()) @db.Timestamptz(3)
   consulta      ConsultaInventario @relation(fields: [consultaId], references: [id], onDelete: Restrict)
+  ubicacion     Ubicacion?         @relation("FotoNegativosSitio", fields: [ubicacionId], references: [id], onDelete: Restrict)
   items         FotoNegativoItem[]
 
+  @@unique([ubicacionId, fechaCorte])
   @@index([consultaId])
   @@index([fechaCorte])
 }
@@ -388,11 +399,15 @@ model InventarioActual {
   activo           Boolean
   categoria        String?            @db.VarChar(200)
   subcategoria     String?            @db.VarChar(200)
+  /// Bodega cuyo inventario es (la misma de su consulta).
+  ubicacionId      String?            @db.Uuid
   consulta         ConsultaInventario @relation(fields: [consultaId], references: [id], onDelete: Restrict)
   producto         Producto           @relation(fields: [productoId], references: [id], onDelete: Restrict)
   bodegaProducto   BodegaProducto?    @relation(fields: [bodegaProductoId], references: [id], onDelete: Restrict)
+  ubicacion        Ubicacion?         @relation("InventarioActualSitio", fields: [ubicacionId], references: [id], onDelete: Restrict)
 
-  @@unique([productoId, bodegaProductoId])
+  @@unique([ubicacionId, productoId, bodegaProductoId])
+  @@index([ubicacionId, productoId])
   @@index([productoId])
   @@index([bodegaProductoId])
 }

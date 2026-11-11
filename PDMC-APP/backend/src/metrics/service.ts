@@ -13,7 +13,8 @@ export class MetricsService{
     const storeScope=await this.access.locationScope("metricas.leer","TIENDA");
     // Negativos de las bodegas de la región (incluida la general, si su inventario es de esta región).
     const warehouseWhere=await this.access.warehouseWhere("negativos.leer");
-    const inventarioPropio=await this.access.inventory("negativos.leer").then(()=>true,()=>false);
+    // Fotografías y cargas de inventario de las bodegas de la región (fase 2b-2).
+    const sitios=(await this.access.inventory("negativos.leer").catch(()=>[])).map(sitio=>sitio.id);
     const warehouses=await this.db.bodega.findMany({where:warehouseWhere,select:{id:true}});
     const storeIds=storeScope.rows.map(row=>row.id),warehouseIds=warehouses.map(row=>row.id);
     const storeFilter=storeScope.national?{}:{tiendaId:{in:storeIds}};
@@ -23,8 +24,8 @@ export class MetricsService{
       this.db.reporteTransferenciaTienda.findMany({where:{createdAt:range,...storeFilter},select:{transferencia:true,tiendaId:true,sinIncidencias:true,createdAt:true}}),
       this.db.inconsistencia.findMany({where:{fecha:range,...storeFilter},select:{fecha:true,resuelto:true,ajustado:true,cantidadErrada:true}}),
       this.db.negativo.findMany({where:{ultimaDeteccion:range,anuladoAt:null,fusionadoEnId:null,bodegaId:{in:warehouseIds}},select:{ultimaDeteccion:true,estado:true}}),
-      storeScope.national||inventarioPropio?this.db.consultaInventario.findMany({where:{fechaConsulta:range},select:{fechaConsulta:true,totalFilas:true},orderBy:{fechaConsulta:"asc"}}):Promise.resolve([]),
-      storeScope.national||inventarioPropio?this.db.fotoNegativos.findMany({orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],take:24,select:{fechaCorte:true,tipoCorte:true,totalCodigos:true,totalUnidades:true}}):Promise.resolve([]),
+      sitios.length?this.db.consultaInventario.findMany({where:{fechaConsulta:range,ubicacionId:{in:sitios}},select:{fechaConsulta:true,totalFilas:true},orderBy:{fechaConsulta:"asc"}}):Promise.resolve([]),
+      sitios.length?this.db.fotoNegativos.findMany({where:{ubicacionId:{in:sitios}},orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],take:24,select:{fechaCorte:true,tipoCorte:true,totalCodigos:true,totalUnidades:true}}):Promise.resolve([]),
     ]);
     const byTransfer=new Map(transfers.map(row=>[`${row.tiendaId}:${row.numero}`,row.fecha]));
     const series=months.map(month=>{

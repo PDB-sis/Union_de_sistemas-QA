@@ -6,8 +6,9 @@ import { negativeCutWindow,negativeWeekRange } from "@pdmc/contratos/negativos/c
 import { Authorization } from "../auth/authorization";
 import { NegativosError, normalizeHeader, parseDate, parseDelimitedTable, uuid } from "../negativos/validation";
 import { compare, emptyComparison } from "../negativos/comparator";
+import { bodegaDelSitio } from "./sitios";
 
-const inputSchema=z.object({nombreArchivo:z.string().trim().min(1).max(255).regex(/\.(csv|txt)$/i),fechaConsulta:z.string(),contenido:z.string().max(100_000_000),publicarNegativos:z.boolean().default(false)}).strict();
+const inputSchema=z.object({nombreArchivo:z.string().trim().min(1).max(255).regex(/\.(csv|txt)$/i),fechaConsulta:z.string(),contenido:z.string().max(100_000_000),publicarNegativos:z.boolean().default(false),ubicacionId:z.string().uuid().optional()}).strict();
 type Row={fila:number;codigoBarra:string;referencia:string;descripcion:string;existencia:string;activo:boolean;categoria:string;linea:string;marca:string;bodega:string};
 export type InventoryValidation={aceptados:number;rechazados:number;errores:{fila:number;campo:string;mensaje:string}[]};
 const required=["Estado","CodigoBarra","Referencia","Descripcion","Existencia","Categoria","Linea"];
@@ -56,15 +57,19 @@ export function validateInventory(raw:unknown){
 
 export class InventoryService{
   constructor(private db:PrismaClient,private access:Authorization){}
-  async summary(){
-    await this.access.inventory("inventario.administrar");
+  /** Resumen del inventario de una bodega (la elegida o la primera visible) y la lista de bodegas visibles. */
+  async summary(raw:unknown={}){
+    const {ubicacionId:pedido}=z.object({ubicacionId:uuid.optional()}).parse(raw??{});
+    const sitios=await this.access.inventory("inventario.administrar",pedido);
+    const ubicacionId=pedido??sitios[0].id;
     const now=new Date(),week=negativeWeekRange(now),window=negativeCutWindow(now);
-    const [latest,total,codes,mappings,bodegas,lastPhoto,weekCuts]=await Promise.all([this.db.consultaInventario.findFirst({orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]}),this.db.inventarioActual.count(),this.db.inventarioActual.groupBy({by:["productoId"]}),this.db.lineaInventario.findMany({include:{bodegaProducto:true},orderBy:{linea:"asc"}}),this.db.bodegaProducto.findMany({orderBy:{nombre:"asc"}}),this.db.fotoNegativos.findFirst({orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}]}),this.db.fotoNegativos.count({where:{fechaCorte:week}})]);
-    return {latest,total,codigos:codes.length,bodegasAsignadas:new Set(mappings.filter(x=>x.bodegaProductoId).map(x=>x.bodegaProductoId)).size,mappings,bodegas,negativos:{ultimaFoto:lastPhoto,cortesSemana:weekCuts,maximoSemanal:2,ventana:window.tipo,puedePublicar:weekCuts<2}};
+    const [latest,total,codes,mappings,bodegas,lastPhoto,weekCuts]=await Promise.all([this.db.consultaInventario.findFirst({where:{ubicacionId},orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]}),this.db.inventarioActual.count({where:{ubicacionId}}),this.db.inventarioActual.groupBy({by:["productoId"],where:{ubicacionId}}),this.db.lineaInventario.findMany({include:{bodegaProducto:true},orderBy:{linea:"asc"}}),this.db.bodegaProducto.findMany({orderBy:{nombre:"asc"}}),this.db.fotoNegativos.findFirst({where:{ubicacionId},orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}]}),this.db.fotoNegativos.count({where:{ubicacionId,fechaCorte:week}})]);
+    return {sitio:ubicacionId,sitios:sitios.map(({id,nombre,codigo})=>({id,nombre,codigo})),latest,total,codigos:codes.length,bodegasAsignadas:new Set(mappings.filter(x=>x.bodegaProductoId).map(x=>x.bodegaProductoId)).size,mappings,bodegas,negativos:{ultimaFoto:lastPhoto,cortesSemana:weekCuts,maximoSemanal:2,ventana:window.tipo,puedePublicar:weekCuts<2}};
   }
   async products(raw:unknown){
-    await this.access.inventory("inventario.administrar");const input=z.object({linea:z.string().trim().min(1).max(200),q:z.string().trim().max(200).default(""),skip:z.coerce.number().int().min(0).default(0),take:z.coerce.number().int().min(1).max(100).default(25)}).strict().parse(raw);
-    const where={subcategoria:{equals:input.linea,mode:"insensitive" as const},...(input.q?{producto:{OR:[{codigoBarra:{contains:input.q,mode:"insensitive" as const}},{referencia:{contains:input.q,mode:"insensitive" as const}},{descripcion:{contains:input.q,mode:"insensitive" as const}}]}}:{})};
+    const input=z.object({ubicacionId:uuid.optional(),linea:z.string().trim().min(1).max(200),q:z.string().trim().max(200).default(""),skip:z.coerce.number().int().min(0).default(0),take:z.coerce.number().int().min(1).max(100).default(25)}).strict().parse(raw);
+    const sitios=await this.access.inventory("inventario.administrar",input.ubicacionId),ubicacionId=input.ubicacionId??sitios[0].id;
+    const where={ubicacionId,subcategoria:{equals:input.linea,mode:"insensitive" as const},...(input.q?{producto:{OR:[{codigoBarra:{contains:input.q,mode:"insensitive" as const}},{referencia:{contains:input.q,mode:"insensitive" as const}},{descripcion:{contains:input.q,mode:"insensitive" as const}}]}}:{})};
     const [rows,total]=await this.db.$transaction([this.db.inventarioActual.findMany({where,skip:input.skip,take:input.take,orderBy:{producto:{codigoBarra:"asc"}},include:{producto:{include:{excepcionBodega:{include:{bodegaProducto:true}}}},bodegaProducto:true}}),this.db.inventarioActual.count({where})]);return {rows,total,skip:input.skip,take:input.take};
   }
   async assignProduct(raw:unknown){
@@ -99,34 +104,39 @@ export class InventoryService{
     await this.access.inventory("inventario.administrar");const {nombre}=z.object({nombre:z.string().trim().min(1).max(200)}).strict().parse(raw);
     return this.db.$transaction(async tx=>{const existing=await tx.bodegaProducto.findFirst({where:{nombre:{equals:nombre,mode:"insensitive"}}});if(existing)return existing;const created=await tx.bodegaProducto.create({data:{nombre}});await tx.auditoria.create({data:{usuarioId:this.access.userId,entidad:"BodegaProducto",entidadId:created.id,accion:"CREAR_BODEGA_PRODUCTO",motivo:"Bodega creada desde la asignación de líneas de inventario",valorNuevo:{nombre}}});return created;});
   }
-  async import(raw:unknown){
-    await this.access.inventory("inventario.administrar");const validated=validateInventory(raw);
+  /** Carga el inventario de UNA bodega: reemplaza solo su inventario vigente, sus fotografías y sus negativos. */
+  async import(raw:unknown,sitio?:{ubicacionId:string}){
+    const validated=validateInventory(raw),ubicacionId=sitio?.ubicacionId??validated.input.ubicacionId;
+    if(!ubicacionId)throw new NegativosError(422,"SITIO","Indique la bodega cuyo inventario se carga.");
+    await this.access.inventory("inventario.administrar",ubicacionId);
     if(validated.summary.rechazados)throw new NegativosError(422,"FILAS_INVALIDAS","Corrija las filas rechazadas antes de importar.",validated.summary);
     if(!validated.rows.length)throw new NegativosError(422,"INVENTARIO_VACIO","La carga debe contener al menos una fila válida.");
-    const hash=createHash("sha256").update(validated.input.contenido,"utf8").digest("hex");
+    // La misma carga en dos bodegas son dos cargas distintas.
+    const hash=createHash("sha256").update(`${ubicacionId}\n`).update(validated.input.contenido,"utf8").digest("hex");
     return this.db.$transaction(async tx=>{
       const repeated=await tx.consultaInventario.findUnique({where:{hashArchivo:hash}});
       const productRows=await syncInventoryProductCatalog(tx,validated.rows);
-      const latest=await tx.consultaInventario.findFirst({orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]});
+      const latest=await tx.consultaInventario.findFirst({where:{ubicacionId},orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]});
       if(latest&&validated.fecha<latest.fechaConsulta)throw new NegativosError(409,"FECHA_ANTERIOR","La fecha de la carga no puede ser anterior al inventario vigente.");
       const cutWindow=negativeCutWindow(validated.fecha);
       const weekRange=negativeWeekRange(validated.fecha);
-      const previousPhoto=await tx.fotoNegativos.findFirst({orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],include:{items:true}});
-      if(validated.input.publicarNegativos&&await tx.fotoNegativos.count({where:{fechaCorte:weekRange}})>=2)throw new NegativosError(409,"LIMITE_CORTES","Ya se publicaron las dos fotografías permitidas esta semana.");
+      const previousPhoto=await tx.fotoNegativos.findFirst({where:{ubicacionId},orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],include:{items:true}});
+      if(validated.input.publicarNegativos&&await tx.fotoNegativos.count({where:{ubicacionId,fechaCorte:weekRange}})>=2)throw new NegativosError(409,"LIMITE_CORTES","Ya se publicaron las dos fotografías permitidas esta semana en esta bodega.");
       if(!validated.input.publicarNegativos&&!previousPhoto)throw new NegativosError(422,"PRIMER_CORTE_REQUERIDO","La primera carga debe publicar una fotografía para iniciar el control de Negativos.");
       if(repeated&&latest?.id!==repeated.id)return {repetida:true,consulta:repeated,resumen:{...validated.summary,catalogoActualizado:productRows.length,corteNegativos:"SIN_CORTE"}};
-      const previousInventory=previousPhoto?previousPhoto.items.map(row=>({productoId:row.productoId,_sum:{existencia:row.existencia}})):await tx.inventarioActual.groupBy({by:["productoId"],_sum:{existencia:true}});
+      const previousInventory=previousPhoto?previousPhoto.items.map(row=>({productoId:row.productoId,_sum:{existencia:row.existencia}})):await tx.inventarioActual.groupBy({by:["productoId"],where:{ubicacionId},_sum:{existencia:true}});
       const previousTotals=new Map(previousInventory.map(row=>[row.productoId,row._sum.existencia??new Prisma.Decimal(0)]));
-      const consulta=repeated??await tx.consultaInventario.create({data:{usuarioId:this.access.userId!,nombreArchivo:validated.input.nombreArchivo,fechaConsulta:validated.fecha,hashArchivo:hash,totalFilas:validated.rows.length}});
-      await tx.inventarioActual.deleteMany();
+      const consulta=repeated??await tx.consultaInventario.create({data:{usuarioId:this.access.userId!,nombreArchivo:validated.input.nombreArchivo,fechaConsulta:validated.fecha,hashArchivo:hash,totalFilas:validated.rows.length,ubicacionId}});
+      await tx.inventarioActual.deleteMany({where:{ubicacionId}});
       const products:{id:string;codigoBarra:string}[]=[];for(const batch of batches(productRows))products.push(...await tx.producto.findMany({where:{codigoBarra:{in:batch.map(row=>row.codigoBarra)}},select:{id:true,codigoBarra:true}}));
       const productIds=new Map(products.map(row=>[row.codigoBarra,row.id]));
       const lines=[...new Map(validated.rows.map(row=>[normalizeHeader(row.linea),row.linea])).values()];
       for(const batch of batches(lines))await tx.lineaInventario.createMany({data:batch.map(linea=>({linea})),skipDuplicates:true});
       const mappings=await tx.lineaInventario.findMany(),mappedWarehouses=new Map(mappings.map(row=>[normalizeHeader(row.linea),row.bodegaProductoId]));
       const exceptions=new Map((await tx.excepcionBodegaProducto.findMany()).map(row=>[row.productoId,row.bodegaProductoId]));
-      for(const batch of batches(validated.rows))await tx.inventarioActual.createMany({data:batch.map(row=>{const productoId=productIds.get(row.codigoBarra)!;return {consultaId:consulta.id,productoId,bodegaProductoId:exceptions.get(productoId)??mappedWarehouses.get(normalizeHeader(row.linea))??null,existencia:row.existencia,activo:row.activo,categoria:row.categoria||null,subcategoria:row.linea||null}})});
-      const general=await tx.bodega.upsert({where:{codigo:"PDMC_GENERAL"},update:{activa:true},create:{codigo:"PDMC_GENERAL",nombre:"Negativos",activa:true}});
+      for(const batch of batches(validated.rows))await tx.inventarioActual.createMany({data:batch.map(row=>{const productoId=productIds.get(row.codigoBarra)!;return {consultaId:consulta.id,ubicacionId,productoId,bodegaProductoId:exceptions.get(productoId)??mappedWarehouses.get(normalizeHeader(row.linea))??null,existencia:row.existencia,activo:row.activo,categoria:row.categoria||null,subcategoria:row.linea||null}})});
+      // Los negativos se guardan en el registro de la propia bodega, no en uno común.
+      const general=await bodegaDelSitio(tx,ubicacionId);
       await tx.$queryRaw`SELECT id FROM "Bodega" WHERE id=${general.id}::uuid FOR UPDATE`;
       const totals=new Map<string,Prisma.Decimal>();
       const sourceRows=new Map<string,Row>();
@@ -135,9 +145,9 @@ export class InventoryService{
       const negativeRows=[...totals.entries()].filter(([,amount])=>amount.isNegative());
       const cutType=validated.input.publicarNegativos?cutWindow.tipo:null;
       if(cutType){
-        const existingCut=await tx.fotoNegativos.findUnique({where:{fechaCorte:validated.fecha}});
+        const existingCut=await tx.fotoNegativos.findFirst({where:{ubicacionId,fechaCorte:validated.fecha}});
         if(existingCut)await tx.fotoNegativos.delete({where:{id:existingCut.id}});
-        const photo=await tx.fotoNegativos.create({data:{consultaId:consulta.id,fechaCorte:validated.fecha,tipoCorte:cutType,totalCodigos:negativeRows.length,totalUnidades:negativeRows.reduce((sum,[,amount])=>sum.add(amount.abs()),new Prisma.Decimal(0))}});
+        const photo=await tx.fotoNegativos.create({data:{consultaId:consulta.id,ubicacionId,fechaCorte:validated.fecha,tipoCorte:cutType,totalCodigos:negativeRows.length,totalUnidades:negativeRows.reduce((sum,[,amount])=>sum.add(amount.abs()),new Prisma.Decimal(0))}});
         for(const batch of batches(negativeRows))await tx.fotoNegativoItem.createMany({data:batch.map(([code,amount])=>({fotoId:photo.id,productoId:productIds.get(code)!,existencia:amount}))});
       }
       const existingCases=await tx.negativo.findMany({where:{bodegaId:general.id,fusionadoEnId:null}}),casesByProduct=new Map(existingCases.map(item=>[item.productoId,item]));

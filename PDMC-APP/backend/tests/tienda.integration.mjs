@@ -52,17 +52,19 @@ test('API de Tienda: permisos, territorio, cruce atómico, auditoría, idempoten
   const region=await db.ubicacion.create({data:{codigo:'REGION-TEST',nombre:'Región de prueba',tipo:'REGION'}});
   const storeA=await db.ubicacion.create({data:{codigo:'CARIBE-TEST',nombre:'C.C. CARIBE ZULIA (HECTOR YARCE)',tipo:'TIENDA',regionId:region.id}});
   const storeB=await db.ubicacion.create({data:{codigo:'REDOMA-TEST',nombre:'C.C. REDOMA - PANTY (MARIA)',tipo:'TIENDA',regionId:region.id}});
+  // El inventario es el de la bodega de la región de las tiendas (fase 2b-2).
+  const bodegaRegion=await db.ubicacion.create({data:{codigo:'BODEGA-TEST',nombre:'Bodega de la región de prueba',tipo:'BODEGA',regionId:region.id}});
   const [userA,userB]=await Promise.all([account(storeA),account(storeB)]);
   const [productA,productB,productC]=await Promise.all([
     db.producto.create({data:{codigoBarra:'6900000000001',referencia:'A',descripcion:'Producto original',linea:'Dama',marca:'Marca A'}}),
     db.producto.create({data:{codigoBarra:'6900000000002',referencia:'REFERENCIA-COMPARTIDA',descripcion:'Producto cruzado',linea:'Caballero',marca:'Marca B'}}),
     db.producto.create({data:{codigoBarra:'6900000000003',referencia:'REFERENCIA-COMPARTIDA',descripcion:'Segundo producto cruzado',linea:'Caballero',marca:'Marca B'}}),
   ]);
-  const inventoryImport=await db.consultaInventario.create({data:{usuarioId:userA.id,nombreArchivo:'inventario-prueba.csv',fechaConsulta:new Date('2026-06-22T00:00:00Z'),hashArchivo:createHash('sha256').update('inventario-'+randomUUID()).digest('hex'),totalFilas:2}});
+  const inventoryImport=await db.consultaInventario.create({data:{usuarioId:userA.id,nombreArchivo:'inventario-prueba.csv',fechaConsulta:new Date('2026-06-22T00:00:00Z'),hashArchivo:createHash('sha256').update('inventario-'+randomUUID()).digest('hex'),totalFilas:2,ubicacionId:bodegaRegion.id}});
   await db.inventarioActual.createMany({data:[
-    {consultaId:inventoryImport.id,productoId:productA.id,existencia:10,activo:true},
-    {consultaId:inventoryImport.id,productoId:productB.id,existencia:10,activo:true},
-    {consultaId:inventoryImport.id,productoId:productC.id,existencia:10,activo:true},
+    {consultaId:inventoryImport.id,ubicacionId:bodegaRegion.id,productoId:productA.id,existencia:10,activo:true},
+    {consultaId:inventoryImport.id,ubicacionId:bodegaRegion.id,productoId:productB.id,existencia:10,activo:true},
+    {consultaId:inventoryImport.id,ubicacionId:bodegaRegion.id,productoId:productC.id,existencia:10,activo:true},
   ]});
   const transferImport=await db.transferenciaConsultaImport.create({data:{nombreArchivo:'consulta-prueba.csv',hashArchivo:createHash('sha256').update(randomUUID()).digest('hex'),totalFilas:4,resumen:{total:4,exportadas:4}}});
   await db.transferenciaConsulta.createMany({data:[
@@ -89,7 +91,7 @@ test('API de Tienda: permisos, territorio, cruce atómico, auditoría, idempoten
   const historicalLookup=await payload(await GET(request(`producto&codigo=${historical.codigoBarra}`,userA)));
   assert.equal(historicalLookup.response.status,404);
   const inactive=await db.producto.create({data:{codigoBarra:'6900000000098',referencia:'I',descripcion:'Producto inactivo',activo:false}});
-  await db.inventarioActual.create({data:{consultaId:inventoryImport.id,productoId:inactive.id,existencia:5,activo:false}});
+  await db.inventarioActual.create({data:{consultaId:inventoryImport.id,ubicacionId:bodegaRegion.id,productoId:inactive.id,existencia:5,activo:false}});
   const inactiveLookup=await payload(await GET(request(`producto&codigo=${inactive.codigoBarra}`,userA)));
   assert.equal(inactiveLookup.response.status,404);
 

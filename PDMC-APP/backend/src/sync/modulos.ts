@@ -108,7 +108,7 @@ export const modulos: readonly Modulo[] = [
   },
   {
     id: "INVENTARIO",
-    // Fase 2b-1: un solo inventario, el del sitio PDMC_INVENTARIO_DIM_ID; por cada sitio será la 2b-2.
+    // Fase 2b-2: un inventario por bodega, el que envía el agente de cada una.
     fuente: { tipo: "AGENTE_INVENTARIO" },
     intervaloSegundos: () => numberEnv("PDMC_SYNC_INVENTARIO_SEGUNDOS", 900, 60, 86_400),
     // Consulta (hasta 5 min) + importación (hasta 10 min).
@@ -121,12 +121,13 @@ export const modulos: readonly Modulo[] = [
       // Se importa a nombre de la cuenta de sincronización de la región del sitio.
       if (!opciones.acceso) throw new Error("El inventario necesita la cuenta de sincronización de la región del sitio.");
       const service = new InventoryService(db, opciones.acceso);
+      if (!opciones.sitio) throw new Error("El inventario se carga por bodega: falta la bodega de la carga.");
       const result = await service.import({
-        nombreArchivo: `agente-inventario-${opciones.sitio?.dimIdTienda ?? "sqlserver"}.csv`,
+        nombreArchivo: `agente-inventario-${opciones.sitio.dimIdTienda}.csv`,
         fechaConsulta: new Date().toISOString(),
         contenido: csv,
         publicarNegativos: opciones.publicarNegativos === true,
-      });
+      }, { ubicacionId: opciones.sitio.ubicacionId });
       return { sinCambios: result.repetida && !opciones.publicarNegativos, resumen: result.resumen };
     },
   },

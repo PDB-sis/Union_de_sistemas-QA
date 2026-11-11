@@ -81,7 +81,10 @@ export function NegativePanel() {
   const [detailId,setDetailId] = useState<string|null>(null);
   const [confirm,setConfirm] = useState<{kind:"case"|"bulk";id?:string;version?:number;bodegaId?:string}|null>(null), [reason,setReason] = useState("");
   const selectedWarehouse = bodega;
-  const listKey = `lista?${new URLSearchParams({q,mes:month,filtro,bodegaProductoId,orden,vista,flujo:vista==="historial"?"todos":"trabajo",cola,comparacion:comparison,skip:String(skip),take:"25"})}#${epoch}`;
+  // Fase 2b-2: cada bodega tiene sus negativos; quien ve varias puede revisar una sola.
+  const [bodegaFiltro,setBodegaFiltro] = useState("");
+  const warehouses = useApi<{id:string;codigo:string;nombre:string}[]>("bodegas");
+  const listKey = `lista?${new URLSearchParams({...(bodegaFiltro?{bodegaId:bodegaFiltro}:{}),q,mes:month,filtro,bodegaProductoId,orden,vista,flujo:vista==="historial"?"todos":"trabajo",cola,comparacion:comparison,skip:String(skip),take:"25"})}#${epoch}`;
   const list = useApi<Listing>(listKey);
   const productWarehouses = useApi<{id:string;nombre:string}[]>("bodegas-producto");
   const refresh = () => { setEpoch(e=>e+1); setSelection({}); window.dispatchEvent(new Event("pdmc:negativos-changed")); };
@@ -122,7 +125,7 @@ export function NegativePanel() {
     <section className="pdmc-surface rounded-2xl border bg-card p-4"><div className="mb-3 flex items-center gap-2"><Search className="size-4 text-primary"/><div><h3 className="text-sm font-semibold">Buscar y ordenar</h3><p className="text-xs text-muted-foreground">Refina los casos de la etapa seleccionada.</p></div></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Input className="max-w-sm" aria-label="Buscar negativos" placeholder="Código, producto, marca, motivo o documento…" value={q} onChange={e=>{setQ(e.target.value);setSkip(0);setSelection({});}} />
 
-      <select aria-label="Filtrar por bodega del producto" className={selectClass} value={bodegaProductoId} onChange={e=>{setBodegaProductoId(e.target.value);setSkip(0);setSelection({});}}><option value="">Todas las bodegas</option>{productWarehouses.data?.map(item=><option key={item.id} value={item.id}>{item.nombre}</option>)}</select>
+      {(warehouses.data?.length??0)>1&&<select aria-label="Filtrar por bodega" className={selectClass} value={bodegaFiltro} onChange={e=>{setBodegaFiltro(e.target.value);setSkip(0);setSelection({});}}><option value="">Todas mis bodegas</option>{warehouses.data!.map(b=><option key={b.id} value={b.id}>{b.nombre}</option>)}</select>}<select aria-label="Filtrar por bodega del producto" className={selectClass} value={bodegaProductoId} onChange={e=>{setBodegaProductoId(e.target.value);setSkip(0);setSelection({});}}><option value="">Todas las ubicaciones físicas</option>{productWarehouses.data?.map(item=><option key={item.id} value={item.id}>{item.nombre}</option>)}</select>
       <select aria-label="Comparar fotografías" className={selectClass} value={comparison} onChange={e=>{setComparison(e.target.value);setSkip(0);setSelection({});}}><option value="todos">Todos los cambios</option><option value="nuevos">Nuevos en la fotografía</option><option value="aumentaron">Aumentó el negativo</option><option value="disminuyeron">Disminuyó el negativo</option><option value="iguales">Sin cambio</option></select>
       <select aria-label="Ordenar negativos" className={selectClass} value={orden} onChange={e=>{setOrden(e.target.value as keyof typeof ordenesNegativos);setSkip(0);setSelection({});}}>{Object.entries(ordenesNegativos).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>
     </div></section>

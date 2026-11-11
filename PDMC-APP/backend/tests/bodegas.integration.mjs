@@ -10,6 +10,9 @@ import {ejecutarModulo} from "../src/sync/ejecutar.ts";
 import {modulos} from "../src/sync/modulos.ts";
 import {TransferQueryService} from "../src/transferencias/consulta.ts";
 import {ensureSyncUser} from "../src/sync/usuario-sistema.ts";
+import {Authorization} from "../src/auth/authorization.ts";
+import {InventoryService} from "../src/inventario/service.ts";
+import {adoptarInventarioHeredado} from "../src/inventario/sitios.ts";
 
 // Fase 3b: transferencias, devoluciones y facturadores salen de lo que envían los
 // agentes (agente_fila), una carga por bodega; los números se repiten entre bodegas.
@@ -163,30 +166,71 @@ async function producto(dim,codigo,existencia,{categoria="DAMA",linea="PANTYS",a
   await admin.query(`INSERT INTO inventario_agente_actual (dim_id_tienda,codigo_barra,referencia,descripcion,existencia,nombre_categoria,linea,marca,activo,recibido_at) VALUES ($1,$2,'REF','Producto',$3,$4,$5,'MARCA',$6,clock_timestamp()) ON CONFLICT (dim_id_tienda,codigo_barra) DO UPDATE SET existencia=EXCLUDED.existencia,activo=EXCLUDED.activo,recibido_at=clock_timestamp()`,[dim,codigo,existencia,categoria,linea,activo]);
 }
 
-test("inventario: sale del agente del sitio configurado, solo activos con categoría",async()=>{
+test("inventario: cada bodega carga su propio inventario, su fotografía y sus negativos",async()=>{
   await ensureSyncUser(db,process.env.PDMC_SYNC_USUARIO_EMAIL);
   await producto(2004,"INV-A",-3);await producto(2004,"INV-B",5);
   await producto(2004,"INV-C",-2,{activo:false});            // inactivo: no entra (decisión revisable del 2026-10-26)
   await producto(2004,"INV-D",-1,{categoria:null});          // sin categoría: como la consulta anterior
-  await producto(2005,"INV-OTRA",-9);                        // otro sitio: no se mezcla
-  // Como con SQL Server, la primera carga debe publicar la fotografía de negativos.
-  const sinFoto=await ejecutarModulo(db,modulo("INVENTARIO"));
-  assert.equal(sinFoto.estado,"FALLIDA");assert.match(sinFoto.error,/primera carga debe publicar/i);
-  const r=await ejecutarModulo(db,modulo("INVENTARIO"),{publicarNegativos:true});
-  assert.equal(r.estado,"EXITOSA");assert.equal(r.totalFilas,2);
-  const codigos=(await db.inventarioActual.findMany({include:{producto:true}})).map(i=>i.producto.codigoBarra).sort();
-  assert.deepEqual(codigos,["INV-A","INV-B"]);
-  const foto=await db.fotoNegativos.findFirstOrThrow({include:{items:{include:{producto:true}}}});
-  assert.deepEqual(foto.items.map(i=>i.producto.codigoBarra),["INV-A"]);
+  await producto(2005,"INV-A",-9);await producto(2005,"INV-OTRA",4);   // otra bodega: el mismo código es otro inventario
+  // La primera carga de cada bodega publica su primera fotografía sola: la región empieza completa.
+  const r=await ejecutarModulo(db,modulo("INVENTARIO"));
+  assert.equal(r.estado,"EXITOSA");assert.equal(r.totalFilas,4);
+  assert.deepEqual(r.resumen.sitios.map(s=>[s.dimIdTienda,s.filas,s.primeraFotografia]),[[2004,2,true],[2005,2,true]]);
+  const deSitio=async dim=>(await db.inventarioActual.findMany({where:{ubicacionId:sitios[dim]},include:{producto:true}})).map(i=>`${i.producto.codigoBarra}:${i.existencia}`).sort();
+  assert.deepEqual(await deSitio(2004),["INV-A:-3","INV-B:5"]);
+  assert.deepEqual(await deSitio(2005),["INV-A:-9","INV-OTRA:4"]);
+  const fotos=await db.fotoNegativos.findMany({include:{items:true},orderBy:{ubicacionId:"asc"}});
+  assert.deepEqual(new Set(fotos.map(f=>f.ubicacionId)),new Set([sitios[2004],sitios[2005]]));
+  // Cada negativo vive en la bodega de su sitio, no en una bodega común.
+  const casos=await db.negativo.findMany({where:{producto:{codigoBarra:"INV-A"}},include:{bodega:true}});
+  assert.deepEqual(casos.map(c=>c.bodega.ubicacionId).sort(),[sitios[2004],sitios[2005]].sort());
+  assert.equal(await db.bodega.count({where:{codigo:"PDMC_GENERAL"}}),0);
 });
 
-test("inventario: sin cambios en el agente no se reimporta; con cambios, sí",async()=>{
+test("inventario: solo se recarga la bodega que cambió; sin cambios no se reimporta",async()=>{
   assert.equal((await ejecutarModulo(db,modulo("INVENTARIO"))).estado,"SIN_CAMBIOS");
   await producto(2004,"INV-B",7);
+  assert.equal((await ejecutarModulo(db,modulo("INVENTARIO"))).estado,"EXITOSA");
+  const b=await db.inventarioActual.findFirstOrThrow({where:{ubicacionId:sitios[2004],producto:{codigoBarra:"INV-B"}}});
+  assert.equal(b.existencia.toString(),"7");
+  assert.equal((await db.inventarioActual.findFirstOrThrow({where:{ubicacionId:sitios[2005],producto:{codigoBarra:"INV-OTRA"}}})).existencia.toString(),"4");
+  // Una segunda fotografía de la semana solo cuenta en su bodega (máximo 2 por semana en cada una).
+  const publicada=await ejecutarModulo(db,modulo("INVENTARIO"),{publicarNegativos:true});
+  assert.equal(publicada.estado,"EXITOSA");
+});
+
+test("una región nueva ve solo su bodega: su inventario y sus negativos, no los de otra región",async()=>{
+  const margarita=randomUUID(),bodega=randomUUID();
+  await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo) VALUES ($1,'R-MARGARITA','Región Margarita','REGION')`,[margarita]);
+  await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo,"regionId","dimIdTienda") VALUES ($1,'999990','BODEGA MARGARITA','BODEGA',$2,2009)`,[bodega,margarita]);
+  await db.usuario.create({data:{email:`sincronizacion.${randomUUID()}@pdmc.local`,nombre:"Sincronización Margarita",rol:"SINCRONIZACION",estado:"ACTIVO",debeCambiarPassword:false,asignaciones:{create:{rol:"SINCRONIZACION",ubicacionId:margarita}}}});
+  await producto(2009,"INV-MARG",-5);
   const r=await ejecutarModulo(db,modulo("INVENTARIO"));
   assert.equal(r.estado,"EXITOSA");
-  const b=await db.inventarioActual.findFirstOrThrow({where:{producto:{codigoBarra:"INV-B"}}});
-  assert.equal(b.existencia.toString(),"7");
+  assert.equal(r.resumen.sitios.find(s=>s.dimIdTienda===2009).cuenta.startsWith("sincronizacion."),true);
+  const persona=async region=>{const u=await db.usuario.create({data:{email:`${randomUUID()}@example.test`,nombre:"Mejora",rol:"MEJORA_CONTINUA",estado:"ACTIVO",debeCambiarPassword:false,asignaciones:{create:{rol:"MEJORA_CONTINUA",ubicacionId:region}}}});return new Authorization(db,u.id);};
+  const mcMargarita=await persona(margarita),mcOccidente=await persona((await db.ubicacion.findFirstOrThrow({where:{codigo:"REG-B"}})).id);
+  const resumen=await new InventoryService(db,mcMargarita).summary();
+  assert.deepEqual(resumen.sitios.map(s=>s.nombre),["BODEGA MARGARITA"]);assert.equal(resumen.total,1);
+  await assert.rejects(new InventoryService(db,mcMargarita).summary({ubicacionId:sitios[2004]}),{status:403});
+  assert.ok(!(await new InventoryService(db,mcOccidente).summary()).sitios.some(s=>s.nombre==="BODEGA MARGARITA"));
+  // Negativos: Margarita ve solo los de su bodega.
+  const visibles=await db.negativo.findMany({where:{bodegaId:await mcMargarita.filter("negativos.leer")},include:{producto:true}});
+  assert.deepEqual(visibles.map(n=>n.producto.codigoBarra),["INV-MARG"]);
+});
+
+test("los datos de antes (un solo sitio) se asignan a su bodega una sola vez",async()=>{
+  const usuario=await db.usuario.findFirstOrThrow();
+  const general=await db.bodega.create({data:{codigo:"PDMC_GENERAL",nombre:"Negativos"}});
+  const producto2=await db.producto.create({data:{codigoBarra:"LEGADO-1",descripcion:"Producto anterior"}});
+  const consulta=await db.consultaInventario.create({data:{usuarioId:usuario.id,nombreArchivo:"anterior.csv",fechaConsulta:new Date("2026-10-01T00:00:00Z"),hashArchivo:randomUUID().replaceAll("-",""),totalFilas:1}});
+  await db.negativo.create({data:{productoId:producto2.id,bodegaId:general.id,primeraDeteccion:new Date(),ultimaDeteccion:new Date()}});
+  const primera=await adoptarInventarioHeredado(db);
+  assert.equal(primera.asignado,true);assert.equal(primera.negativos,1);
+  assert.equal((await db.consultaInventario.findUniqueOrThrow({where:{id:consulta.id}})).ubicacionId,sitios[2004]);
+  assert.equal((await db.negativo.findFirstOrThrow({where:{productoId:producto2.id}})).bodegaId,(await db.bodega.findUniqueOrThrow({where:{ubicacionId:sitios[2004]}})).id);
+  assert.equal((await adoptarInventarioHeredado(db)).asignado,false);
+  await db.bodega.delete({where:{id:general.id}});
 });
 
 test("cada región carga sus bodegas con su propia cuenta; una región sin cuenta se omite y se reintenta",async()=>{

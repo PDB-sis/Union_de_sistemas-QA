@@ -134,7 +134,7 @@ Cada fase se despliega y se valida antes de pasar a la siguiente.
   2. En PDMC (`backend/src/sync/agente.ts`, constante `VIGENTE`), quitar el filtro `activo` y mandar `Estado` según `activo`, en lugar del `"1"` fijo.
   3. Recompilar el agente y reinstalarlo en los sitios.
 
-**2b-2 (pendiente):** inventario y negativos por cada sitio en la pantalla, cuando haya más sitios con agente.
+**2b-2 (lista en el código, 2026-11-12):** inventario, fotografías de negativos y negativos por cada bodega. PDMC lee `inventario_agente_actual` de **cada** bodega del catálogo que tenga agente (las tiendas siguen siendo solo para CYSN), una carga por bodega con la cuenta de sincronización de su región; la primera carga de una bodega publica su primera fotografía. Migración `20261112120000_inventario_por_bodega`; los datos anteriores (un solo sitio) se asignan a la bodega `PDMC_INVENTARIO_DIM_ID` al iniciar el servidor. Para sumar una región: agente con `TAREAS=inventario,transferencias,devoluciones,usuarios` en su bodega, la bodega en el catálogo (SUCURSALES) y asignada a su región, y la cuenta de sincronización de la región.
 
 **CYSN, ciclos QA desde el agente (2026-10-28, pendiente de desplegar):** al marcar un ciclo `LISTO_QA`, cada sucursal `PENDIENTE` toma su inventario de `inventario_agente_actual` como carga `VALIDADO` (`app/services/inventario_agente_service.py`, 3 pruebas de integración en `tests/qa/`). Sustituye a la carga de CSV, ya retirada. Si falta el inventario de alguna sucursal, no se cambia nada y se informa cuál.
 

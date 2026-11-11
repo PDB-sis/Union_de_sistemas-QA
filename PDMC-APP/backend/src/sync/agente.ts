@@ -38,10 +38,10 @@ export async function firmaAgente(db: PrismaClient, tarea: TareaAgente) {
   return { firma: createHash("sha256").update(JSON.stringify([tarea, resumen])).digest("hex"), filas: filas.reduce((n, f) => n + Number(f.activas), 0) };
 }
 
-// --- Inventario (fase 2b-1) ---------------------------------------------------------------
-// El inventario de PDMC sigue siendo uno solo: se alimenta del inventario que envía el agente
-// de UN sitio (PDMC_INVENTARIO_DIM_ID, por defecto la bodega MARACAIBO). El inventario por cada
-// sitio es la fase 2b-2. Solo se toman productos ACTIVOS (decisión revisable del 2026-10-26; ver PLAN-agente-multisitio.md, fase 2): un inactivo
+// --- Inventario (fase 2b-2) ---------------------------------------------------------------
+// Cada bodega tiene su inventario: PDMC lee el que envía el agente de CADA bodega del catálogo
+// (las tiendas también envían inventario, pero ese es para CYSN). PDMC_INVENTARIO_DIM_ID solo
+// indica a qué bodega pertenecen los datos de antes de la 2b-2. Solo se toman productos ACTIVOS (decisión revisable del 2026-10-26; ver PLAN-agente-multisitio.md, fase 2): un inactivo
 // con existencia negativa no aparece en Negativos. Para incluirlos, el agente tendría que enviarlos.
 
 export const COLUMNAS_INVENTARIO = ["Estado", "CodigoBarra", "Referencia", "Descripcion", "Existencia", "Categoria", "Linea", "Marca"] as const;
@@ -55,8 +55,17 @@ export function dimInventario() {
 // Como la consulta de SQL Server anterior (inventario.sql), solo entran productos con categoría.
 const VIGENTE = "activo AND nombre_categoria IS NOT NULL";
 
-export async function firmaInventario(db: PrismaClient) {
-  const dim = dimInventario();
+/** Bodegas del catálogo cuyo agente envía inventario, y los sitios que envían pero no están en el catálogo. */
+export async function sitiosConInventario(db: PrismaClient) {
+  const dims = (await consultar<{ dim: number }>(db, `SELECT DISTINCT dim_id_tienda AS dim FROM "${esquemaAgente()}".inventario_agente_actual WHERE ${VIGENTE} ORDER BY 1`)).map(fila => Number(fila.dim));
+  const ubicaciones = await db.ubicacion.findMany({ where: { dimIdTienda: { in: dims } }, select: { id: true, nombre: true, tipo: true, dimIdTienda: true }, orderBy: { dimIdTienda: "asc" } });
+  return {
+    bodegas: ubicaciones.filter(u => u.tipo === "BODEGA").map(u => ({ id: u.id, nombre: u.nombre, dim: u.dimIdTienda! })),
+    fueraDelCatalogo: dims.filter(dim => !ubicaciones.some(u => u.dimIdTienda === dim)),
+  };
+}
+
+export async function firmaInventario(db: PrismaClient, dim: number = dimInventario()) {
   const [fila] = await consultar<{ activas: bigint; ultimo: Date | null }>(db,
     `SELECT count(*) FILTER (WHERE ${VIGENTE}) AS activas, max(recibido_at) AS ultimo
        FROM "${esquemaAgente()}".inventario_agente_actual WHERE dim_id_tienda = $1`, dim);
@@ -67,12 +76,11 @@ export async function firmaInventario(db: PrismaClient) {
   };
 }
 
-export async function cargaInventario(db: PrismaClient) {
-  const dim = dimInventario();
+export async function cargaInventario(db: PrismaClient, dim: number = dimInventario()) {
   const filas = await consultar<{ codigo_barra: string; referencia: string | null; descripcion: string | null; existencia: string | null; nombre_categoria: string | null; linea: string | null; marca: string | null }>(db,
     `SELECT codigo_barra, referencia, descripcion, existencia::text AS existencia, nombre_categoria, linea, marca
        FROM "${esquemaAgente()}".inventario_agente_actual WHERE dim_id_tienda = $1 AND ${VIGENTE}`, dim);
-  if (!filas.length) throw new Error(`El agente del sitio ${dim} no ha enviado inventario con productos activos (PDMC_INVENTARIO_DIM_ID).`);
+  if (!filas.length) throw new Error(`El agente del sitio ${dim} no ha enviado inventario con productos activos.`);
   const csv = toCsv(COLUMNAS_INVENTARIO, filas.map(f => ({
     Estado: "1", CodigoBarra: f.codigo_barra, Referencia: f.referencia, Descripcion: f.descripcion,
     Existencia: f.existencia, Categoria: f.nombre_categoria, Linea: f.linea, Marca: f.marca,

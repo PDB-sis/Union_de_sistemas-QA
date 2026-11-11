@@ -74,9 +74,13 @@ export class StoreService{
     const input=z.object({codigo:z.string().trim().min(1).max(128)}).parse(raw),code=productCode(input.codigo);
     const product=await this.db.producto.findUnique({where:{codigoBarra:code},select:{id:true,codigoBarra:true,referencia:true,descripcion:true,marca:true,activo:true}});
     if(!product?.activo)throw new NegativosError(404,"PRODUCTO","El código no está activo en el inventario vigente.");
-    const inventory=await this.db.inventarioActual.findFirst({where:{productoId:product.id,activo:true},select:{existencia:true,bodegaProductoId:true,bodegaProducto:{select:{nombre:true}}}});
-    if(!inventory)throw new NegativosError(404,"PRODUCTO","El código no está activo en el inventario vigente.");
-    return {...product,inventarios:[{existencia:inventory.existencia,bodegaProductoId:inventory.bodegaProductoId,bodegaProducto:inventory.bodegaProducto}]};
+    // Solo el inventario de las bodegas de la región de la tienda (fase 2b-2); si su región todavía no
+    // tiene inventario en PDMC, el producto se puede reportar igual, sin datos de otra región.
+    const regiones=[...new Set((await this.stores("inconsistencias.reportar")).map(store=>store.regionId).filter((id):id is string=>Boolean(id)))];
+    const inventory=await this.db.inventarioActual.findFirst({where:{productoId:product.id,activo:true,ubicacion:{regionId:{in:regiones}}},select:{existencia:true,bodegaProductoId:true,bodegaProducto:{select:{nombre:true}}}});
+    // Si la región ya tiene inventario y el código no está, es un "código no registrado" (su propio flujo).
+    if(!inventory&&await this.db.inventarioActual.count({where:{ubicacion:{regionId:{in:regiones}}},take:1}))throw new NegativosError(404,"PRODUCTO","El código no está activo en el inventario vigente.");
+    return {...product,inventarios:inventory?[{existencia:inventory.existencia,bodegaProductoId:inventory.bodegaProductoId,bodegaProducto:inventory.bodegaProducto}]:[]};
   }
 
   async orderCatalog(raw:unknown){

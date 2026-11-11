@@ -8,6 +8,7 @@ import {countWorkflow,type CountWorkflow} from "@pdmc/contratos/workflow/count-r
 import {currentMonth,monthRange} from "@pdmc/contratos/month";
 import {validarMotivoNegativo} from "@pdmc/contratos/negativos/reasons";
 import {photoComparison} from "./photo-comparison";
+import {sitiosDeBodegas} from "../inventario/sitios";
 import {validarCambioNegativo,verificarAjusteNegativo,type VerificacionNegativo} from "@pdmc/contratos/negativos/flujo";
 
 export const stateSchema = z.enum(Object.keys(estados) as [keyof typeof estados, ...(keyof typeof estados)[]]);
@@ -42,21 +43,26 @@ export async function lockWarehouse(tx: Prisma.TransactionClient, id: string) {
 }
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));
 // Evidencia para cerrar un ajuste: inventario vigente posterior al ajuste y sin existencia negativa.
-export async function verificacionesAjuste(tx: Prisma.TransactionClient, casos: {id:string;productoId:string}[]) {
+export async function verificacionesAjuste(tx: Prisma.TransactionClient, casos: {id:string;productoId:string;bodegaId:string}[]) {
   const result=new Map<string,VerificacionNegativo>();
   if(!casos.length)return result;
-  const [vigente,sumas,ajustes]=await Promise.all([
-    // La carga vigente se busca entre las cargas (pocas filas), no ordenando todo InventarioActual.
-    tx.consultaInventario.findFirst({where:{inventarioActual:{some:{}}},orderBy:{fechaImportacion:"desc"},select:{fechaConsulta:true}}),
-    tx.inventarioActual.groupBy({by:["productoId"],where:{productoId:{in:casos.map(c=>c.productoId)}},_sum:{existencia:true}}),
-    tx.historialNegativo.findMany({where:{negativoId:{in:casos.map(c=>c.id)},valorNuevo:{path:["estado"],equals:"AJUSTE_REALIZADO"},NOT:{valorAnterior:{path:["estado"],equals:"AJUSTE_REALIZADO"}}},orderBy:{createdAt:"desc"},select:{negativoId:true,createdAt:true}}),
-  ]);
-  const existencia=new Map(sumas.map(row=>[row.productoId,row._sum.existencia?.toFixed(4)??null]));
+  // Cada caso se verifica contra el inventario vigente de SU bodega (fase 2b-2).
+  const sitioDe=await sitiosDeBodegas(tx,[...new Set(casos.map(c=>c.bodegaId))]);
+  const ajustes=await tx.historialNegativo.findMany({where:{negativoId:{in:casos.map(c=>c.id)},valorNuevo:{path:["estado"],equals:"AJUSTE_REALIZADO"},NOT:{valorAnterior:{path:["estado"],equals:"AJUSTE_REALIZADO"}}},orderBy:{createdAt:"desc"},select:{negativoId:true,createdAt:true}});
   const ajusteAt=new Map<string,Date>();for(const row of ajustes)if(!ajusteAt.has(row.negativoId))ajusteAt.set(row.negativoId,row.createdAt);
-  for(const caso of casos)result.set(caso.id,verificarAjusteNegativo({ajusteAt:ajusteAt.get(caso.id)??null,inventarioAt:vigente?.fechaConsulta??null,existencia:existencia.get(caso.productoId)??null}));
+  for(const ubicacionId of new Set([...sitioDe.values()])){
+    const delSitio=casos.filter(c=>sitioDe.get(c.bodegaId)===ubicacionId);
+    const [vigente,sumas]=ubicacionId?await Promise.all([
+      // La carga vigente se busca entre las cargas (pocas filas), no ordenando todo InventarioActual.
+      tx.consultaInventario.findFirst({where:{ubicacionId,inventarioActual:{some:{}}},orderBy:{fechaImportacion:"desc"},select:{fechaConsulta:true}}),
+      tx.inventarioActual.groupBy({by:["productoId"],where:{ubicacionId,productoId:{in:delSitio.map(c=>c.productoId)}},_sum:{existencia:true}}),
+    ]):[null,[]];
+    const existencia=new Map(sumas.map(row=>[row.productoId,row._sum.existencia?.toFixed(4)??null]));
+    for(const caso of delSitio)result.set(caso.id,verificarAjusteNegativo({ajusteAt:ajusteAt.get(caso.id)??null,inventarioAt:vigente?.fechaConsulta??null,existencia:existencia.get(caso.productoId)??null}));
+  }
   return result;
 }
-async function exigirVerificacion(tx: Prisma.TransactionClient, caso:{id:string;productoId:string}, etiqueta="") {
+async function exigirVerificacion(tx: Prisma.TransactionClient, caso:{id:string;productoId:string;bodegaId:string}, etiqueta="") {
   const verificacion=(await verificacionesAjuste(tx,[caso])).get(caso.id)!;
   if(!verificacion.puedeCerrar)throw new NegativosError(422,"VERIFICACION_PENDIENTE",etiqueta+verificacion.mensaje);
 }
@@ -105,7 +111,9 @@ export class NegativeOperations {
       const countChanged=(count===null?null:new Prisma.Decimal(count).toFixed(4))!==(before.conteoFisico?.toFixed(4)??null)||Boolean(count&&before.existenciaSistemaConteo===null);
       let systemAtCount=before.existenciaSistemaConteo;
       if(countChanged&&count){
-        systemAtCount=(await tx.inventarioActual.findFirst({where:{productoId:before.productoId},select:{existencia:true}}))?.existencia??null;
+        // La existencia de sistema es la del inventario vigente de la bodega del caso.
+        const ubicacionId=(await sitiosDeBodegas(tx,[before.bodegaId])).get(before.bodegaId);
+        systemAtCount=ubicacionId?(await tx.inventarioActual.aggregate({where:{productoId:before.productoId,ubicacionId},_sum:{existencia:true}}))._sum.existencia:null;
         if(systemAtCount===null)throw new NegativosError(422,"INVENTARIO_NO_DISPONIBLE","No se puede registrar el conteo porque no hay una cantidad de sistema vigente para el producto.");
       }
       const after = await tx.negativo.update({ where: { id }, data: { ...fields, conteoFisico:count,...(countChanged?{existenciaSistemaConteo:count?systemAtCount:null,conteoRegistradoAt:count?new Date():null}:{}),version: { increment: 1 } } });
@@ -122,7 +130,7 @@ export class NegativeOperations {
         await lockWarehouse(tx, id);
       }
       // La evidencia de los ajustes a cerrar se calcula una vez para todo el lote, no caso por caso.
-      const verificaciones=input.estado==="SOLUCIONADO"?await verificacionesAjuste(tx,await tx.negativo.findMany({where:{id:{in:input.casos.map(c=>c.id)},bodegaId:input.bodegaId,estado:"AJUSTE_REALIZADO"},select:{id:true,productoId:true}})):new Map<string,VerificacionNegativo>();
+      const verificaciones=input.estado==="SOLUCIONADO"?await verificacionesAjuste(tx,await tx.negativo.findMany({where:{id:{in:input.casos.map(c=>c.id)},bodegaId:input.bodegaId,estado:"AJUSTE_REALIZADO"},select:{id:true,productoId:true,bodegaId:true}})):new Map<string,VerificacionNegativo>();
       for (const item of input.casos) {
         const before = await tx.negativo.findFirst({ where: { id: item.id, bodegaId: input.bodegaId, anuladoAt: null, fusionadoEnId:null }, include:{producto:{select:{codigoBarra:true}}} });
         if (!before || before.version !== item.version) throw new NegativosError(409, "VERSION", "La selección cambió. Actualice; no se modificó ningún caso.");
@@ -183,21 +191,35 @@ export class NegativeOperations {
           ? {bodegaId:{in:managementIds},conteoFisico:{not:null},estado:{notIn:workExcluded}}
           : {OR:[...(countIds.length?[{bodegaId:{in:countIds},conteoFisico:null,estado:{notIn:workExcluded}}]:[]),...(managementIds.length?[{bodegaId:{in:managementIds},conteoFisico:{not:null},estado:{notIn:workExcluded}}]:[])]};
       const selectedPeriod=monthRange(p.mes),isCurrentPeriod=p.mes===currentMonth();
-      const activePhoto=await tx.fotoNegativos.findFirst({where:{fechaCorte:selectedPeriod},orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],include:{items:true,consulta:true}});
-      const previousPhoto=activePhoto?await tx.fotoNegativos.findFirst({where:{fechaCorte:{lt:activePhoto.fechaCorte}},orderBy:{fechaCorte:"desc"},include:{items:true}}):null;
-      const previousAmounts=new Map(previousPhoto?.items.map(row=>[row.productoId,row.existencia])??[]);
-      const inventory=activePhoto?activePhoto.items.map(row=>({productoId:row.productoId,_sum:{existencia:row.existencia}})):isCurrentPeriod?await tx.inventarioActual.groupBy({by:["productoId"],_sum:{existencia:true}}):[];
-      const currentAmounts=new Map(inventory.filter(row=>row._sum.existencia?.isNegative()).map(row=>[row.productoId,row._sum.existencia!]));
-      const currentProductIds=[...currentAmounts.keys()];
+      // Fase 2b-2: cada caso se compara con la fotografía y el inventario vigente de SU bodega.
+      const sitioDe=await sitiosDeBodegas(tx,scopes.map(b=>b.id));
+      type Fuente={activePhoto:{fechaCorte:Date;tipoCorte:string}|null;previousPhoto:{fechaCorte:Date}|null;previous:Map<string,Prisma.Decimal>;current:Map<string,Prisma.Decimal>;latest:Prisma.ConsultaInventarioGetPayload<object>|null};
+      const vacio:Fuente={activePhoto:null,previousPhoto:null,previous:new Map(),current:new Map(),latest:null},porBodega=new Map<string,Fuente>();
+      for(const b of scopes){
+        const ubicacionId=sitioDe.get(b.id);
+        if(!ubicacionId){porBodega.set(b.id,vacio);continue;}
+        const activePhoto=await tx.fotoNegativos.findFirst({where:{ubicacionId,fechaCorte:selectedPeriod},orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],include:{items:true,consulta:true}});
+        const previousPhoto=activePhoto?await tx.fotoNegativos.findFirst({where:{ubicacionId,fechaCorte:{lt:activePhoto.fechaCorte}},orderBy:{fechaCorte:"desc"},include:{items:true}}):null;
+        const inventory=activePhoto?activePhoto.items.map(row=>({productoId:row.productoId,_sum:{existencia:row.existencia}})):isCurrentPeriod?await tx.inventarioActual.groupBy({by:["productoId"],where:{ubicacionId},_sum:{existencia:true}}):[];
+        const latest=activePhoto?.consulta??await tx.consultaInventario.findFirst({where:{ubicacionId,fechaConsulta:selectedPeriod},orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]});
+        porBodega.set(b.id,{activePhoto,previousPhoto,latest,previous:new Map(previousPhoto?.items.map(row=>[row.productoId,row.existencia])??[]),current:new Map(inventory.filter(row=>row._sum.existencia?.isNegative()).map(row=>[row.productoId,row._sum.existencia!]))});
+      }
+      const deBodega=(bodegaId:string)=>porBodega.get(bodegaId)??vacio;
+      const amountOf=(n:{bodegaId:string;productoId:string})=>deBodega(n.bodegaId).current.get(n.productoId);
+      // Casos de cada bodega cuyos productos cumplen una condición (por ejemplo, negativos en su fotografía).
+      const nada:Prisma.NegativoWhereInput={id:{in:[]}};
+      const porProductos=(ids:(bodegaId:string)=>string[]):Prisma.NegativoWhereInput=>{const ramas=scopes.map(b=>({bodegaId:b.id,productoId:{in:ids(b.id)}})).filter(rama=>rama.productoId.in.length);return ramas.length?{OR:ramas}:nada;};
+      const negativosActuales=porProductos(id=>[...deBodega(id).current.keys()]);
       const comparisonLabels={nuevos:"Nuevo",aumentaron:"Empeoró",disminuyeron:"Mejoró",iguales:"Sin cambio",desaparecieron:"Desapareció"};
-      const comparisonIds=p.comparacion==="todos"?[]:[...new Set([...currentProductIds,...previousAmounts.keys()])].filter(id=>photoComparison(previousAmounts.get(id)?.toFixed(4)??null,currentAmounts.get(id)?.toFixed(4)??null,Boolean(previousPhoto),Boolean(activePhoto)).estado===comparisonLabels[p.comparacion as keyof typeof comparisonLabels]);
-      const latest=activePhoto?.consulta??await tx.consultaInventario.findFirst({where:{fechaConsulta:selectedPeriod},orderBy:[{fechaConsulta:"desc"},{fechaImportacion:"desc"}]});
+      const comparacion=p.comparacion==="todos"?null:porProductos(id=>{const d=deBodega(id);return [...new Set([...d.current.keys(),...d.previous.keys()])].filter(producto=>photoComparison(d.previous.get(producto)?.toFixed(4)??null,d.current.get(producto)?.toFixed(4)??null,Boolean(d.previousPhoto),Boolean(d.activePhoto)).estado===comparisonLabels[p.comparacion as keyof typeof comparisonLabels]);});
+      // Encabezado de la lista: la bodega con la fotografía más reciente.
+      const {activePhoto,previousPhoto,latest}=[...porBodega.values()].sort((a,b)=>(b.activePhoto?.fechaCorte.getTime()??0)-(a.activePhoto?.fechaCorte.getTime()??0))[0]??vacio;
       const flow=p.flujo==="trabajo"?workflowWhere:{};
       const effectiveView=p.cola==="desaparecidos"?"pendientes_verificar":p.vista;
       const period=effectiveView==="actual"?{}:{ultimaDeteccion:monthRange(p.mes)};
-      const base: Prisma.NegativoWhereInput = { AND:[{bodegaId:scopedId},flow,period,...(p.comparacion!=="todos"?[{productoId:{in:comparisonIds}}]:[])], anuladoAt: null, fusionadoEnId:null,
-        ...(effectiveView==="actual" && p.filtro!=="anulados" && p.cola!=="listos" ? {productoId:{in:currentProductIds}} :
-          effectiveView==="pendientes_verificar" ? {productoId:{notIn:currentProductIds},estado:"PENDIENTE_VERIFICAR"} : {}),
+      const base: Prisma.NegativoWhereInput = { AND:[{bodegaId:scopedId},flow,period,...(comparacion?[comparacion]:[]),
+        ...(effectiveView==="actual" && p.filtro!=="anulados" && p.cola!=="listos" ? [negativosActuales] :
+          effectiveView==="pendientes_verificar" ? [{NOT:negativosActuales},{estado:"PENDIENTE_VERIFICAR" as const}] : [])], anuladoAt: null, fusionadoEnId:null,
       };
       const where: Prisma.NegativoWhereInput = { ...base,
         ...(p.bodegaProductoId ? { bodegaProductoId: p.bodegaProductoId } : {}),
@@ -210,7 +232,7 @@ export class NegativeOperations {
       let items: Prisma.NegativoGetPayload<{ include: { producto: true, bodegaProducto:true } }>[];
       if (p.orden.startsWith("cantidad_")) {
         const all=await tx.negativo.findMany({where,include:{producto:true,bodegaProducto:true}});
-        all.sort((a,b)=>{const av=currentAmounts.get(a.productoId),bv=currentAmounts.get(b.productoId);if(!av&&!bv)return a.id.localeCompare(b.id);if(!av)return 1;if(!bv)return -1;const order=av.comparedTo(bv);return p.orden==="cantidad_desc"?order:-order;});
+        all.sort((a,b)=>{const av=amountOf(a),bv=amountOf(b);if(!av&&!bv)return a.id.localeCompare(b.id);if(!av)return 1;if(!bv)return -1;const order=av.comparedTo(bv);return p.orden==="cantidad_desc"?order:-order;});
         items=all.slice(p.skip,p.skip+p.take);
       } else {
         const orderBy: Prisma.NegativoOrderByWithRelationInput = p.orden.startsWith("codigo_")
@@ -220,25 +242,25 @@ export class NegativeOperations {
       }
       const inconsistencyRows=await tx.inconsistencia.findMany({where:{resuelto:false,codigoBarra:{in:items.map(n=>n.producto.codigoBarra)}},select:{codigoBarra:true}});
       const inconsistencyCount=new Map<string,number>();for(const row of inconsistencyRows)inconsistencyCount.set(row.codigoBarra,(inconsistencyCount.get(row.codigoBarra)??0)+1);
-      const globalSummaryBase: Prisma.NegativoWhereInput = {AND:[{bodegaId:scopedId},period],anuladoAt:null,fusionadoEnId:null,productoId:{in:currentProductIds}};
-      const summaryBase: Prisma.NegativoWhereInput = {AND:[{bodegaId:scopedId},period],anuladoAt:null,fusionadoEnId:null,productoId:{in:currentProductIds},...(p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{})};
+      const globalSummaryBase: Prisma.NegativoWhereInput = {AND:[{bodegaId:scopedId},period,negativosActuales],anuladoAt:null,fusionadoEnId:null};
+      const summaryBase: Prisma.NegativoWhereInput = {AND:[{bodegaId:scopedId},period,negativosActuales],anuladoAt:null,fusionadoEnId:null,...(p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{})};
       const activos = await tx.negativo.count({ where: { ...summaryBase, estado: { notIn: [...closed] } } });
       const aprobados = await tx.negativo.count({ where: { ...summaryBase, estado: "AJUSTE_AUTORIZADO" } });
       const listosCerrar = await tx.negativo.count({ where: { AND:[{bodegaId:scopedId},period],anuladoAt:null,fusionadoEnId:null,...(p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{}),estado:"AJUSTE_REALIZADO" } });
       const resueltos = await tx.negativo.count({ where: { ...summaryBase, estado: { in: [...closed] } } });
       const sinConteo = await tx.negativo.count({ where: { ...summaryBase,conteoFisico:null,estado:{notIn:[...approvedStates,...closed]} } });
       const productWarehouse = p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{};
-      const visibleCurrent=await tx.negativo.findMany({where:{AND:[where,{estado:{notIn:[...closed]}}]},select:{productoId:true}});
-      const units=visibleCurrent.reduce((sum,item)=>sum.add(currentAmounts.get(item.productoId)??0),new Prisma.Decimal(0));
-      const allActiveCases=await tx.negativo.findMany({where:{...globalSummaryBase,estado:{notIn:[...closed]}},select:{productoId:true}});
-      const allActiveUnits=allActiveCases.reduce((sum,item)=>sum.add(currentAmounts.get(item.productoId)??0),new Prisma.Decimal(0));
+      const visibleCurrent=await tx.negativo.findMany({where:{AND:[where,{estado:{notIn:[...closed]}}]},select:{productoId:true,bodegaId:true}});
+      const units=visibleCurrent.reduce((sum,item)=>sum.add(amountOf(item)??0),new Prisma.Decimal(0));
+      const allActiveCases=await tx.negativo.findMany({where:{...globalSummaryBase,estado:{notIn:[...closed]}},select:{productoId:true,bodegaId:true}});
+      const allActiveUnits=allActiveCases.reduce((sum,item)=>sum.add(amountOf(item)??0),new Prisma.Decimal(0));
       const listosEnFoto=await tx.negativo.count({where:{...summaryBase,estado:"AJUSTE_REALIZADO"}});
       const conConteo=Math.max(0,activos-sinConteo-aprobados-listosEnFoto),actuales=sinConteo+conConteo+aprobados+listosEnFoto;
-      const pendientesVerificar = await tx.negativo.count({where:{AND:[{bodegaId:scopedId},period],fusionadoEnId:null,anuladoAt:null,estado:"PENDIENTE_VERIFICAR",...productWarehouse,productoId:{notIn:currentProductIds}}});
+      const pendientesVerificar = await tx.negativo.count({where:{AND:[{bodegaId:scopedId},period,{NOT:negativosActuales}],fusionadoEnId:null,anuladoAt:null,estado:"PENDIENTE_VERIFICAR",...productWarehouse}});
       const verificaciones=await verificacionesAjuste(tx,items.filter(n=>n.estado==="AJUSTE_REALIZADO"));
       const workflow=p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?"desaparecidos":countIds.length&&managementIds.length?"mixto":countIds.length?"conteo":"gestion";
       return { total, skip: p.skip, take: p.take, workflow, resumen: { actuales, pendientesVerificar, activos, resueltos, sinConteo, conConteo, aprobados, listosCerrar, totalCasosActivos:allActiveCases.length, totalUnidadesActivas:allActiveUnits.abs().toFixed(4), grupos: { EN_INVESTIGACION: activos - aprobados - listosEnFoto, AJUSTE_AUTORIZADO: aprobados + listosEnFoto, SOLUCIONADO: resueltos }, unidades: units.abs().toFixed(4) }, ultimaConsulta: latest, corteNegativos:activePhoto?{fechaCorte:activePhoto.fechaCorte,tipoCorte:activePhoto.tipoCorte}:null,fotografiaAnterior:previousPhoto?{fechaCorte:previousPhoto.fechaCorte}:null,
-        items: items.map(n => ({ ...n, inconsistenciasActivas:inconsistencyCount.get(n.producto.codigoBarra)??0, verificacion:verificaciones.get(n.id)??null, workflow:p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?(n.conteoFisico===null?"conteo":"gestion"):workflows.get(n.bodegaId)??"gestion", existenciaActual: currentAmounts.get(n.productoId)?.toFixed(4)??null, existenciaAnterior:previousAmounts.get(n.productoId)?.toFixed(4)??null,comparacionFoto:photoComparison(previousAmounts.get(n.productoId)?.toFixed(4)??null,activePhoto?currentAmounts.get(n.productoId)?.toFixed(4)??null:null,Boolean(previousPhoto),Boolean(activePhoto)) })),
+        items: items.map(n => ({ ...n, inconsistenciasActivas:inconsistencyCount.get(n.producto.codigoBarra)??0, verificacion:verificaciones.get(n.id)??null, workflow:p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?(n.conteoFisico===null?"conteo":"gestion"):workflows.get(n.bodegaId)??"gestion", existenciaActual: amountOf(n)?.toFixed(4)??null, existenciaAnterior:deBodega(n.bodegaId).previous.get(n.productoId)?.toFixed(4)??null,comparacionFoto:photoComparison(deBodega(n.bodegaId).previous.get(n.productoId)?.toFixed(4)??null,deBodega(n.bodegaId).activePhoto?amountOf(n)?.toFixed(4)??null:null,Boolean(deBodega(n.bodegaId).previousPhoto),Boolean(deBodega(n.bodegaId).activePhoto)) })),
       };
     }, { isolationLevel: "RepeatableRead" });
   }

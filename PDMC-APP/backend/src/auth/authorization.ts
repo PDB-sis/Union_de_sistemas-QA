@@ -32,11 +32,14 @@ export class Authorization {
     const site=await this.generalSite();
     return Boolean(site&&allows(grants,permission,site));
   }
-  /** El inventario de PDMC es el del sitio PDMC_INVENTARIO_DIM_ID: solo para quien cubre ese sitio. */
-  async inventory(permission:Permission="inventario.administrar"){
-    await this.permitted(permission);
-    const site=await this.generalSite();
-    if(!site||!allows(await this.grants(),permission,site))throw new AuthError(403,"INVENTARIO_REGION","El inventario y los negativos de tu región todavía no están conectados a PDMC: hoy PDMC lee el inventario de una sola bodega, de otra región.");
+  /**
+   * Cada bodega tiene su inventario (fase 2b-2): se ven las bodegas de la región o la bodega asignada;
+   * el administrador, todas. Con ubicacionId, exige acceso a esa bodega. Devuelve las bodegas visibles.
+   */
+  async inventory(permission:Permission="inventario.administrar",ubicacionId?:string){
+    const sitios=(await this.locationScope(permission,"BODEGA")).rows;
+    if(ubicacionId?!sitios.some(sitio=>sitio.id===ubicacionId):!sitios.length)throw new AuthError(403,"INVENTARIO_REGION",ubicacionId?"No tienes acceso al inventario de esa bodega.":"Tu cuenta no tiene una bodega asignada: pide que te asignen tu región o tu bodega.");
+    return sitios;
   }
   async locationScope(permission:Permission,type:"REGION"|"BODEGA"|"TIENDA") {
     const grants=await this.grants();
@@ -110,7 +113,7 @@ const importacionesDelSistema: readonly Permission[] = ["inventario.administrar"
 export class SystemAuthorization extends Authorization {
   constructor(db: PrismaClient, userId: string, private sitio?: Resource) { super(db, userId); }
   // La sincronización ya carga solo los sitios de su región (permitted, más abajo).
-  async inventory(permission: Permission = "inventario.administrar") { await this.permitted(permission); }
+  async inventory(permission: Permission = "inventario.administrar") { await this.permitted(permission); return []; }
   async permitted(permission: Permission) {
     if (!this.userId || !importacionesDelSistema.includes(permission)) throw denied();
     const user = await this.db.usuario.findUnique({where:{id:this.userId}, select:{email:true,activo:true,estado:true,asignaciones:{include:{ubicacion:true}}}});

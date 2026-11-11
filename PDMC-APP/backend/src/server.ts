@@ -19,6 +19,8 @@ import * as metricas from "./http/metricas/route";
 import * as negativos from "./http/operacion/negativos/[...path]/route";
 import * as panel from "./http/panel/route";
 import * as proyectos from "./http/proyectos/[...path]/route";
+import { adoptarInventarioHeredado } from "./inventario/sitios";
+import { getDb } from "./db";
 import * as qaSso from "./http/qa-sso/route";
 import * as sincronizacion from "./http/sincronizacion/route";
 import * as tienda from "./http/tienda/route";
@@ -111,6 +113,11 @@ const server = serve({
     serverOptions: { pfx: readFileSync(pfx), passphrase: readFileSync(process.env.PDMC_TLS_PASSWORD_FILE ?? ".secrets/pdmc-lan-password").toString().trim(), minVersion: "TLSv1.2" as const },
   } : {}),
 }, info => console.info(`PDMC API lista en ${pfx ? "https" : "http"}://${hostname}:${info.port}${dist ? " (con la interfaz)" : ""}`));
+
+// Fase 2b-2: los datos de inventario y negativos de antes (un solo sitio) se asignan a su bodega.
+void adoptarInventarioHeredado(getDb()).then(
+  resultado => { if (resultado.asignado) console.info(`Inventario y negativos anteriores asignados a ${resultado.sitio}:`, resultado); else if (resultado.motivo) console.warn(resultado.motivo); },
+  error => console.error("No se pudo asignar el inventario anterior a su bodega:", error instanceof Error ? error.message : error));
 const close = () => server.close(() => process.exit(0));
 process.on("SIGINT", close);
 process.on("SIGTERM", close);

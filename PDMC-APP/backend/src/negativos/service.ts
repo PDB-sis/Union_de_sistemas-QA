@@ -3,6 +3,7 @@ import { countWorkflow } from "@pdmc/contratos/workflow/count-routing";
 import { Authorization } from "../auth/authorization";
 import { NegativosError } from "./validation";
 import { verificacionesAjuste } from "./operations";
+import { sitiosDeBodegas } from "../inventario/sitios";
 
 export class NegativosService {
   constructor(private db: PrismaClient, private access = new Authorization(db)) {}
@@ -15,7 +16,7 @@ export class NegativosService {
       const [historial,total,inventario,inconsistencias,canCount,canEdit] = await Promise.all([
         tx.historialNegativo.findMany({ where: { negativoId: id }, include: { usuario: { select: { nombre: true } } }, skip, take, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
         tx.historialNegativo.count({ where: { negativoId: id } }),
-        tx.inventarioActual.aggregate({ where: { productoId: negativo.productoId }, _sum: { existencia: true } }),
+        tx.inventarioActual.aggregate({ where: { productoId: negativo.productoId, ubicacionId: (await sitiosDeBodegas(tx, [negativo.bodegaId])).get(negativo.bodegaId) ?? "00000000-0000-0000-0000-000000000000" }, _sum: { existencia: true } }),
         tx.inconsistencia.findMany({where:{codigoBarra:negativo.producto.codigoBarra,resuelto:false},orderBy:[{fecha:"desc"},{updatedAt:"desc"}],take:10,select:{id:true,transferencia:true,sucursal:true,tipoError:true,cantidadErrada:true,fecha:true}}),
         this.access.canWarehouse("negativos.conteo",bodegaId),
         this.access.canWarehouse("negativos.editar",bodegaId),

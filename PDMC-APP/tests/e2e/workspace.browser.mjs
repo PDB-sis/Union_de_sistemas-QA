@@ -144,11 +144,11 @@ try {
   // La bodega y la tienda de los casos de ejemplo pertenecen a la región del panel.
   await admin.query(`INSERT INTO "Ubicacion" (id,codigo,nombre,tipo,"regionId") VALUES ($1,'B-PANEL','Bodega del panel','BODEGA',$2),($3,'T-PANEL','Tienda del panel','TIENDA',$2)`,[panelSite,transferRegion,randomUUID()]);
   const panelWarehouse=randomUUID();await admin.query('INSERT INTO "Bodega" (id,codigo,nombre,"ubicacionId","updatedAt") VALUES ($1,$2,$3,$4,now())',[panelWarehouse,"PANEL","Bodega del panel",panelSite]);
-  const panelQuery=randomUUID();await admin.query('INSERT INTO "ConsultaInventario" (id,"usuarioId","nombreArchivo","fechaConsulta","hashArchivo","totalFilas") VALUES ($1,$2,$3,now(),$4,2)',[panelQuery,actorId,"panel.csv",randomBytes(32).toString("hex")]);
+  const panelQuery=randomUUID();await admin.query('INSERT INTO "ConsultaInventario" (id,"usuarioId","nombreArchivo","fechaConsulta","hashArchivo","totalFilas","ubicacionId") VALUES ($1,$2,$3,now(),$4,2,$5)',[panelQuery,actorId,"panel.csv",randomBytes(32).toString("hex"),panelSite]);
   for(const [index,code] of ["7700000000011","7700000000028"].entries()){
     const productId=randomUUID();
     await admin.query('INSERT INTO "Producto" (id,"codigoBarra",descripcion,"updatedAt") VALUES ($1,$2,$3,now())',[productId,code,`Producto del panel ${index+1}`]);
-    await admin.query('INSERT INTO "InventarioActual" (id,"consultaId","productoId",existencia,activo) VALUES ($1,$2,$3,$4,true)',[randomUUID(),panelQuery,productId,-2-index]);
+    await admin.query('INSERT INTO "InventarioActual" (id,"consultaId","ubicacionId","productoId",existencia,activo) VALUES ($1,$2,$5,$3,$4,true)',[randomUUID(),panelQuery,productId,-2-index,panelSite]);
     await admin.query(`INSERT INTO "Negativo" (id,"productoId","bodegaId",estado,"conteoFisico","existenciaSistemaConteo","conteoRegistradoAt","primeraDeteccion","ultimaDeteccion","updatedAt") VALUES ($1,$2,$3,'En investigación',0,$4,now(),now(),now(),now())`,[randomUUID(),productId,panelWarehouse,-2-index]);
     await admin.query(`INSERT INTO "Inconsistencia" (id,"sourceKey",fecha,sucursal,transferencia,"codigoBarra","tipoError","cantidadErrada","conteoFisico","existenciaSistemaConteo","conteoRegistradoAt","unidadesSinResolver","updatedAt") VALUES ($1,$2,now(),'Tienda del panel',$3,$4,'Faltante físico',2,3,5,now(),2,now())`,[randomUUID(),randomUUID(),`9100${index}`,code]);
   }
