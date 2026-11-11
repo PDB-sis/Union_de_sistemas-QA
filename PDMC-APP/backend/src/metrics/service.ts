@@ -11,7 +11,9 @@ export class MetricsService{
   async dashboard(){
     await this.access.permitted("metricas.leer");
     const storeScope=await this.access.locationScope("metricas.leer","TIENDA");
-    const warehouseWhere=await this.access.warehouseWhere("metricas.leer");
+    // Negativos de las bodegas de la región (incluida la general, si su inventario es de esta región).
+    const warehouseWhere=await this.access.warehouseWhere("negativos.leer");
+    const inventarioPropio=await this.access.inventory("negativos.leer").then(()=>true,()=>false);
     const warehouses=await this.db.bodega.findMany({where:warehouseWhere,select:{id:true}});
     const storeIds=storeScope.rows.map(row=>row.id),warehouseIds=warehouses.map(row=>row.id);
     const storeFilter=storeScope.national?{}:{tiendaId:{in:storeIds}};
@@ -21,8 +23,8 @@ export class MetricsService{
       this.db.reporteTransferenciaTienda.findMany({where:{createdAt:range,...storeFilter},select:{transferencia:true,tiendaId:true,sinIncidencias:true,createdAt:true}}),
       this.db.inconsistencia.findMany({where:{fecha:range,...storeFilter},select:{fecha:true,resuelto:true,ajustado:true,cantidadErrada:true}}),
       this.db.negativo.findMany({where:{ultimaDeteccion:range,anuladoAt:null,fusionadoEnId:null,bodegaId:{in:warehouseIds}},select:{ultimaDeteccion:true,estado:true}}),
-      this.db.consultaInventario.findMany({where:{fechaConsulta:range},select:{fechaConsulta:true,totalFilas:true},orderBy:{fechaConsulta:"asc"}}),
-      storeScope.national?this.db.fotoNegativos.findMany({orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],take:24,select:{fechaCorte:true,tipoCorte:true,totalCodigos:true,totalUnidades:true}}):Promise.resolve([]),
+      storeScope.national||inventarioPropio?this.db.consultaInventario.findMany({where:{fechaConsulta:range},select:{fechaConsulta:true,totalFilas:true},orderBy:{fechaConsulta:"asc"}}):Promise.resolve([]),
+      storeScope.national||inventarioPropio?this.db.fotoNegativos.findMany({orderBy:[{fechaCorte:"desc"},{createdAt:"desc"}],take:24,select:{fechaCorte:true,tipoCorte:true,totalCodigos:true,totalUnidades:true}}):Promise.resolve([]),
     ]);
     const byTransfer=new Map(transfers.map(row=>[`${row.tiendaId}:${row.numero}`,row.fecha]));
     const series=months.map(month=>{
