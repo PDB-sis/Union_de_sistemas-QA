@@ -15,7 +15,8 @@ import { WorkspaceHeader, WorkspaceNavigation } from "@/components/workspace-nav
 import { Dialog as Modal, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {ProjectResetPanel} from "./project-reset";
 import {ShieldCheck} from "lucide-react";
-import {IconoAuditoria,IconoCuenta,IconoInicio,IconoRegiones,IconoRestablecer,IconoSincronizacion,IconoUsuarios} from "@/components/brand/module-icons";
+import {IconoAuditoria,IconoCuenta,IconoInicio,IconoProyectos,IconoRegiones,IconoRestablecer,IconoSincronizacion,IconoUsuarios} from "@/components/brand/module-icons";
+import { ProyectosModulo } from "@/components/proyectos/modulo";
 
 type Grant={rol:Rol;ubicacionId:string|null;ubicacion?:{nombre:string;codigo:string;tipo:string}|null};
 type User={id:string;email:string;nombre:string;estado:string;activo:boolean;debeCambiarPassword:boolean;updatedAt:string;asignaciones:Grant[];vinculosOperativos:{perfilId:string;perfil:{codigo:string;nombre:string}}[];_count:{asignados:number}};
@@ -212,7 +213,7 @@ function SyncAccounts() {
     {action&&<SyncAccountAction {...action} done={done} close={()=>setAction(null)}/>}
   </>;
 }
-type AdminTab="inicio"|"usuarios"|"entidades"|"sincronizacion"|"auditoria"|"restablecer"|"cuenta";
+type AdminTab="inicio"|"usuarios"|"entidades"|"sincronizacion"|"auditoria"|"restablecer"|"proyectos"|"cuenta";
 function AdminHome({open}:{open:(tab:AdminTab)=>void}){
   const cards=[
     {tab:"usuarios" as const,title:"Usuarios y accesos",text:"Cree cuentas, asigne roles por región y administre su estado.",icon:IconoUsuarios},
@@ -225,14 +226,14 @@ function AdminHome({open}:{open:(tab:AdminTab)=>void}){
 export default function AdministrationPanel({actor,canManage}:{actor:UsuarioSesion;canManage:boolean}) {
   const actorId=actor.id,actorName=actor.nombre;
   const [tab,setTab]=useState<AdminTab>(canManage?"inicio":"auditoria");
-  const tabs=canManage?[{id:"inicio" as const,label:"Inicio",icon:IconoInicio},{id:"usuarios" as const,label:"Usuarios",icon:IconoUsuarios},{id:"entidades" as const,label:"Regiones y entidades",icon:IconoRegiones},{id:"sincronizacion" as const,label:"Sincronización",icon:IconoSincronizacion},{id:"auditoria" as const,label:"Auditoría",icon:IconoAuditoria},{id:"restablecer" as const,label:"Restablecer proyecto",icon:IconoRestablecer},{id:"cuenta" as const,label:"Mi cuenta",icon:IconoCuenta}]:[{id:"auditoria" as const,label:"Auditoría operativa",icon:IconoAuditoria},{id:"cuenta" as const,label:"Mi cuenta",icon:IconoCuenta}];
+  const tabs=canManage?[{id:"inicio" as const,label:"Inicio",icon:IconoInicio},{id:"usuarios" as const,label:"Usuarios",icon:IconoUsuarios},{id:"entidades" as const,label:"Regiones y entidades",icon:IconoRegiones},{id:"sincronizacion" as const,label:"Sincronización",icon:IconoSincronizacion},{id:"auditoria" as const,label:"Auditoría",icon:IconoAuditoria},{id:"restablecer" as const,label:"Restablecer proyecto",icon:IconoRestablecer},{id:"proyectos" as const,label:"Proyectos",icon:IconoProyectos},{id:"cuenta" as const,label:"Mi cuenta",icon:IconoCuenta}]:[{id:"auditoria" as const,label:"Auditoría operativa",icon:IconoAuditoria},{id:"proyectos" as const,label:"Proyectos",icon:IconoProyectos},{id:"cuenta" as const,label:"Mi cuenta",icon:IconoCuenta}];
   const current=tabs.find(item=>item.id===tab)??tabs[0];
   return <div className="workspace min-h-screen bg-background"><SessionWatch/>
     <a className="workspace-skip" href="#administration-content">Ir al contenido</a>
     <header className="workspace-chrome"><WorkspaceHeader subtitle="Administración"><span className="hidden max-w-48 truncate text-sm text-muted-foreground md:block">{actorName}</span><ThemeToggle compact/><LogoutButton/></WorkspaceHeader><WorkspaceNavigation label="Módulos administrativos" value={tab} onChange={setTab} items={tabs}/></header>
     <main id="administration-content" tabIndex={-1} className="workspace-content">
-      <div className="workspace-page-heading"><div><p className="workspace-eyebrow">{canManage ? "Administración nacional" : "Trazabilidad operativa"}</p><h1>{current.label}</h1><p className="workspace-page-description">{{inicio:"Personas, regiones y accesos. Una estructura conectada.",usuarios:"Cuentas, roles y a qué región, bodega o tienda tiene acceso cada persona.",entidades:"Regiones, bodegas y tiendas del territorio.",sincronizacion:"Cargas automáticas desde SQL Server y cuentas de sincronización por región.",auditoria:"Quién hizo qué, cuándo, desde dónde y qué cambió.",restablecer:"Borrado total protegido, con respaldo verificado.",cuenta:"Perfil, seguridad, modo y paleta de colores."}[tab]}</p></div><span className="workspace-role-tag"><ShieldCheck className="size-4"/>{canManage ? "Administrador" : "Auditoría"}</span></div>
-      <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">{canManage&&(tab==="inicio"||tab==="sincronizacion")&&<SincronizacionEstado/>}<section className={tab==="inicio"||tab==="cuenta"?"":"rounded-3xl border bg-card p-4 shadow-sm sm:p-6"}>{tab==="inicio"?<AdminHome open={setTab}/>:tab==="cuenta"?<AccountSettings user={actor}/>:tab==="usuarios"?<Users actorId={actorId}/>:tab==="entidades"?<Entities/>:tab==="sincronizacion"&&canManage?<SyncAccounts/>:tab==="restablecer"&&canManage?<ProjectResetPanel/>:<AuditLog/>}</section></div>
+      <div className="workspace-page-heading"><div><p className="workspace-eyebrow">{canManage ? "Administración nacional" : "Trazabilidad operativa"}</p><h1>{current.label}</h1><p className="workspace-page-description">{{inicio:"Personas, regiones y accesos. Una estructura conectada.",usuarios:"Cuentas, roles y a qué región, bodega o tienda tiene acceso cada persona.",entidades:"Regiones, bodegas y tiendas del territorio.",sincronizacion:"Cargas automáticas desde SQL Server y cuentas de sincronización por región.",proyectos:"Proyectos de mejora compartidos con tu equipo.",auditoria:"Quién hizo qué, cuándo, desde dónde y qué cambió.",restablecer:"Borrado total protegido, con respaldo verificado.",cuenta:"Perfil, seguridad, modo y paleta de colores."}[tab]}</p></div><span className="workspace-role-tag"><ShieldCheck className="size-4"/>{canManage ? "Administrador" : "Auditoría"}</span></div>
+      <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">{canManage&&(tab==="inicio"||tab==="sincronizacion")&&<SincronizacionEstado/>}<section className={tab==="inicio"||tab==="cuenta"||tab==="proyectos"?"":"rounded-3xl border bg-card p-4 shadow-sm sm:p-6"}>{tab==="inicio"?<AdminHome open={setTab}/>:tab==="cuenta"?<AccountSettings user={actor}/>:tab==="proyectos"?<ProyectosModulo/>:tab==="usuarios"?<Users actorId={actorId}/>:tab==="entidades"?<Entities/>:tab==="sincronizacion"&&canManage?<SyncAccounts/>:tab==="restablecer"&&canManage?<ProjectResetPanel/>:<AuditLog/>}</section></div>
     </main>
   </div>;
 }

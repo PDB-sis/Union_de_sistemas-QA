@@ -69,6 +69,13 @@ for (const [nombre, rol, ubicacionId] of roles)
   await db.usuario.create({ data: { email: `${nombre}@movil.test`, nombre: `Usuario de ${nombre} con nombre largo`, rol, passwordHash: hash, estado: "ACTIVO", activo: true, debeCambiarPassword: false, asignaciones: { create: { rol, ubicacionId } } } });
 
 await db.vinculoOperativo.create({ data: { usuarioId: (await db.usuario.findUniqueOrThrow({ where: { email: "facturacion@movil.test" } })).id, perfilId: noreima.id } });
+// Un proyecto compartido: lo crea Mejora Continua, Jefe de bodega puede editar y Tienda solo leer.
+const jefeUsuario = await db.usuario.findUniqueOrThrow({ where: { email: "jefe@movil.test" } }), tiendaUsuario = await db.usuario.findUniqueOrThrow({ where: { email: "tienda@movil.test" } });
+const proyecto = await db.proyecto.create({ data: { titulo: "Reducir negativos de Galerías", resumen: "Bajar a cero los negativos de la temporada antes de diciembre.", color: "verde", estado: "EN_CURSO", prioridad: "ALTA", fechaObjetivo: new Date("2026-12-15T00:00:00.000Z"), propietarioId: (await db.usuario.findUniqueOrThrow({ where: { email: "mejora@movil.test" } })).id,
+  contenido: [{ id: "b1", tipo: "titulo", texto: "Plan de acción" }, { id: "b2", tipo: "parrafo", texto: "Revisar cada código negativo con la bodega y la tienda, y corregir el origen." }, { id: "b3", tipo: "casilla", texto: "Contar la caja 4 de Galerías", hecho: true }, { id: "b4", tipo: "casilla", texto: "Ajustar los códigos confirmados", hecho: false }, { id: "b5", tipo: "aviso", texto: "Prioridad: códigos con más de 10 unidades negativas." }],
+  miembros: { create: [{ usuarioId: jefeUsuario.id, permiso: "EDITOR" }, { usuarioId: tiendaUsuario.id, permiso: "LECTOR" }] },
+  tareas: { create: [{ titulo: "Conteo físico de Galerías", estado: "HECHA", responsableId: jefeUsuario.id, orden: 0 }, { titulo: "Revisar transferencias con error", estado: "EN_CURSO", responsableId: jefeUsuario.id, fechaLimite: new Date("2026-11-20T00:00:00.000Z"), orden: 1 }, { titulo: "Informe para la tienda", orden: 2 }] },
+  comentarios: { create: [{ autorId: tiendaUsuario.id, texto: "En tienda ya separamos la mercancía de la caja 4." }] } } });
 // Un negativo de la bodega con su historial, para revisar el expediente y la auditoría en el celular.
 const mejora = await db.usuario.findUniqueOrThrow({ where: { email: "mejora@movil.test" } }), bodegaFisica = await db.bodega.findUniqueOrThrow({ where: { codigo: "999997" } });
 const consulta = randomUUID(), negativo = randomUUID();
@@ -162,6 +169,22 @@ try {
       if (await evaluate(`(()=>{const b=document.querySelector('[aria-label="Ajustes de la cuenta"]');b?.click();return Boolean(b)})()`)) {
         await until(() => evaluate(`document.body.textContent.includes("Paleta de colores")`), `Los ajustes no muestran la paleta: ${rol}`);
         await revisar(rol, "ajustes-de-cuenta", ancho);
+      }
+      // Proyectos: el proyecto compartido abre su página; el editor guarda cambios y el lector no puede editar.
+      if (rol === "jefe" || rol === "tienda") {
+        await send("Page.navigate", { url: inicio });
+        await until(() => evaluate(hidratado(".workspace-tab, .store-liquid-nav button")), `No volvió al inicio: ${rol}`);
+        await evaluate(`[...document.querySelectorAll('.workspace-tab, .store-liquid-nav button')].find(b=>b.innerText.includes('Proyectos')).click()`);
+        await until(() => evaluate(`[...document.querySelectorAll('aside[aria-label="Lista de proyectos"] button')].some(b=>b.textContent.includes("Reducir negativos de Galerías"))`), `${rol} no ve el proyecto compartido`);
+        await evaluate(`[...document.querySelectorAll('aside[aria-label="Lista de proyectos"] button')].find(b=>b.textContent.includes("Reducir negativos de Galerías")).click()`);
+        await until(() => evaluate(`document.querySelector('[aria-label="Título del proyecto"]')?.value==="Reducir negativos de Galerías"`), `${rol} no abrió la página del proyecto`);
+        if (rol === "jefe") {
+          await evaluate(`(()=>{const el=document.querySelector('[aria-label="Resumen del proyecto"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"Bajar a cero los negativos antes del 15 de diciembre.");el.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+          await until(() => evaluate(`document.body.textContent.includes("Guardado")&&!document.body.textContent.includes("Cambios sin guardar")`), "El cambio del editor no se guardó");
+          const guardado = await evaluate(`fetch('/api/proyectos').then(r=>r.json()).then(b=>b.data.find(p=>p.titulo==="Reducir negativos de Galerías").resumen)`);
+          if (guardado !== "Bajar a cero los negativos antes del 15 de diciembre.") fallas.push({ ancho, rol, pantalla: "proyecto", cortados: [`no guardó: ${guardado}`], total: 1, documento: ancho, ancho });
+        } else if (!(await evaluate(`document.body.textContent.includes("solo lectura")&&document.querySelector('[aria-label="Título del proyecto"]').readOnly`))) fallas.push({ ancho, rol, pantalla: "proyecto", cortados: ["el lector puede editar"], total: 1, documento: ancho, ancho });
+        await revisar(rol, "proyecto-compartido", ancho);
       }
       // La auditoría se lee clara: el detalle muestra qué cambió, antes y después.
       if (rol === "administrador") {

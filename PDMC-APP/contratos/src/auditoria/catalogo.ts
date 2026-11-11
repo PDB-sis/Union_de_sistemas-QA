@@ -4,6 +4,7 @@
 import { estados as estadosNegativo } from "../negativos/model";
 import { RESPONSABLE_LABELS } from "../inconsistencias/options";
 import { roles } from "../auth/model";
+import { estadoProyectoEtiqueta, estadoTareaEtiqueta, prioridadEtiqueta } from "../proyectos/modelo";
 
 export type TonoAuditoria = "acceso" | "creacion" | "cambio" | "carga" | "alerta" | "sistema";
 type Accion = { texto: string; tono: TonoAuditoria };
@@ -61,6 +62,16 @@ const acciones: Record<string, Accion> = {
   ACTUALIZAR_OBSERVACION_MEJORA: { texto: "Actualizó una observación de mejora", tono: "cambio" },
   PEDIDO_ENVIADO: { texto: "Envió un pedido de mercancía", tono: "creacion" },
   RESTABLECER_PROYECTO: { texto: "Restableció el proyecto desde cero", tono: "alerta" },
+  CREAR_PROYECTO: { texto: "Creó el proyecto", tono: "creacion" },
+  EDITAR_PROYECTO: { texto: "Actualizó los datos del proyecto", tono: "cambio" },
+  EDITAR_PAGINA_PROYECTO: { texto: "Editó la página del proyecto", tono: "cambio" },
+  ARCHIVAR_PROYECTO: { texto: "Archivó el proyecto", tono: "alerta" },
+  COMPARTIR_PROYECTO: { texto: "Compartió el proyecto", tono: "acceso" },
+  QUITAR_MIEMBRO_PROYECTO: { texto: "Quitó a una persona del proyecto", tono: "acceso" },
+  CREAR_TAREA_PROYECTO: { texto: "Agregó una tarea", tono: "creacion" },
+  ACTUALIZAR_TAREA_PROYECTO: { texto: "Cambió el estado de una tarea", tono: "cambio" },
+  ELIMINAR_TAREA_PROYECTO: { texto: "Eliminó una tarea", tono: "alerta" },
+  COMENTAR_PROYECTO: { texto: "Comentó", tono: "creacion" },
 };
 
 const entidades: Record<string, string> = {
@@ -70,7 +81,7 @@ const entidades: Record<string, string> = {
   ConsultaInventario: "Carga de inventario", FotoNegativos: "Fotografía de negativos", PerfilLaboral: "Facturador",
   ObservacionFacturador: "Observación de mejora", BodegaProducto: "Bodega física", LineaInventario: "Línea de inventario",
   ExcepcionBodegaProducto: "Bodega física de un producto", RestablecimientoProyecto: "Restablecimiento", Pedido: "Pedido",
-  SincronizacionEstado: "Sincronización",
+  SincronizacionEstado: "Sincronización", Proyecto: "Proyecto",
 };
 
 const campos: Record<string, string> = {
@@ -87,6 +98,7 @@ const campos: Record<string, string> = {
   sinTienda: "Sin tienda", sinFacturador: "Sin facturador", sinProducto: "Sin producto", desde: "Desde",
   anterioresAlRestablecimiento: "Anteriores al restablecimiento", respaldo: "Respaldo", motivoReporte: "Motivo de la tienda",
   submotivoReporte: "Detalle de la tienda", detalleOtro: "Explicación", codigoBarra: "Código de barra", referencia: "Referencia",
+  resumen: "Resumen", color: "Color", fechaInicio: "Inicio", fechaObjetivo: "Fecha objetivo", persona: "Persona", permiso: "Permiso",
 };
 // Datos internos que no ayudan a entender el cambio (identificadores, huellas, versiones).
 const ocultos = /^(id|version|updatedAt|createdAt|hash\w*|sha256|tokenHash|passwordHash|consultaId|ultimaImportacionId|fusionadoEnId)$/;
@@ -121,7 +133,7 @@ export function origenAuditoria(origen: string | null | undefined) {
   return legible(valor);
 }
 
-const estadoTexto = (valor: string) => (estadosNegativo as Record<string, string>)[valor] ?? (RESPONSABLE_LABELS as Record<string, string>)[valor] ?? (roles as Record<string, string>)[valor] ?? null;
+const estadoTexto = (valor: string) => (estadosNegativo as Record<string, string>)[valor] ?? (RESPONSABLE_LABELS as Record<string, string>)[valor] ?? (roles as Record<string, string>)[valor] ?? (estadoProyectoEtiqueta as Record<string, string>)[valor] ?? (estadoTareaEtiqueta as Record<string, string>)[valor] ?? null;
 /** Un valor guardado, como lo leería una persona. */
 export function valorAuditoria(clave: string, valor: unknown): string {
   if (valor === null || valor === undefined || valor === "") return "—";
@@ -131,7 +143,7 @@ export function valorAuditoria(clave: string, valor: unknown): string {
     if (uuid.test(valor)) return clave.endsWith("Id") ? "Registro vinculado" : "Identificador interno";
     if (fechaIso.test(valor)) { const fecha = new Date(valor); if (!Number.isNaN(fecha.getTime())) return fecha.toLocaleString("es-VE", { dateStyle: "medium", timeStyle: "short" }); }
     if (/^-?\d+(\.\d+)?$/.test(valor)) return Number(valor).toLocaleString("es-VE", { maximumFractionDigits: 4 });
-    const estado = /estado|responsable|rol/i.test(clave) ? estadoTexto(valor) : null;
+    const estado = /estado|responsable|rol/i.test(clave) ? estadoTexto(valor) : clave === "prioridad" ? (prioridadEtiqueta as Record<string, string>)[valor] ?? null : clave === "permiso" ? ({ EDITOR: "Puede editar", LECTOR: "Solo lectura" } as Record<string, string>)[valor] ?? null : null;
     return estado ?? (/^[A-Z][A-Z_]+$/.test(valor) ? legible(valor) : valor);
   }
   if (Array.isArray(valor)) return valor.length ? valor.map(item => typeof item === "object" && item ? Object.values(item).filter(v => typeof v === "string" && !uuid.test(v)).join(" ") || "Elemento" : valorAuditoria(clave, item)).join(", ") : "Ninguno";

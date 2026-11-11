@@ -4,19 +4,21 @@ import { useState } from "react";
 import type { PanelFacturador } from "@pdmc/contratos/panel";
 import { AccountSettings } from "@/components/auth/account-settings";
 import { SessionWatch } from "@/components/auth/session-watch";
-import { IconoCuenta, IconoFacturacion, IconoInconsistencias, IconoMetricas, IconoTransferencias } from "@/components/brand/module-icons";
+import { IconoCuenta, IconoFacturacion, IconoInconsistencias, IconoMetricas, IconoProyectos, IconoTransferencias } from "@/components/brand/module-icons";
+import { ProyectosModulo } from "@/components/proyectos/modulo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Toaster } from "@/components/ui/sonner";
 import { WorkspaceHeader, WorkspaceNavigation } from "@/components/workspace-navigation";
 import { BillingPanel, type BillingTab } from "./panel";
 
-type View = BillingTab | "cuenta";
+type View = BillingTab | "proyectos" | "cuenta";
 
 const sections: Record<View, { label: string; title: string; description: string; icon: typeof IconoCuenta }> = {
   resumen: { label: "Mi desempeño", title: "Mi desempeño", description: "Tu índice de error, unidades y transferencias del mes.", icon: IconoMetricas },
   transferencias: { label: "Transferencias", title: "Mis transferencias", description: "Todo lo que facturaste, con el resultado de cada recepción.", icon: IconoTransferencias },
   errores: { label: "Errores", title: "Mis errores confirmados", description: "Errores atribuidos a facturación y confirmados por Control y Seguimiento.", icon: IconoInconsistencias },
   observaciones: { label: "Observaciones", title: "Observaciones de mejora", description: "Recomendaciones de Mejora Continua para tu trabajo.", icon: IconoFacturacion },
+  proyectos: { label: "Proyectos", title: "Proyectos", description: "Proyectos de mejora compartidos con tu equipo.", icon: IconoProyectos },
   cuenta: { label: "Mi cuenta", title: "Ajustes de cuenta", description: "Perfil, seguridad, modo y paleta de colores.", icon: IconoCuenta },
 };
 
@@ -40,6 +42,7 @@ export function BillerWorkspace({ user, perfiles, transfers, errorCases, actuali
       <div className="module-canvas mx-auto max-w-[1400px] space-y-6 p-3 sm:p-6 lg:p-8">
         {view === "cuenta"
           ? <AccountSettings user={user} />
+          : view === "proyectos" ? <ProyectosModulo />
           : <BillingPanel transfers={transfers} errorCases={errorCases} allowedBillers={perfiles.map(perfil => perfil.nombre)} restricted tab={view} onTabChange={setView} />}
       </div>
     </main>

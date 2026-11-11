@@ -89,6 +89,10 @@ model Usuario {
   importacionesDevoluciones DevolucionConsultaImport[]
   pedidosTienda               PedidoTienda[]                     @relation("PedidoTiendaSolicitante")
   observacionesFacturacion    ObservacionFacturador[]            @relation("ObservacionFacturadorAutor")
+  proyectosPropios            Proyecto[]                         @relation("ProyectoPropietario")
+  proyectosCompartidos        ProyectoMiembro[]
+  tareasProyecto              ProyectoTarea[]                    @relation("ProyectoTareaResponsable")
+  comentariosProyecto         ProyectoComentario[]
   restablecimientos           RestablecimientoProyecto[]
 }
 
@@ -780,4 +784,90 @@ model PedidoTiendaItem {
 
   @@unique([pedidoId, productoId])
   @@index([productoId])
+}
+
+/// Proyectos de mejora compartidos (módulo Proyectos, "mini Notion"): una página con bloques,
+/// tareas y comentarios. Los ve su propietario y los miembros con quienes lo comparte.
+enum EstadoProyecto {
+  IDEA
+  EN_CURSO
+  EN_PAUSA
+  COMPLETADO
+  ARCHIVADO
+}
+
+enum PermisoProyecto {
+  EDITOR
+  LECTOR
+}
+
+enum EstadoTareaProyecto {
+  PENDIENTE
+  EN_CURSO
+  HECHA
+}
+
+model Proyecto {
+  id            String               @id @default(uuid()) @db.Uuid
+  titulo        String               @db.VarChar(160)
+  resumen       String?              @db.VarChar(500)
+  color         String               @default("azul") @db.VarChar(20)
+  estado        EstadoProyecto       @default(IDEA)
+  prioridad     String               @default("MEDIA") @db.VarChar(12)
+  fechaInicio   DateTime?            @db.Date
+  fechaObjetivo DateTime?            @db.Date
+  /// Página del proyecto: lista de bloques { id, tipo, texto, hecho? } (títulos, párrafos, listas, casillas, citas).
+  contenido     Json                 @default("[]")
+  propietarioId String               @db.Uuid
+  version       Int                  @default(1)
+  createdAt     DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime             @updatedAt @db.Timestamptz(3)
+  propietario   Usuario              @relation("ProyectoPropietario", fields: [propietarioId], references: [id], onDelete: Restrict)
+  miembros      ProyectoMiembro[]
+  tareas        ProyectoTarea[]
+  comentarios   ProyectoComentario[]
+
+  @@index([propietarioId, updatedAt])
+}
+
+model ProyectoMiembro {
+  id         String          @id @default(uuid()) @db.Uuid
+  proyectoId String          @db.Uuid
+  usuarioId  String          @db.Uuid
+  permiso    PermisoProyecto @default(EDITOR)
+  createdAt  DateTime        @default(now()) @db.Timestamptz(3)
+  proyecto   Proyecto        @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  usuario    Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([proyectoId, usuarioId])
+  @@index([usuarioId])
+}
+
+model ProyectoTarea {
+  id            String              @id @default(uuid()) @db.Uuid
+  proyectoId    String              @db.Uuid
+  titulo        String              @db.VarChar(300)
+  estado        EstadoTareaProyecto @default(PENDIENTE)
+  responsableId String?             @db.Uuid
+  fechaLimite   DateTime?           @db.Date
+  orden         Int                 @default(0)
+  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @db.Timestamptz(3)
+  proyecto      Proyecto            @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  responsable   Usuario?            @relation("ProyectoTareaResponsable", fields: [responsableId], references: [id], onDelete: SetNull)
+
+  @@index([proyectoId, orden])
+  @@index([responsableId, estado])
+}
+
+model ProyectoComentario {
+  id         String   @id @default(uuid()) @db.Uuid
+  proyectoId String   @db.Uuid
+  autorId    String   @db.Uuid
+  texto      String   @db.Text
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  proyecto   Proyecto @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  autor      Usuario  @relation(fields: [autorId], references: [id], onDelete: Restrict)
+
+  @@index([proyectoId, createdAt])
 }

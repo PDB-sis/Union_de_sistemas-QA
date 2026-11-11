@@ -7,7 +7,7 @@ import { formatoFecha } from "@/lib/fechas";
 import {
   AlertCircle, Boxes, CheckCircle2, ChevronLeft, ChevronRight,
   ClipboardCheck, ClipboardCopy, Download, FileSpreadsheet, FileWarning,
-  PackageCheck, Plus, Search, Trash2, TriangleAlert, Warehouse,
+  PackageCheck, Search, TriangleAlert, Warehouse,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ import { InconsistencyPanel } from "@/components/inconsistencias/panel";
 import { InconsistencySummaryProvider, useInconsistencySummary } from "@/components/inconsistencias/summary";
 import { AccountSettings } from "@/components/auth/account-settings";
 import { MiDia } from "@/components/mi-dia";
+import { ProyectosModulo } from "@/components/proyectos/modulo";
 import { AuditLog } from "@/components/admin/panel";
 import { espacios, seccionPermitida, type EspacioOperativo } from "@pdmc/contratos/auth/espacios";
 import { NegativeSummaryProvider, useNegativeSummary } from "@/components/negativos/summary";
@@ -46,7 +47,6 @@ import { ReturnsPanel } from "@/components/devoluciones/panel";
 const UserContext = createContext<UsuarioSesion | null>(null);
 function useCurrentUser() { const user=useContext(UserContext); if(!user)throw new Error("Missing session");return user; }
 type Section = "cuenta" | "hoy" | "metricas" | "qa" | "transferencias" | "devoluciones" | "incidencias" | "negativos" | "facturacion" | "inventario" | "proyectos" | "auditoria";
-type Project = { id: string; name: string; next: string; status: "Pendiente" | "En curso" | "Completado"; progress: number };
 import type {DashboardData} from "@pdmc/contratos/dashboard-contract";
 export type {DashboardData} from "@pdmc/contratos/dashboard-contract";
 const DataContext = createContext<DashboardData | null>(null);
@@ -89,11 +89,11 @@ const nav = [
 ] as const;
 const titles: Record<Section, string> = {
   cuenta: "Ajustes de cuenta", metricas: "Métricas", qa:"QA", hoy: "Mi día", transferencias: "Control de transferencias", devoluciones:"Control de devoluciones", incidencias: "Inconsistencias", negativos: "Control de negativos",
-  facturacion: "Errores de facturación", inventario:"Carga de inventario", proyectos: "Proyectos de mejora",
+  facturacion: "Errores de facturación", inventario:"Carga de inventario", proyectos: "Proyectos",
   auditoria:"Auditoría operativa",
 };
 const sectionPermission:Partial<Record<Section,Parameters<ReturnType<typeof usePermission>>[0]>>={
-  qa:"qa.acceder",metricas:"metricas.leer",transferencias:"transferencias.leer",devoluciones:"devoluciones.leer",incidencias:"inconsistencias.leer",negativos:"negativos.leer",facturacion:"facturacion.leer",inventario:"inventario.administrar",proyectos:"metricas.leer",auditoria:"auditoria.leer",
+  qa:"qa.acceder",metricas:"metricas.leer",transferencias:"transferencias.leer",devoluciones:"devoluciones.leer",incidencias:"inconsistencias.leer",negativos:"negativos.leer",facturacion:"facturacion.leer",inventario:"inventario.administrar",proyectos:"proyectos.usar",auditoria:"auditoria.leer",
 };
 const visibleSection=(section:Section,can:ReturnType<typeof usePermission>)=>!sectionPermission[section]||can(sectionPermission[section]!);
 const sectionDetails: Record<Section, { eyebrow: string; description: string }> = {
@@ -107,7 +107,7 @@ const sectionDetails: Record<Section, { eyebrow: string; description: string }> 
   negativos: { eyebrow: "Inventario", description: "Gestiona existencias negativas y su proceso de corrección." },
   facturacion: { eyebrow: "Calidad de facturación", description: "Consulta errores confirmados y su impacto operativo." },
   inventario: { eyebrow: "Datos maestros", description: "Carga y valida la consulta vigente del inventario." },
-  proyectos: { eyebrow: "Mejora continua", description: "Organiza iniciativas, responsables y próximos pasos." },
+  proyectos: { eyebrow: "Trabajo en equipo", description: "Proyectos compartidos: su página, tareas con responsables, comentarios y avance." },
   auditoria: { eyebrow: "Trazabilidad", description: "Consulta cambios realizados en los procesos operativos." },
 };
 
@@ -233,14 +233,6 @@ function Transfers({ report }: { report: (s?: string) => void }) {
   </div>;
 }
 
-function Projects() {
-  const [projects, setProjects] = useStoredInitialState<Project[]>("mc-proyectos", []); const [open, setOpen] = useState(false); const [name, setName] = useState(""); const [next, setNext] = useState("");
-
-  const save = (rows: Project[]) => { setProjects(rows); localStorage.setItem("mc-proyectos", JSON.stringify(rows)); };
-  const add = () => { if (!name.trim()) return; save([...projects, { id: crypto.randomUUID(), name: name.trim(), next: next.trim(), status: "Pendiente", progress: 0 }]); setName(""); setNext(""); setOpen(false); toast.success("Proyecto guardado."); };
-  const update = (id: string, status: Project["status"]) => save(projects.map((p) => p.id === id ? { ...p, status, progress: status === "Completado" ? 100 : status === "En curso" ? Math.max(p.progress, 25) : 0 } : p));
-  return <div className="space-y-6"><div className="pdmc-surface flex flex-col gap-3 rounded-2xl border bg-card p-5 sm:flex-row sm:items-center"><div className="flex-1"><h3 className="font-semibold">Proyectos semanales</h3></div><Button onClick={() => setOpen(true)}><Plus />Nuevo proyecto</Button></div>{projects.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{projects.map((p) => <article key={p.id} className="pdmc-surface rounded-2xl border bg-card p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><Badge variant="secondary">{p.status}</Badge><h3 className="mt-3 font-semibold">{p.name}</h3></div><Button aria-label="Eliminar" variant="ghost" size="icon" onClick={() => save(projects.filter((x) => x.id !== p.id))}><Trash2 className="text-destructive" /></Button></div><p className="mt-3 min-h-10 text-sm text-muted-foreground">{p.next || "Sin próxima acción."}</p><Progress value={p.progress} className="mt-4" /><Select value={p.status} onValueChange={(v) => update(p.id, v as Project["status"])}><SelectTrigger className="mt-4"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Pendiente">Pendiente</SelectItem><SelectItem value="En curso">En curso</SelectItem><SelectItem value="Completado">Completado</SelectItem></SelectContent></Select></article>)}</div> : <Empty title="Aún no hay proyectos" text="Agrega tu primer proyecto semanal. No se mostrará información inventada." />}<Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>Nuevo proyecto</DialogTitle><DialogDescription>Define una mejora y su próxima acción.</DialogDescription></DialogHeader><div className="grid gap-4"><div><label className="mb-1 block text-sm font-medium">Nombre</label><Input value={name} onChange={(e) => setName(e.target.value)} /></div><div><label className="mb-1 block text-sm font-medium">Próxima acción</label><Input value={next} onChange={(e) => setNext(e.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button><Button onClick={add}>Guardar</Button></DialogFooter></DialogContent></Dialog></div>;
-}
 
 function ModuleNavigation({ section, change }: { section: Section; change: (section: Section) => void }) {
   const data = useOptionalDashboardData()?.data;
@@ -297,7 +289,7 @@ function Dashboard() {
         {context && <div className="workspace-update"><span className="workspace-live-dot"/><div><span>Última actualización</span><time>{context.updateDate}</time></div></div>}
       </div>
       <div className="module-canvas mx-auto max-w-[1600px] p-3 sm:p-6 lg:p-8">
-        {section === "cuenta" && <AccountSettings user={user}/>} {section === "hoy" && (actual === "mejora-continua" ? context && <Today go={setSection} report={() => report()} /> : <MiDia espacio={actual} nombre={user.nombre} data={data} go={setSection} />)}{section === "metricas" && allowed("metricas") && <MetricsPanel/>}{section === "transferencias" && allowed("transferencias") && context && <Transfers report={report} />}{section === "devoluciones" && allowed("devoluciones") && <ReturnsPanel/>}{section === "incidencias" && allowed("incidencias") && <InconsistencyPanel canEdit={can("inconsistencias.editar")} canCount={can("inconsistencias.conteo")} showProductProblems={can("productos.problemas.leer")}/>} {section === "negativos" && allowed("negativos") && <NegativePanel/>}{section === "facturacion" && allowed("facturacion") && data && <BillingPanel transfers={data.transfers} errorCases={data.errorCases} allowedBillers={data.allowedBillers ?? []} restricted={user.rol === "FACTURACION"} />}{section === "inventario" && allowed("inventario") && <InventoryPanel/>}{section === "proyectos" && allowed("proyectos") && <Projects />}{section === "auditoria" && allowed("auditoria") && <section className="rounded-3xl border bg-card p-4 shadow-sm sm:p-6"><AuditLog/></section>}
+        {section === "cuenta" && <AccountSettings user={user}/>} {section === "hoy" && (actual === "mejora-continua" ? context && <Today go={setSection} report={() => report()} /> : <MiDia espacio={actual} nombre={user.nombre} data={data} go={setSection} />)}{section === "metricas" && allowed("metricas") && <MetricsPanel/>}{section === "transferencias" && allowed("transferencias") && context && <Transfers report={report} />}{section === "devoluciones" && allowed("devoluciones") && <ReturnsPanel/>}{section === "incidencias" && allowed("incidencias") && <InconsistencyPanel canEdit={can("inconsistencias.editar")} canCount={can("inconsistencias.conteo")} showProductProblems={can("productos.problemas.leer")}/>} {section === "negativos" && allowed("negativos") && <NegativePanel/>}{section === "facturacion" && allowed("facturacion") && data && <BillingPanel transfers={data.transfers} errorCases={data.errorCases} allowedBillers={data.allowedBillers ?? []} restricted={user.rol === "FACTURACION"} />}{section === "inventario" && allowed("inventario") && <InventoryPanel/>}{section === "proyectos" && allowed("proyectos") && <ProyectosModulo/>}{section === "auditoria" && allowed("auditoria") && <section className="rounded-3xl border bg-card p-4 shadow-sm sm:p-6"><AuditLog/></section>}
       </div>
     </main>
     {reportOpen && context && <ReportDialog key={reportStore} open={reportOpen} close={setReportOpen} initialStore={reportStore} />}

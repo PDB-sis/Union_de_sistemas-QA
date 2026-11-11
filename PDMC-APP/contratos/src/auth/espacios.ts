@@ -12,20 +12,20 @@ export type DefinicionEspacio = { rol: Rol; ruta: `/${EspacioOperativo}`; titulo
 export const permisoDeSeccion: Partial<Record<Seccion, Permission>> = {
   metricas: "metricas.leer", qa: "qa.acceder", transferencias: "transferencias.leer", devoluciones: "devoluciones.leer",
   incidencias: "inconsistencias.leer", negativos: "negativos.leer", facturacion: "facturacion.leer",
-  inventario: "inventario.administrar", proyectos: "metricas.leer", auditoria: "auditoria.leer",
+  inventario: "inventario.administrar", proyectos: "proyectos.usar", auditoria: "auditoria.leer",
 };
 
 export const espacios: Record<EspacioOperativo, DefinicionEspacio> = {
   "mejora-continua": { rol: "MEJORA_CONTINUA", ruta: "/mejora-continua", titulo: "Mejora Continua", proposito: "Seguimiento de tiendas, transferencias y calidad de la región.",
     secciones: ["hoy", "metricas", "qa", "transferencias", "devoluciones", "incidencias", "negativos", "facturacion", "inventario", "proyectos", "cuenta"] },
   "jefe-bodega": { rol: "JEFE_BODEGA", ruta: "/jefe-bodega", titulo: "Jefe de bodega", proposito: "Decisiones de negativos, correcciones de inconsistencias y facturación de tu bodega.",
-    secciones: ["hoy", "negativos", "incidencias", "facturacion", "cuenta"] },
+    secciones: ["hoy", "negativos", "incidencias", "facturacion", "proyectos", "cuenta"] },
   recepcion: { rol: "RECEPCION", ruta: "/recepcion", titulo: "Recepción", proposito: "Inconsistencias recibidas, negativos y errores de facturación de tu bodega.",
-    secciones: ["hoy", "incidencias", "negativos", "facturacion", "cuenta"] },
+    secciones: ["hoy", "incidencias", "negativos", "facturacion", "proyectos", "cuenta"] },
   rectificacion: { rol: "RECTIFICACION", ruta: "/rectificacion", titulo: "Rectificación", proposito: "Conteos físicos de negativos e inconsistencias.",
-    secciones: ["hoy", "negativos", "incidencias", "cuenta"] },
+    secciones: ["hoy", "negativos", "incidencias", "proyectos", "cuenta"] },
   auditoria: { rol: "AUDITORIA", ruta: "/auditoria", titulo: "Auditoría", proposito: "Trazabilidad de los cambios y estado de los procesos.",
-    secciones: ["hoy", "auditoria", "metricas", "transferencias", "incidencias", "negativos", "facturacion", "cuenta"] },
+    secciones: ["hoy", "auditoria", "metricas", "transferencias", "incidencias", "negativos", "facturacion", "proyectos", "cuenta"] },
 };
 
 /** Dirección de cada rol; los que no son espacios operativos tienen su propia página. */

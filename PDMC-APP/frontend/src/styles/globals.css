@@ -1179,3 +1179,8 @@ body:has(#nl-badge-frame) .workspace-content { padding-bottom: 6rem; }
   body:has(.case-sheet) { overflow: hidden; }
   body:has(#nl-badge-frame) .case-sheet { padding-bottom: 5.5rem; }
 }
+
+/* Proyectos: el título, el resumen y los bloques de la página se ven como texto, no como campos de formulario. */
+.workspace textarea.page-field { background: transparent; box-shadow: none; border: 0; padding-inline: 0; }
+/* En la tienda, la barra inferior no tapa el final del proyecto. */
+.store-workspace [aria-label="Proyecto"] { padding-bottom: 5rem; }

@@ -3,20 +3,23 @@ import type { Rol } from "./model";
 export const permissions = ["panel.leer", "metricas.leer", "tienda.panel", "tienda.transferencias.leer", "inconsistencias.reportar", "inconsistencias.leer", "inconsistencias.conteo", "inconsistencias.editar", "negativos.leer", "negativos.conteo", "negativos.editar", "negativos.estado",
   "negativos.aprobar", "negativos.ajustar", "negativos.anular", "inventario.administrar",
   "transferencias.leer", "transferencias.importar", "devoluciones.leer", "devoluciones.importar", "facturacion.leer", "facturacion.observar", "productos.problemas.leer",
-  "ubicaciones.administrar", "accesos.administrar", "usuarios.administrar", "auditoria.leer", "qa.acceder", "facturacion.propio"] as const;
+  "ubicaciones.administrar", "accesos.administrar", "usuarios.administrar", "auditoria.leer", "qa.acceder", "facturacion.propio", "proyectos.usar"] as const;
 export type Permission = typeof permissions[number];
 const read = ["negativos.leer"] as const;
 const work = [...read, "negativos.editar", "negativos.estado", "inconsistencias.leer", "inconsistencias.editar"] as const;
+// Proyectos compartidos ("proyectos.usar") es para todas las personas; cada proyecto lo ven solo
+// su propietario y los miembros con quienes lo comparte (backend/src/proyectos/service.ts).
+const proyectos = ["proyectos.usar"] as const;
 export const permissionMatrix: Record<Rol, readonly Permission[]> = {
   ADMINISTRADOR: permissions,
-  MEJORA_CONTINUA: [...work, "panel.leer", "metricas.leer", "negativos.aprobar", "negativos.ajustar", "negativos.anular", "inventario.administrar", "transferencias.leer", "transferencias.importar", "devoluciones.leer", "devoluciones.importar", "facturacion.leer", "facturacion.observar", "productos.problemas.leer", "qa.acceder"],
-  TIENDA: [...work, "tienda.panel", "tienda.transferencias.leer", "inconsistencias.reportar"],
-  JEFE_BODEGA: [...work, "panel.leer", "negativos.aprobar", "facturacion.leer", "productos.problemas.leer"],
-  RECTIFICACION: [...read, "negativos.conteo", "inconsistencias.leer", "inconsistencias.conteo"],
-  RECEPCION: [...read, "panel.leer", "inconsistencias.leer", "facturacion.leer"],
-  AUDITORIA: [...read, "panel.leer", "metricas.leer", "inconsistencias.leer", "transferencias.leer", "facturacion.leer", "productos.problemas.leer", "auditoria.leer"],
+  MEJORA_CONTINUA: [...proyectos, ...work, "panel.leer", "metricas.leer", "negativos.aprobar", "negativos.ajustar", "negativos.anular", "inventario.administrar", "transferencias.leer", "transferencias.importar", "devoluciones.leer", "devoluciones.importar", "facturacion.leer", "facturacion.observar", "productos.problemas.leer", "qa.acceder"],
+  TIENDA: [...proyectos, ...work, "tienda.panel", "tienda.transferencias.leer", "inconsistencias.reportar"],
+  JEFE_BODEGA: [...proyectos, ...work, "panel.leer", "negativos.aprobar", "facturacion.leer", "productos.problemas.leer"],
+  RECTIFICACION: [...proyectos, ...read, "negativos.conteo", "inconsistencias.leer", "inconsistencias.conteo"],
+  RECEPCION: [...proyectos, ...read, "panel.leer", "inconsistencias.leer", "facturacion.leer"],
+  AUDITORIA: [...proyectos, ...read, "panel.leer", "metricas.leer", "inconsistencias.leer", "transferencias.leer", "facturacion.leer", "productos.problemas.leer", "auditoria.leer"],
   // El facturador solo trabaja en su propio espacio (/facturador): sus transferencias, errores y observaciones.
-  FACTURACION: ["facturacion.leer", "facturacion.propio"],
+  FACTURACION: [...proyectos, "facturacion.leer", "facturacion.propio"],
   // Solo importa, y solo los sitios de su región (SystemAuthorization).
   SINCRONIZACION: ["inventario.administrar", "transferencias.importar", "devoluciones.importar"],
 };
