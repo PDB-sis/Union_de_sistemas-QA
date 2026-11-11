@@ -149,10 +149,10 @@ Cada fase se despliega y se valida antes de pasar a la siguiente.
 
 **3a, desplegada (2026-10-26):**
 - **Agente:** `TAREAS=` en `config.env` (por defecto `inventario`). Las tareas `transferencias`, `devoluciones` y `usuarios` ejecutan su consulta desde la carpeta `consultas` (junto a `config.env`, copias exactas de `consultaPDMC/`), comprueban que es de solo lectura y envían lo nuevo o cambiado y, en el mismo ciclo, lo que desapareció. Su estado va en `enviado_tarea` del SQLite del agente. Si una tarea falla, las demás siguen.
-- **API:** `POST /api/agente/v1/filas` → `cysn_qa.agente_fila` (por `dim_id_tienda`, tarea y clave; nunca borra) y `agente_fila_lote` (migración 006). Las claves son: transferencias `Numero + CodigoBarra + NumeroCaja`, devoluciones `Numero` y usuarios `CodUsuario`.
+- **API:** `POST /api/agente/v1/filas` → `cysn_qa.agente_fila` (por `dim_id_tienda`, tarea y clave; nunca borra) y `agente_fila_lote` (migración 006). Las claves son: transferencias y devoluciones `Numero + CodigoBarra + NumeroCaja` y usuarios `CodUsuario` (una bodega con la consulta de devoluciones anterior, sin detalle, sigue enviando por `Numero`).
 - **Herramientas:** `python -m app.agentes filas --dim-id 2004` y `python -m app.comparar_sitio --dim-id 2004` (compara con `pdmc`: cabeceras y líneas de transferencias, devoluciones y facturadores).
 - **Pruebas:** 27 unitarias en `tests/agente/test_tareas_bodega.py`, y una de punta a punta en la base local (agente por HTTP → API → `agente_fila` → comparación con diferencias puestas a propósito).
-- **En la bodega hace falta** `GRANT SELECT` sobre `MOVTRANSFERENCIAS`, `TRANSFERENCIAS`, `DEVTRANSFERENCIAS` y `USUARIOS` para `nexoqa_agente`.
+- **En la bodega hace falta** `GRANT SELECT` sobre `MOVTRANSFERENCIAS`, `TRANSFERENCIAS`, `DEVTRANSFERENCIAS`, `MOVDEVTRANSFERENCIAS` y `USUARIOS` para `nexoqa_agente`.
 - **Desplegada el 2026-10-26.** La bodega Maracaibo envía 145.455 líneas de transferencias, 385 devoluciones y 21 usuarios. La comparación mostró que el agente coincide con PDMC en todo lo anterior al 14/08, y que PDMC leía una copia parada (`SERVERDOS`).
 
 **3b, desplegada el 2026-10-26:**

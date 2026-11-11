@@ -719,6 +719,9 @@ model DevolucionConsulta {
   documentoOrigen      String?                   @db.VarChar(128)
   unidades             Int                       @default(0)
   cantidadCodigos      Int                       @default(0)
+  /// Líneas de producto y caja que tiene la devolución en SQL Server (LineasDevolucion);
+  /// null mientras la bodega use la consulta anterior, sin detalle.
+  lineasDetalle        Int?
   ultimaImportacionId  String                    @db.Uuid
   // Baja lógica: ya no aparece en la consulta de SQL Server. Se oculta y se conserva.
   bajaEn               DateTime?                 @db.Timestamptz(3)

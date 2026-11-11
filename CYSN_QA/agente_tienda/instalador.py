@@ -40,7 +40,7 @@ USUARIO_SQL = "nexoqa_agente"
 API_URL = "https://apiqa.apipalacio.com"
 
 TABLAS_INVENTARIO = ("INVENTARIO", "MARCAS", "CATEGORIAS", "TASA_CAMBIO", "PARAMETROS")
-TABLAS_BODEGA = ("MOVTRANSFERENCIAS", "TRANSFERENCIAS", "DEVTRANSFERENCIAS", "USUARIOS")
+TABLAS_BODEGA = ("MOVTRANSFERENCIAS", "TRANSFERENCIAS", "DEVTRANSFERENCIAS", "MOVDEVTRANSFERENCIAS", "USUARIOS")
 # Base del sitio -> qué hace el agente allí.
 PERFILES = {
     "BD_SPDV": {"sitio": "tienda", "tareas": "inventario", "intervalo": 60, "http_timeout": 30,

@@ -19,7 +19,7 @@ Lee en solo lectura el inventario del SQL Server de su sitio y envía los cambio
 En las bodegas, `config.env` lleva `TAREAS=inventario,transferencias,devoluciones,usuarios`. Las tres tareas nuevas:
 
 - **Ejecutan su consulta** desde la carpeta `consultas`, junto a `config.env`: `transferencias.sql`, `devoluciones.sql` y `usuarios.sql`. Son **copias exactas** de `consultaPDMC/` (`TRANSFERENCIAS NUEVAS.sql`, `DEVOLUCIONES.sql` y `Usuarios Activos.sql`). Si se cambia una consulta, hay que cambiarla en los tres sitios: `consultaPDMC/`, `PDMC-APP/backend/sqlserver/consultas/` y aquí. Antes de ejecutarla, el agente comprueba que solo lee.
-- **Envían a `POST /api/agente/v1/filas`** las filas nuevas o cambiadas y, en el mismo ciclo, las que desaparecieron (como baja). Se identifican por: transferencias `Numero + CodigoBarra + NumeroCaja`, devoluciones `Numero` y usuarios `CodUsuario`.
+- **Envían a `POST /api/agente/v1/filas`** las filas nuevas o cambiadas y, en el mismo ciclo, las que desaparecieron (como baja). Se identifican por: transferencias y devoluciones `Numero + CodigoBarra + NumeroCaja` y usuarios `CodUsuario`. Si la consulta de devoluciones es la anterior (sin `CodigoBarra`), se identifican por `Numero`.
 - **Se guardan en `cysn_qa.agente_fila`** por bodega (`dimID_Tienda`), sin tocar PDMC. Para ver lo recibido, en el servidor: `python -m app.agentes filas --dim-id 2004`. Para compararlo con PDMC: `python -m app.comparar_sitio --dim-id 2004`.
 - **Si una tarea falla,** por ejemplo por un permiso que falta, las demás siguen funcionando, y el error queda en `agente.log`.
 
@@ -30,6 +30,7 @@ USE GDC_CASA_MATRIZ;
 GRANT SELECT ON dbo.MOVTRANSFERENCIAS TO nexoqa_agente;
 GRANT SELECT ON dbo.TRANSFERENCIAS    TO nexoqa_agente;
 GRANT SELECT ON dbo.DEVTRANSFERENCIAS TO nexoqa_agente;
+GRANT SELECT ON dbo.MOVDEVTRANSFERENCIAS TO nexoqa_agente;
 GRANT SELECT ON dbo.USUARIOS          TO nexoqa_agente;
 ```
 

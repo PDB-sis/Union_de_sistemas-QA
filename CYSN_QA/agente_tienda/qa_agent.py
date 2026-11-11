@@ -153,10 +153,14 @@ def run_once(c:dict[str,str]) -> dict:
 # Cada tarea ejecuta su consulta de la carpeta "consultas" (junto a config.env; copias exactas de
 # consultaPDMC/) y envía a /api/agente/v1/filas las filas nuevas o cambiadas y las que desaparecieron.
 TAREAS={"transferencias":("transferencias.sql",("Numero","CodigoBarra","NumeroCaja")),
-        "devoluciones":("devoluciones.sql",("Numero",)),
+        # Como transferencias: una fila por producto y caja (MOVDEVTRANSFERENCIAS).
+        "devoluciones":("devoluciones.sql",("Numero","CodigoBarra","NumeroCaja")),
         "usuarios":("usuarios.sql",("CodUsuario",)),
         # PC de creación (fase 4): copia exacta de backend/app/sync/sql/creacion_origen.sql.
         "creacion":("creacion.sql",("CodigoBarra",))}
+# Claves que pueden faltar: una bodega con la consulta anterior de devoluciones (solo cabecera)
+# sigue enviando una fila por número hasta que se le copie la consulta nueva.
+CLAVES_OPCIONALES={"devoluciones":("CodigoBarra","NumeroCaja")}
 # Misma regla que PDMC (backend/src/sync/solo-lectura.ts): SQL Server solo se lee.
 WRITE_SQL=re.compile(r"\b(insert|update|delete|merge|truncate|drop|alter|create|exec|execute|grant|revoke|deny|backup|restore|dbcc|shutdown|kill|openrowset|opendatasource|openquery|bulk|into|waitfor)\b",re.I)
 def assert_read_only(text:str) -> None:
@@ -187,12 +191,14 @@ def task_rows(c:dict[str,str],tarea:str) -> list[dict[str,Any]]:
         cur=cn.cursor(); cur.execute(texto)
         cols=[x[0] for x in cur.description]; raw=cur.fetchall()
     indices={n.lower():i for i,n in enumerate(cols)}
-    faltan=[k for k in TAREAS[tarea][1] if k.lower() not in indices]
+    opcionales=CLAVES_OPCIONALES.get(tarea,())
+    claves=[k for k in TAREAS[tarea][1] if k.lower() in indices or k not in opcionales]
+    faltan=[k for k in claves if k.lower() not in indices]
     if faltan: raise RuntimeError(f"La consulta de {tarea} no devuelve las columnas clave: {', '.join(faltan)}.")
     unique:dict[str,dict[str,Any]]={}
     for fila in raw:
         datos={n:task_value(v) for n,v in zip(cols,fila)}
-        partes=[(datos[cols[indices[k.lower()]]] or "") for k in TAREAS[tarea][1]]
+        partes=[(datos[cols[indices[k.lower()]]] or "") for k in claves]
         if not partes[0]: continue
         clave="\x1f".join(partes)
         unique[clave]={"clave":clave,"datos":datos,"fila_hash":fingerprint(datos)}

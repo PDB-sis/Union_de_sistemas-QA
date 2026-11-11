@@ -250,3 +250,57 @@ def test_api_valida_filas():
         FilaAgente(clave="   ", datos={"a": "b"})
     with pytest.raises(ValueError):
         FilaAgente(clave="T1", datos={f"c{i}": "x" for i in range(61)})
+
+
+class _Cursor:
+    def __init__(self, columnas, filas):
+        self.description = [(c,) for c in columnas]
+        self._filas = filas
+
+    def execute(self, _sql):
+        pass
+
+    def fetchall(self):
+        return self._filas
+
+
+class _Conexion:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def cursor(self):
+        return self._cursor
+
+
+def _filas_devoluciones(qa_agent, monkeypatch, columnas, filas):
+    monkeypatch.setattr(qa_agent, "consulta", lambda c, tarea: "SELECT 1")
+    monkeypatch.setattr(qa_agent, "connect", lambda c: _Conexion(_Cursor(columnas, filas)))
+    return qa_agent.task_rows({}, "devoluciones")
+
+
+def test_devoluciones_envian_una_fila_por_producto_y_caja(qa_agent, monkeypatch):
+    columnas = ["Numero", "fecha_formateada", "CodigoBarra", "Cantidad", "NumeroCaja", "LineasDevolucion"]
+    filas = [("D1", "11/10/2026", "770001", Decimal("3"), "1", 3), ("D1", "11/10/2026", "770002", Decimal("2"), "1", 3),
+             ("D1", "11/10/2026", "770001", Decimal("1"), "2", 3), ("D2", "11/10/2026", None, None, None, 0)]
+    claves = [f["clave"] for f in _filas_devoluciones(qa_agent, monkeypatch, columnas, filas)]
+    # Cada línea de la devolución es una fila; la que no tiene productos se envía igual con su número.
+    assert claves == ["D1\x1f770001\x1f1", "D1\x1f770002\x1f1", "D1\x1f770001\x1f2", "D2\x1f\x1f"]
+
+
+def test_devoluciones_con_la_consulta_anterior_siguen_por_numero(qa_agent, monkeypatch):
+    columnas = ["Numero", "fecha_formateada", "TotalValor"]
+    filas = [("D1", "11/10/2026", Decimal("10.5")), ("D2", "11/10/2026", None)]
+    assert [f["clave"] for f in _filas_devoluciones(qa_agent, monkeypatch, columnas, filas)] == ["D1", "D2"]
+
+
+def test_transferencias_siguen_exigiendo_producto_y_caja(qa_agent, monkeypatch):
+    monkeypatch.setattr(qa_agent, "consulta", lambda c, tarea: "SELECT 1")
+    monkeypatch.setattr(qa_agent, "connect", lambda c: _Conexion(_Cursor(["Numero", "Cantidad"], [("T1", 1)])))
+    with pytest.raises(RuntimeError, match="columnas clave"):
+        qa_agent.task_rows({}, "transferencias")

@@ -121,22 +121,32 @@ def comparar_transferencias(db: Session, dim: int, esq: str) -> list[Resultado]:
             Resultado("transferencias (líneas por producto y caja)").comparar(agente_lineas, pdmc_lineas)]
 
 
-def comparar_devoluciones(db: Session, dim: int, esq: str) -> Resultado:
-    agente = {}
+def comparar_devoluciones(db: Session, dim: int, esq: str) -> list[Resultado]:
+    # Una fila por producto y caja; las filas de una misma devolución repiten su cabecera.
+    agente, agente_lineas = {}, {}
     for d in filas_agente(db, dim, "devoluciones"):
-        agente[txt(columna(d, "Numero"))] = {
+        n = txt(columna(d, "Numero"))
+        agente[n] = {
             "fecha": fecha(columna(d, "fecha_formateada")), "estado": txt(columna(d, "status")),
             "tienda": codigo(columna(d, "codigoRecibe_Dletra")), "responsable": codigo(columna(d, "CodNombre")),
             "observacion": txt(columna(d, "Observacion")), "total_valor": numero(columna(d, "TotalValor")),
             "documento_origen": txt(columna(d, "DocumentoOrigen")) or None,
         }
-    pdmc = {}
+        if txt(columna(d, "CodigoBarra")):
+            agente_lineas[f"{n} | {txt(columna(d, 'CodigoBarra'))} | {txt(columna(d, 'NumeroCaja'))}"] = {"cantidad": numero(columna(d, "Cantidad"))}
+    pdmc, pdmc_lineas = {}, {}
     for n, f, est, tienda, resp, obs, valor, doc in db.execute(text(f'''
         SELECT numero, fecha, estado, "codigoTiendaConsulta", "codigoResponsable", observacion, "totalValor", "documentoOrigen"
         FROM "{esq}"."DevolucionConsulta" WHERE "bajaEn" IS NULL''')):
         pdmc[txt(n)] = {"fecha": f, "estado": txt(est), "tienda": codigo(tienda), "responsable": codigo(resp),
                         "observacion": txt(obs), "total_valor": valor, "documento_origen": txt(doc) or None}
-    return Resultado("devoluciones").comparar(agente, pdmc)
+    for n, cb, caja, cant in db.execute(text(f'''
+        SELECT t.numero, d."codigoBarra", d."numeroCaja", d.cantidad
+        FROM "{esq}"."DevolucionConsultaDetalle" d JOIN "{esq}"."DevolucionConsulta" t ON t.id = d."devolucionId"
+        WHERE t."bajaEn" IS NULL''')):
+        pdmc_lineas[f"{txt(n)} | {txt(cb)} | {txt(caja)}"] = {"cantidad": Decimal(cant)}
+    return [Resultado("devoluciones (cabeceras)").comparar(agente, pdmc),
+            Resultado("devoluciones (líneas por producto y caja)").comparar(agente_lineas, pdmc_lineas)]
 
 
 def comparar_usuarios(db: Session, dim: int, esq: str) -> Resultado:
@@ -180,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"El agente del sitio {args.dim_id} todavía no ha enviado transferencias, devoluciones ni usuarios.")
             return EXIT_ERROR
         resultados = [*comparar_transferencias(db, args.dim_id, args.esquema_pdmc),
-                      comparar_devoluciones(db, args.dim_id, args.esquema_pdmc),
+                      *comparar_devoluciones(db, args.dim_id, args.esquema_pdmc),
                       comparar_usuarios(db, args.dim_id, args.esquema_pdmc)]
     print(f"Comparación del sitio {args.dim_id} (agente) con PDMC (esquema {args.esquema_pdmc}, sincronizador central):")
     for r in resultados:

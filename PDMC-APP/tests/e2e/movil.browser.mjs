@@ -54,6 +54,10 @@ for (const [codigoBarra, descripcion, talla, linea] of [["7701234567890", "Frane
 const t120030 = await db.transferenciaConsulta.findFirstOrThrow({ where: { numero: "120030" } });
 for (const [i, producto] of productos.entries()) await db.transferenciaConsultaDetalle.create({ data: { transferenciaId: t120030.id, productoId: producto.id, codigoBarra: producto.codigoBarra, cantidad: 60, numeroCaja: String(i + 1) } });
 await db.inconsistencia.create({ data: { sourceKey: randomUUID().replaceAll("-", ""), fecha: hoy, sucursal: tiendas[0].nombre, tiendaId: tiendas[0].id, transferencia: "120030", codigoBarra: "7701234567890", productoId: productos[0].id, tipoError: "Faltante físico", cantidadErrada: 4, responsable: "FACTURACION", motivo: "Error por facturador (Físico Faltante)" } });
+// Devolución abierta con su detalle por producto y caja (MOVDEVTRANSFERENCIAS).
+const cargaDevoluciones = await db.devolucionConsultaImport.create({ data: { nombreArchivo: "movil-devoluciones", hashArchivo: randomUUID().replaceAll("-", ""), totalFilas: 2, resumen: {} } });
+const devolucion = await db.devolucionConsulta.create({ data: { numero: "D500", fecha: hoy, codigoResponsable: "NOREIMA", nombreResponsable: "Noreima Facturadora de Occidente", codigoTiendaConsulta: tiendas[0].codigo, tiendaId: tiendas[0].id, estado: "Abierta", observacion: "Mercancía con defecto de fábrica", totalValor: "245.50", documentoOrigen: "120030", unidades: 7, cantidadCodigos: 2, lineasDetalle: 2, ultimaImportacionId: cargaDevoluciones.id, origenId: bodegaUbicacion.id } });
+for (const [i, producto] of productos.entries()) await db.devolucionConsultaDetalle.create({ data: { devolucionId: devolucion.id, productoId: producto.id, codigoBarra: producto.codigoBarra, cantidad: i ? 3 : 4, numeroCaja: String(i + 1) } });
 const password = randomBytes(18).toString("base64url"), hash = await hashPassword(password);
 const roles = [
   ["administrador", "ADMINISTRADOR", null],
@@ -228,6 +232,17 @@ try {
         }
         await evaluate(`document.querySelector('aside[aria-label="Expediente del negativo"] details')?.setAttribute("open","")`);
         await revisar(rol, "expediente-negativo", ancho);
+      }
+      // Mejora Continua abre una devolución y ve sus productos por caja, como en transferencias.
+      if (rol === "mejora") {
+        await send("Page.navigate", { url: inicio });
+        await until(() => evaluate(hidratado(".workspace-tab")), "No volvió a Mejora Continua");
+        await evaluate(`[...document.querySelectorAll('.workspace-tab')].find(b=>b.innerText.includes('Devoluciones')).click()`);
+        await until(() => evaluate(`document.body.textContent.includes("#D500")`), "Mejora Continua no ve la devolución #D500");
+        await evaluate(`[...document.querySelectorAll('button')].find(b=>b.offsetWidth&&b.textContent.trim()==='Detalle').click()`);
+        await until(() => evaluate(`Boolean(document.querySelector('[role="dialog"]')?.textContent.includes("Pantalón jean clásico tiro alto"))`), "El detalle de la devolución no muestra sus productos");
+        if (await evaluate(`!document.querySelector('[role="dialog"]').textContent.includes("Descargar imagen con productos")`)) fallas.push({ ancho, rol, pantalla: "detalle-de-devolucion", cortados: ["falta el botón de la imagen"], total: 1, documento: ancho, ancho });
+        await revisar(rol, "detalle-de-devolucion", ancho);
       }
       // El facturador ve sus transferencias y abre el detalle de productos de una de ellas.
       if (rol === "facturacion") {

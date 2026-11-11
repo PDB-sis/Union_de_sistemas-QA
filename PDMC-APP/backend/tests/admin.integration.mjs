@@ -386,6 +386,37 @@ test("devoluciones acepta el estado Aprobada y rechaza estados, valores y númer
   // El formato anterior (con detalle por producto y caja) se rechaza entero.
   await assert.rejects(new ReturnsService(db,a.access).import("devoluciones.csv","Numero;fecha_formateada;CodNombre;CodigoBarra;Cantidad;NumeroCaja;codigoRecibe_Dletra;status;Observacion\nX;10/01/2026;A;1;1;1;B;Abierta;C"),{code:"ENCABEZADOS"});
 });
+test("devoluciones con detalle por producto y caja: completo, sin productos, parcial y consulta anterior",async()=>{
+  const a=await user(),region=await a.service.createEntity({codigo:randomUUID(),nombre:"Región detalle de devoluciones",tipo:"REGION",motivo}),storeCode=`DD-${randomUUID()}`.toUpperCase();
+  await a.service.createEntity({codigo:storeCode,nombre:"Tienda con devoluciones",tipo:"TIENDA",ubicacionId:region.id,motivo});
+  const sufijo=Date.now(),[d1,d2,d3]=["P","V","Q"].map(letra=>`${letra}${sufijo}`),codigo=`77${sufijo}`.slice(0,13);
+  const producto=await db.producto.create({data:{codigoBarra:codigo,referencia:"REF-DEV",descripcion:"Producto devuelto",marca:"Marca",talla:"M"}});
+  const head="Numero;fecha_formateada;CodNombre;usuario;codigoRecibe_Dletra;status;Observacion;TotalValor;DocumentoOrigen;CodigoBarra;Cantidad;NumeroCaja;LineasDevolucion";
+  const linea=(numero,barra,cantidad,caja,total)=>`${numero};10/01/2026;USR;USUARIO DEV;${storeCode};Abierta;Devolución con productos;50;77;${barra};${cantidad};${caja};${total}`;
+  const servicio=new ReturnsService(db,a.access),detalle=numero=>new ReturnsService(db,a.access).detail(numero);
+  // d1 completa (3 líneas en 2 cajas), d2 sin productos, d3 parcial (llega 1 de 2 líneas).
+  const primera=await servicio.import("devoluciones.csv",[head,linea(d1,codigo,"3.0000","1",3),linea(d1,"999000111","2","1",3),linea(d1,codigo,"1","2",3),linea(d2,"","","",0),linea(d3,codigo,"4","1",2)].join("\n"));
+  assert.equal(primera.resumen.filasDetalle,3);assert.equal(primera.resumen.detalleIncompleto,1);assert.deepEqual(primera.resumen.detalle,{insertadas:3,actualizadas:0,retiradas:0});
+  const completa=await detalle(d1);
+  assert.equal(completa.detalle,"COMPLETO");assert.equal(completa.items.length,3);assert.equal(completa.cajas,2);assert.equal(completa.unidades,6);assert.equal(completa.referencias,2);
+  assert.equal(completa.items.find(item=>item.codigoBarra===codigo&&item.numeroCaja==="1").descripcion,producto.descripcion);
+  assert.equal(completa.totalValor,50);assert.equal(completa.documentoOrigen,"77");
+  assert.equal((await detalle(d2)).detalle,"COMPLETO");assert.equal((await detalle(d2)).items.length,0);
+  const parcial=await detalle(d3);assert.equal(parcial.detalle,"INCOMPLETO");assert.equal(parcial.items.length,0);assert.equal(parcial.lineasEsperadas,2);
+  // SQL Server cambia la devolución: una línea sale y otra cambia de cantidad.
+  const cambio=await servicio.import("devoluciones.csv",[head,linea(d1,codigo,"5","1",2),linea(d1,codigo,"1","2",2),linea(d2,"","","",0),linea(d3,codigo,"4","1",2),linea(d3,codigo,"6","2",2)].join("\n"));
+  assert.deepEqual(cambio.resumen.detalle,{insertadas:2,actualizadas:1,retiradas:1});
+  assert.deepEqual((await detalle(d1)).items.map(item=>[item.numeroCaja,item.cantidad]),[["1",5],["2",1]]);assert.equal((await detalle(d1)).unidades,6);
+  assert.equal((await detalle(d3)).detalle,"COMPLETO");assert.equal((await detalle(d3)).unidades,10);
+  // Una bodega con la consulta anterior (solo cabecera) o un agente que aún agrupa por número no borran el detalle.
+  await servicio.import("devoluciones.csv",`Numero;fecha_formateada;CodNombre;usuario;codigoRecibe_Dletra;status;Observacion;TotalValor;DocumentoOrigen\n${d1};10/01/2026;USR;USUARIO DEV;${storeCode};Exportada;Devolución con productos;50;77`);
+  const conservada=await detalle(d1);assert.equal(conservada.estado,"Exportada");assert.equal(conservada.items.length,2);assert.equal(conservada.unidades,6);assert.equal(conservada.detalle,"COMPLETO");
+  await servicio.import("devoluciones.csv",[head,linea(d1,codigo,"9","1",2)].join("\n"));
+  const sinTocar=await detalle(d1);assert.deepEqual(sinTocar.items.map(item=>item.cantidad),[5,1]);assert.equal(sinTocar.unidades,6);
+  // Fuera del territorio no se ve, aunque el número exista.
+  const otraRegion=await a.service.createEntity({codigo:randomUUID(),nombre:"Otra región",tipo:"REGION",motivo}),ajeno=await user([{rol:"MEJORA_CONTINUA",ubicacionId:otraRegion.id}]);
+  await assert.rejects(new ReturnsService(db,ajeno.access).detail(d1),{status:403});
+});
 test("desactivar y transferir: alcance receptor, pendientes, historial, revocación y rollback auditado",async()=>{
   const store=await tienda((await region()).id);
   const a=await user(),source=await user([{rol:"TIENDA",ubicacionId:store.id}]),receiver=await user([{rol:"TIENDA",ubicacionId:store.id}]),denied=await user([]);
