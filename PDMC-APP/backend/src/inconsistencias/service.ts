@@ -40,11 +40,11 @@ export class InconsistencyService{
     const storeScope=await this.access.locationScope("inconsistencias.leer","TIENDA");
     const canCount=await this.access.has("inconsistencias.conteo"),canEdit=await this.access.has("inconsistencias.editar");
     const automaticWorkflow=countWorkflow(canCount,canEdit);
-    const input=z.object({q:z.string().trim().max(200).default(""),mes:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).default(currentMonth()),estado:z.enum(["todos","pendientes","resueltos","ajuste"]).default("pendientes"),tipo:z.enum(["todos","faltantes","sobrantes"]).default("todos"),sucursal:z.string().trim().max(250).default(""),bodegaProductoId:uuid.or(z.literal("")).default(""),flujo:z.enum(["todos","trabajo"]).default("todos"),cola:z.enum(["automatica","pendientes","gestion","corregir","verificar"]).default("automatica"),skip:z.coerce.number().int().min(0).max(1_000_000).default(0),take:z.coerce.number().int().min(1).max(100).default(25)}).parse(raw);
+    const input=z.object({q:z.string().trim().max(200).default(""),mes:z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).default(currentMonth()),estado:z.enum(["todos","pendientes","resueltos","ajuste"]).default("pendientes"),tipo:z.enum(["todos","faltantes","sobrantes"]).default("todos"),sucursal:z.string().trim().max(250).default(""),linea:z.string().trim().max(200).default(""),bodegaProductoId:uuid.or(z.literal("")).default(""),flujo:z.enum(["todos","trabajo"]).default("todos"),cola:z.enum(["automatica","pendientes","gestion","corregir","verificar"]).default("automatica"),skip:z.coerce.number().int().min(0).max(1_000_000).default(0),take:z.coerce.number().int().min(1).max(100).default(25)}).parse(raw);
     const workflow=input.cola==="pendientes"&&canEdit?"conteo":input.cola==="gestion"&&canEdit?"gestion":automaticWorkflow;
     const source:Prisma.InconsistenciaWhereInput={};
     const territory:Prisma.InconsistenciaWhereInput=storeScope.national?{}:{OR:[{tiendaId:{in:storeScope.rows.map(store=>store.id)}},...storeScope.rows.map(store=>({tiendaId:null,sucursal:{equals:store.nombre,mode:"insensitive" as const}}))]};
-    const summaryFlow:Prisma.InconsistenciaWhereInput={AND:[territory,...(input.bodegaProductoId?[{OR:[{bodegaProductoId:input.bodegaProductoId},{bodegaProductoId:null,producto:{inventarios:{some:{bodegaProductoId:input.bodegaProductoId}}}}]}]:[])],fecha:monthRange(input.mes),...(input.sucursal?{sucursal:input.sucursal}:{}),...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{})};
+    const summaryFlow:Prisma.InconsistenciaWhereInput={AND:[territory,...(input.bodegaProductoId?[{OR:[{bodegaProductoId:input.bodegaProductoId},{bodegaProductoId:null,producto:{inventarios:{some:{bodegaProductoId:input.bodegaProductoId}}}}]}]:[])],fecha:monthRange(input.mes),...(input.sucursal?{sucursal:input.sucursal}:{}),...(input.linea?{producto:{linea:input.linea}}:{}),...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{})};
     // Toda corrección registrada (no solo el ajuste) pasa por Verificación antes de cerrarse.
     const enGestion:Prisma.InconsistenciaWhereInput={conteoFisico:{not:null},ajustado:false,correccionEjecutadaAt:null,formaCorreccion:null};
     const enCorreccion:Prisma.InconsistenciaWhereInput={conteoFisico:{not:null},ajustado:false,correccionEjecutadaAt:null,formaCorreccion:{not:null,notIn:[SIN_CORRECCION]}};
@@ -55,6 +55,7 @@ export class InconsistencyService{
       ...flow,
       ...(input.estado==="pendientes"?{resuelto:false}:input.estado==="resueltos"?{resuelto:true}:input.estado==="ajuste"?{OR:[{ajustar:{not:null}},{ajustado:true}]}:{}),
       ...(input.sucursal?{sucursal:input.sucursal}:{}),
+      ...(input.linea?{producto:{linea:input.linea}}:{}),
       ...(input.tipo==="faltantes"?{tipoError:{contains:"faltante",mode:"insensitive"}}:input.tipo==="sobrantes"?{tipoError:{contains:"sobrante",mode:"insensitive"}}:{}),
       AND:[
         // La cola va en AND para no pisar otros filtros con OR.
@@ -64,14 +65,16 @@ export class InconsistencyService{
         ...(input.q?[{OR:[{transferencia:{contains:input.q,mode:"insensitive" as const}},{codigoBarra:{contains:input.q,mode:"insensitive" as const}},{referencia:{contains:input.q,mode:"insensitive" as const}},{comentarioAdmin:{contains:input.q,mode:"insensitive" as const}}]}]:[]),
       ],
     };
-    const [rows,total,summary,stores,warehouses]=await Promise.all([
+    const [rows,total,summary,stores,warehouses,lines]=await Promise.all([
       this.db.inconsistencia.findMany({where,skip:input.skip,take:input.take,orderBy:[{resuelto:"asc"},{fecha:"asc"},{id:"asc"}],include:{bodegaProducto:true,producto:{include:{inventarios:{include:{bodegaProducto:true},take:5}}}}}),
       this.db.inconsistencia.count({where}),
       Promise.all([this.db.inconsistencia.count({where:summaryFlow}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:true}}),this.db.inconsistencia.count({where:{...summaryFlow,ajustado:true}}),this.db.inconsistencia.count({where:{...summaryFlow,resuelto:false,conteoFisico:null}}),this.db.inconsistencia.count({where:{AND:[summaryFlow,enGestion],resuelto:false}}),this.db.inconsistencia.count({where:{AND:[summaryFlow,enCorreccion],resuelto:false}}),this.db.inconsistencia.count({where:{AND:[summaryFlow,enVerificacion],resuelto:false}})]),
       this.db.inconsistencia.findMany({where:territory,distinct:["sucursal"],select:{sucursal:true},orderBy:{sucursal:"asc"}}),
       this.db.bodegaProducto.findMany({select:{id:true,nombre:true},orderBy:{nombre:"asc"}}),
+      // Líneas de los productos con inconsistencias del territorio, para filtrar por línea.
+      this.db.producto.findMany({where:{linea:{not:null},inconsistencias:{some:territory}},distinct:["linea"],select:{linea:true},orderBy:{linea:"asc"}}),
     ]);
-    return {workflow,rows,total,skip:input.skip,take:input.take,summary:{total:summary[0],pendientes:summary[1],resueltos:summary[2],ajustados:summary[3],sinConteo:summary[4],conConteo:summary[5],porCorregir:summary[6],porVerificar:summary[7]},stores:stores.map(x=>x.sucursal),warehouses,options:INCONSISTENCY_OPTIONS};
+    return {workflow,rows,total,skip:input.skip,take:input.take,summary:{total:summary[0],pendientes:summary[1],resueltos:summary[2],ajustados:summary[3],sinConteo:summary[4],conConteo:summary[5],porCorregir:summary[6],porVerificar:summary[7]},stores:stores.map(x=>x.sucursal),warehouses,lines:lines.map(x=>x.linea!).filter(Boolean),options:INCONSISTENCY_OPTIONS};
   }
   async update(raw:unknown){
     await this.access.permitted("inconsistencias.editar");const input=editSchema.parse(raw);

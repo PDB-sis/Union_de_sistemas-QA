@@ -49,8 +49,8 @@ const noreima = await db.perfilLaboral.create({ data: { codigo: "NOREIMA", nombr
 await db.transferenciaConsulta.updateMany({ where: { codigoFacturador: "NOREIMA" }, data: { facturadorId: noreima.id } });
 // La transferencia #120030 trae dos productos; uno tuvo error confirmado de facturación.
 const productos = [];
-for (const [codigoBarra, descripcion, talla] of [["7701234567890", "Franela cuello redondo manga corta algodón", "M"], ["7701234567891", "Pantalón jean clásico tiro alto", "32"]])
-  productos.push(await db.producto.create({ data: { codigoBarra, descripcion, referencia: `REF-${codigoBarra.slice(-4)}`, marca: "Marca de prueba", talla } }));
+for (const [codigoBarra, descripcion, talla, linea] of [["7701234567890", "Franela cuello redondo manga corta algodón", "M", "Dama"], ["7701234567891", "Pantalón jean clásico tiro alto", "32", "Caballero"]])
+  productos.push(await db.producto.create({ data: { codigoBarra, descripcion, referencia: `REF-${codigoBarra.slice(-4)}`, marca: "Marca de prueba", talla, linea } }));
 const t120030 = await db.transferenciaConsulta.findFirstOrThrow({ where: { numero: "120030" } });
 for (const [i, producto] of productos.entries()) await db.transferenciaConsultaDetalle.create({ data: { transferenciaId: t120030.id, productoId: producto.id, codigoBarra: producto.codigoBarra, cantidad: 60, numeroCaja: String(i + 1) } });
 await db.inconsistencia.create({ data: { sourceKey: randomUUID().replaceAll("-", ""), fecha: hoy, sucursal: tiendas[0].nombre, tiendaId: tiendas[0].id, transferencia: "120030", codigoBarra: "7701234567890", productoId: productos[0].id, tipoError: "Faltante físico", cantidadErrada: 4, responsable: "FACTURACION", motivo: "Error por facturador (Físico Faltante)" } });
@@ -190,6 +190,16 @@ try {
           await until(() => evaluate(`document.body.textContent.includes("Guardado")&&!document.body.textContent.includes("Cambios sin guardar")`), "El cambio del editor no se guardó");
           const guardado = await evaluate(`fetch('/api/proyectos').then(r=>r.json()).then(b=>b.data.find(p=>p.titulo==="Reducir negativos de Galerías").resumen)`);
           if (guardado !== "Bajar a cero los negativos antes del 15 de diciembre.") fallas.push({ ancho, rol, pantalla: "proyecto", cortados: [`no guardó: ${guardado}`], total: 1, documento: ancho, ancho });
+          // Tareas limpias: las opciones de cada tarea solo aparecen con su botón de ajustes.
+          await evaluate(`[...document.querySelectorAll('[role="tab"]')].find(b=>b.textContent.startsWith("Tareas")).click()`);
+          await until(() => evaluate(`Boolean(document.querySelector('button[aria-label^="Ajustes de «"]'))`), "Las tareas no tienen botón de ajustes");
+          if (await evaluate(`Boolean(document.querySelector('select[aria-label^="Estado de «"]'))`)) fallas.push({ ancho, rol, pantalla: "tareas", cortados: ["las opciones de la tarea se ven sin abrir ajustes"], total: 1, documento: ancho, ancho });
+          await evaluate(`document.querySelector('button[aria-label^="Ajustes de «"]').click()`);
+          await until(() => evaluate(`Boolean(document.querySelector('select[aria-label^="Estado de «"]'))`), "Los ajustes de la tarea no abren");
+          await revisar(rol, "proyecto-tareas", ancho);
+          // Filtro por línea en negativos: ofrece las líneas con casos y filtra por la elegida.
+          const lineas = await evaluate(`Promise.all(["", "Caballero", "Dama"].map(l=>fetch('/api/operacion/negativos/lista'+String.fromCharCode(63)+new URLSearchParams({filtro:'all',vista:'historial',linea:l})).then(r=>r.json()).then(b=>b.data)))`);
+          if (!lineas[0].lineas.includes("Caballero") || lineas[1].total !== lineas[0].total || lineas[2].total !== 0) fallas.push({ ancho, rol, pantalla: "negativos-linea", cortados: [`líneas ${JSON.stringify(lineas[0].lineas)} · total ${lineas[0].total}/${lineas[1].total}/${lineas[2].total}`], total: 1, documento: ancho, ancho });
         } else if (!(await evaluate(`document.body.textContent.includes("solo lectura")&&document.querySelector('[aria-label="Título del proyecto"]').readOnly`))) fallas.push({ ancho, rol, pantalla: "proyecto", cortados: ["el lector puede editar"], total: 1, documento: ancho, ancho });
         await revisar(rol, "proyecto-compartido", ancho);
       }

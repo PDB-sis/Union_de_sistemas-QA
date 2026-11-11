@@ -32,6 +32,7 @@ export const listingSchema = z.object({ bodegaId: uuid.optional(), skip: z.coerc
   vista: z.enum(["actual", "pendientes_verificar", "historial"]).default("actual"),
   orden: z.enum(["cantidad_desc", "cantidad_asc", "codigo_asc", "codigo_desc", "fecha_desc", "fecha_asc"]).default("cantidad_desc"),
   take: z.coerce.number().int().min(1).max(100).default(25), q: z.string().trim().max(200).default(""),
+  linea: z.string().trim().max(200).default(""),
   flujo:z.enum(["todos","trabajo"]).default("todos"),
   cola:z.enum(["automatica","pendientes","gestion","aprobados","listos","desaparecidos"]).default("automatica"),
   comparacion:z.enum(["todos","nuevos","aumentaron","disminuyeron","iguales","desaparecieron"]).default("todos"),
@@ -223,6 +224,7 @@ export class NegativeOperations {
       };
       const where: Prisma.NegativoWhereInput = { ...base,
         ...(p.bodegaProductoId ? { bodegaProductoId: p.bodegaProductoId } : {}),
+        ...(p.linea ? { producto: { linea: p.linea } } : {}),
         ...(p.filtro === "anulados" ? { anuladoAt: { not: null } } : {}),
         ...(p.filtro === "con_conteo" ? { conteoFisico: { not: null } } : {}),
         ...(p.filtro === "pending" ? { estado: { notIn: [...closed] } } : p.filtro === "resolved" ? { estado: { in: [...closed] } } : p.filtro in gruposEstado ? { estado: { in: [...gruposEstado[p.filtro as GrupoEstado].estados] } } : p.filtro in estados ? { estado: p.filtro as keyof typeof estados } : {}),
@@ -242,24 +244,27 @@ export class NegativeOperations {
       }
       const inconsistencyRows=await tx.inconsistencia.findMany({where:{resuelto:false,codigoBarra:{in:items.map(n=>n.producto.codigoBarra)}},select:{codigoBarra:true}});
       const inconsistencyCount=new Map<string,number>();for(const row of inconsistencyRows)inconsistencyCount.set(row.codigoBarra,(inconsistencyCount.get(row.codigoBarra)??0)+1);
+      // Los contadores respetan la ubicación física y la línea elegidas.
+      const porProducto:Prisma.NegativoWhereInput={...(p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{}),...(p.linea?{producto:{linea:p.linea}}:{})};
+      // Líneas de los productos con negativos en las bodegas visibles, para el filtro.
+      const lineas=(await tx.producto.findMany({where:{linea:{not:null},negativos:{some:{bodegaId:scopedId,anuladoAt:null,fusionadoEnId:null}}},distinct:["linea"],select:{linea:true},orderBy:{linea:"asc"}})).map(x=>x.linea!).filter(Boolean);
       const globalSummaryBase: Prisma.NegativoWhereInput = {AND:[{bodegaId:scopedId},period,negativosActuales],anuladoAt:null,fusionadoEnId:null};
-      const summaryBase: Prisma.NegativoWhereInput = {AND:[{bodegaId:scopedId},period,negativosActuales],anuladoAt:null,fusionadoEnId:null,...(p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{})};
+      const summaryBase: Prisma.NegativoWhereInput = {AND:[{bodegaId:scopedId},period,negativosActuales],anuladoAt:null,fusionadoEnId:null,...porProducto};
       const activos = await tx.negativo.count({ where: { ...summaryBase, estado: { notIn: [...closed] } } });
       const aprobados = await tx.negativo.count({ where: { ...summaryBase, estado: "AJUSTE_AUTORIZADO" } });
-      const listosCerrar = await tx.negativo.count({ where: { AND:[{bodegaId:scopedId},period],anuladoAt:null,fusionadoEnId:null,...(p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{}),estado:"AJUSTE_REALIZADO" } });
+      const listosCerrar = await tx.negativo.count({ where: { AND:[{bodegaId:scopedId},period],anuladoAt:null,fusionadoEnId:null,...porProducto,estado:"AJUSTE_REALIZADO" } });
       const resueltos = await tx.negativo.count({ where: { ...summaryBase, estado: { in: [...closed] } } });
       const sinConteo = await tx.negativo.count({ where: { ...summaryBase,conteoFisico:null,estado:{notIn:[...approvedStates,...closed]} } });
-      const productWarehouse = p.bodegaProductoId?{bodegaProductoId:p.bodegaProductoId}:{};
       const visibleCurrent=await tx.negativo.findMany({where:{AND:[where,{estado:{notIn:[...closed]}}]},select:{productoId:true,bodegaId:true}});
       const units=visibleCurrent.reduce((sum,item)=>sum.add(amountOf(item)??0),new Prisma.Decimal(0));
       const allActiveCases=await tx.negativo.findMany({where:{...globalSummaryBase,estado:{notIn:[...closed]}},select:{productoId:true,bodegaId:true}});
       const allActiveUnits=allActiveCases.reduce((sum,item)=>sum.add(amountOf(item)??0),new Prisma.Decimal(0));
       const listosEnFoto=await tx.negativo.count({where:{...summaryBase,estado:"AJUSTE_REALIZADO"}});
       const conConteo=Math.max(0,activos-sinConteo-aprobados-listosEnFoto),actuales=sinConteo+conConteo+aprobados+listosEnFoto;
-      const pendientesVerificar = await tx.negativo.count({where:{AND:[{bodegaId:scopedId},period,{NOT:negativosActuales}],fusionadoEnId:null,anuladoAt:null,estado:"PENDIENTE_VERIFICAR",...productWarehouse}});
+      const pendientesVerificar = await tx.negativo.count({where:{AND:[{bodegaId:scopedId},period,{NOT:negativosActuales}],fusionadoEnId:null,anuladoAt:null,estado:"PENDIENTE_VERIFICAR",...porProducto}});
       const verificaciones=await verificacionesAjuste(tx,items.filter(n=>n.estado==="AJUSTE_REALIZADO"));
       const workflow=p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?"desaparecidos":countIds.length&&managementIds.length?"mixto":countIds.length?"conteo":"gestion";
-      return { total, skip: p.skip, take: p.take, workflow, resumen: { actuales, pendientesVerificar, activos, resueltos, sinConteo, conConteo, aprobados, listosCerrar, totalCasosActivos:allActiveCases.length, totalUnidadesActivas:allActiveUnits.abs().toFixed(4), grupos: { EN_INVESTIGACION: activos - aprobados - listosEnFoto, AJUSTE_AUTORIZADO: aprobados + listosEnFoto, SOLUCIONADO: resueltos }, unidades: units.abs().toFixed(4) }, ultimaConsulta: latest, corteNegativos:activePhoto?{fechaCorte:activePhoto.fechaCorte,tipoCorte:activePhoto.tipoCorte}:null,fotografiaAnterior:previousPhoto?{fechaCorte:previousPhoto.fechaCorte}:null,
+      return { total, skip: p.skip, take: p.take, workflow, lineas, resumen: { actuales, pendientesVerificar, activos, resueltos, sinConteo, conConteo, aprobados, listosCerrar, totalCasosActivos:allActiveCases.length, totalUnidadesActivas:allActiveUnits.abs().toFixed(4), grupos: { EN_INVESTIGACION: activos - aprobados - listosEnFoto, AJUSTE_AUTORIZADO: aprobados + listosEnFoto, SOLUCIONADO: resueltos }, unidades: units.abs().toFixed(4) }, ultimaConsulta: latest, corteNegativos:activePhoto?{fechaCorte:activePhoto.fechaCorte,tipoCorte:activePhoto.tipoCorte}:null,fotografiaAnterior:previousPhoto?{fechaCorte:previousPhoto.fechaCorte}:null,
         items: items.map(n => ({ ...n, inconsistenciasActivas:inconsistencyCount.get(n.producto.codigoBarra)??0, verificacion:verificaciones.get(n.id)??null, workflow:p.cola==="pendientes"?"conteo":p.cola==="gestion"?"gestion":p.cola==="aprobados"?"aprobados":p.cola==="listos"?"listos":p.cola==="desaparecidos"?(n.conteoFisico===null?"conteo":"gestion"):workflows.get(n.bodegaId)??"gestion", existenciaActual: amountOf(n)?.toFixed(4)??null, existenciaAnterior:deBodega(n.bodegaId).previous.get(n.productoId)?.toFixed(4)??null,comparacionFoto:photoComparison(deBodega(n.bodegaId).previous.get(n.productoId)?.toFixed(4)??null,deBodega(n.bodegaId).activePhoto?amountOf(n)?.toFixed(4)??null:null,Boolean(deBodega(n.bodegaId).previousPhoto),Boolean(deBodega(n.bodegaId).activePhoto)) })),
       };
     }, { isolationLevel: "RepeatableRead" });

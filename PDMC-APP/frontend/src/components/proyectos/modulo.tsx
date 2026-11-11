@@ -3,7 +3,7 @@
 // Proyectos compartidos ("mini Notion"): lista de proyectos y la página de cada uno, con bloques,
 // tareas, comentarios y actividad. Los datos viven en el servidor (/api/proyectos), no en el navegador.
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Archive, ArrowDown, ArrowLeft, ArrowUp, CalendarDays, Check, CheckSquare, ChevronDown, Columns3, Copy, Heading1, Heading2, Info, List, ListChecks, ListOrdered, LoaderCircle, LogOut, MessageSquareText, Minus, Plus, Quote, RotateCcw, Search, Share2, Trash2, Type, UserPlus, Users, X } from "lucide-react";
+import { Archive, ArrowDown, ArrowLeft, ArrowUp, CalendarDays, Check, CheckSquare, ChevronDown, Columns3, Copy, Heading1, Heading2, Info, List, ListChecks, ListOrdered, LoaderCircle, LogOut, MessageSquareText, Minus, Plus, Quote, RotateCcw, Search, Settings2, Share2, Trash2, Type, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import { formatoFecha } from "@/lib/fechas";
 import { roles } from "@pdmc/contratos/auth/model";
 import {
   BLOQUES, COLORES, ESTADOS_PROYECTO, PLANTILLAS, PRIORIDADES, bloqueEtiqueta, estadoProyectoEtiqueta, estadoTareaEtiqueta, plantillas, prioridadEtiqueta,
-  type Bloque, type ColorProyecto, type EstadoProyecto, type EstadoTarea, type MiTarea, type PersonaDirectorio, type Plantilla, type Prioridad, type ProyectoDetalle, type ProyectoResumen, type TipoBloque,
+  type Bloque, type ColorProyecto, type EstadoProyecto, type EstadoTarea, type MiTarea, type PersonaDirectorio, type Plantilla, type Prioridad, type ProyectoDetalle, type ProyectoResumen, type TareaProyecto, type TipoBloque,
 } from "@pdmc/contratos/proyectos/modelo";
 
 class ApiError extends Error { constructor(message: string, readonly code?: string) { super(message); } }
@@ -294,33 +294,59 @@ function Editor({ bloques, soloLectura, cambiar }: { bloques: Bloque[]; soloLect
 type Equipo = (ProyectoDetalle["propietario"] & { permiso: "PROPIETARIO" | "EDITOR" | "LECTOR" })[];
 type Accion = (fn: () => Promise<unknown>, ok?: string) => Promise<void>;
 
+/** Tareas del proyecto: cada fila muestra solo lo esencial; sus opciones están en su botón de ajustes. */
 function Tareas({ proyecto, equipo, puedeEditar, accion }: { proyecto: ProyectoDetalle; equipo: Equipo; puedeEditar: boolean; accion: Accion }) {
-  const [titulo, setTitulo] = useState(""), [responsable, setResponsable] = useState(""), [fecha, setFecha] = useState("");
+  const [titulo, setTitulo] = useState(""), [responsable, setResponsable] = useState(""), [fecha, setFecha] = useState(""), [detalles, setDetalles] = useState(false), [ajustes, setAjustes] = useState<string | null>(null);
   const crear = async () => { if (!titulo.trim()) return; await accion(() => api(`/${proyecto.id}/tareas`, { titulo, responsableId: responsable || null, fechaLimite: fecha || null })); setTitulo(""); setFecha(""); };
   const cambiarTarea = (tareaId: string, cambios: Record<string, unknown>) => accion(() => api(`/${proyecto.id}/tareas/${tareaId}`, cambios, "PATCH"));
-  const hoy = hoyIso(), grupos: EstadoTarea[] = ["PENDIENTE", "EN_CURSO", "HECHA"];
+  const hoy = hoyIso(), abiertas = proyecto.tareas.filter(t => t.estado !== "HECHA"), hechas = proyecto.tareas.filter(t => t.estado === "HECHA");
+  const fila = (t: TareaProyecto) => { const vencida = t.estado !== "HECHA" && t.fechaLimite && t.fechaLimite < hoy, abierta = ajustes === t.id;
+    return <li key={t.id}>
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <input type="checkbox" aria-label={`Marcar «${t.titulo}» como hecha`} disabled={!puedeEditar} checked={t.estado === "HECHA"} onChange={event => void cambiarTarea(t.id, { estado: event.target.checked ? "HECHA" : "PENDIENTE" })} className="size-4 shrink-0 accent-primary" />
+        <div className="min-w-0 flex-1">
+          <p className={`text-sm font-medium leading-5 ${t.estado === "HECHA" ? "text-muted-foreground line-through" : ""}`}>{t.titulo}</p>
+          {(t.responsable || t.fechaLimite || t.estado === "EN_CURSO") && <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {t.estado === "EN_CURSO" && <span className="font-semibold text-primary">En curso</span>}
+            {t.responsable && <span className="flex min-w-0 items-center gap-1"><Avatar nombre={t.responsable.nombre} className="size-4 text-[7px] ring-0" /><span className="truncate">{t.responsable.nombre}</span></span>}
+            {t.fechaLimite && <span className={`flex items-center gap-1 ${vencida ? "font-semibold text-danger-700 dark:text-danger-200" : ""}`}><CalendarDays className="size-3" />{formatoFecha(t.fechaLimite)}{vencida && " · vencida"}</span>}
+          </p>}
+        </div>
+        {puedeEditar && <button type="button" aria-label={`Ajustes de «${t.titulo}»`} aria-expanded={abierta} onClick={() => setAjustes(abierta ? null : t.id)} className={`grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground ${abierta ? "bg-muted text-foreground" : ""}`}><Settings2 className="size-4" /></button>}
+      </div>
+      {abierta && <AjustesTarea tarea={t} equipo={equipo} cambiar={cambios => cambiarTarea(t.id, cambios)} eliminar={() => { setAjustes(null); void accion(() => api(`/${proyecto.id}/tareas/${t.id}`, undefined, "DELETE"), "Tarea eliminada."); }} cerrar={() => setAjustes(null)} />}
+    </li>; };
   return <div className="grid gap-4">
-    <Avance hechas={proyecto.tareas.filter(t => t.estado === "HECHA").length} total={proyecto.tareas.length} />
-    {puedeEditar && <form onSubmit={event => { event.preventDefault(); void crear(); }} className="grid gap-2 rounded-xl border bg-muted/30 p-3 sm:grid-cols-[1fr_12rem_10rem_auto]">
-      <Input aria-label="Nueva tarea" placeholder="Nueva tarea…" value={titulo} maxLength={300} onChange={event => setTitulo(event.target.value)} />
-      <select aria-label="Responsable de la tarea" className={select} value={responsable} onChange={event => setResponsable(event.target.value)}><option value="">Sin responsable</option>{equipo.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select>
-      <Input aria-label="Fecha límite" type="date" value={fecha} onChange={event => setFecha(event.target.value)} className="h-9" />
-      <Button type="submit" disabled={!titulo.trim()}><Plus />Agregar</Button>
+    <Avance hechas={hechas.length} total={proyecto.tareas.length} />
+    {puedeEditar && <form onSubmit={event => { event.preventDefault(); void crear(); }} className="grid gap-2">
+      <div className="flex gap-2">
+        <Input aria-label="Nueva tarea" placeholder="Nueva tarea…" value={titulo} maxLength={300} onChange={event => setTitulo(event.target.value)} className="min-w-0 flex-1" />
+        <Button type="button" variant="outline" size="icon" aria-label="Responsable y fecha de la nueva tarea" aria-expanded={detalles} onClick={() => setDetalles(!detalles)} className={detalles || responsable || fecha ? "border-primary text-primary" : ""}><Settings2 /></Button>
+        <Button type="submit" disabled={!titulo.trim()}><Plus /><span className="hidden sm:inline">Agregar</span></Button>
+      </div>
+      {detalles && <div className="grid gap-2 rounded-xl border bg-muted/30 p-3 sm:grid-cols-2">
+        <label className="grid min-w-0 gap-1 text-xs font-semibold text-muted-foreground">Responsable<select aria-label="Responsable de la tarea" className={`${select} w-full min-w-0`} value={responsable} onChange={event => setResponsable(event.target.value)}><option value="">Sin responsable</option>{equipo.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></label>
+        <label className="grid min-w-0 gap-1 text-xs font-semibold text-muted-foreground">Fecha límite<Input aria-label="Fecha límite" type="date" value={fecha} onChange={event => setFecha(event.target.value)} className="h-9 w-full min-w-0 px-2" /></label>
+      </div>}
     </form>}
-    {!proyecto.tareas.length && <p className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">{puedeEditar ? "Divide el proyecto en tareas, con responsable y fecha. Solo puedes asignar a personas con acceso al proyecto." : "Este proyecto todavía no tiene tareas."}</p>}
-    {grupos.map(grupo => { const filas = proyecto.tareas.filter(t => t.estado === grupo); if (!filas.length) return null;
-      return <section key={grupo} className="grid gap-1.5"><h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">{estadoTareaEtiqueta[grupo]} <span className="rounded-full bg-muted px-1.5 font-semibold">{filas.length}</span></h4>
-        <ul className="divide-y rounded-xl border">{filas.map(t => { const vencida = t.estado !== "HECHA" && t.fechaLimite && t.fechaLimite < hoy;
-          return <li key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3">
-            <input type="checkbox" aria-label={`Marcar «${t.titulo}» como hecha`} disabled={!puedeEditar} checked={t.estado === "HECHA"} onChange={event => void cambiarTarea(t.id, { estado: event.target.checked ? "HECHA" : "PENDIENTE" })} className="size-4 accent-primary" />
-            <span className={`min-w-0 flex-1 text-sm font-medium ${t.estado === "HECHA" ? "text-muted-foreground line-through" : ""}`}>{t.titulo}</span>
-            <span className="flex flex-wrap items-center gap-2 text-xs">
-              {puedeEditar ? <select aria-label={`Estado de «${t.titulo}»`} className={`${select} h-8 text-xs`} value={t.estado} onChange={event => void cambiarTarea(t.id, { estado: event.target.value })}>{grupos.map(e => <option key={e} value={e}>{estadoTareaEtiqueta[e]}</option>)}</select> : null}
-              {puedeEditar ? <select aria-label={`Responsable de «${t.titulo}»`} className={`${select} h-8 max-w-40 text-xs`} value={t.responsableId ?? ""} onChange={event => void cambiarTarea(t.id, { responsableId: event.target.value || null })}><option value="">Sin responsable</option>{equipo.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select> : t.responsable && <span className="flex items-center gap-1"><Avatar nombre={t.responsable.nombre} className="size-5 text-[8px]" />{t.responsable.nombre}</span>}
-              {t.fechaLimite && <span className={`flex items-center gap-1 ${vencida ? "font-semibold text-danger-700 dark:text-danger-200" : "text-muted-foreground"}`}><CalendarDays className="size-3.5" />{formatoFecha(t.fechaLimite)}{vencida && " · vencida"}</span>}
-              {puedeEditar && <button type="button" aria-label={`Eliminar «${t.titulo}»`} onClick={() => void accion(() => api(`/${proyecto.id}/tareas/${t.id}`, undefined, "DELETE"))} className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-danger-50 hover:text-danger-700 dark:hover:bg-danger-950/30"><Trash2 className="size-3.5" /></button>}
-            </span>
-          </li>; })}</ul></section>; })}
+    {!proyecto.tareas.length && <p className="rounded-xl border border-dashed p-5 text-center text-sm text-muted-foreground">{puedeEditar ? "Divide el proyecto en tareas. Con el botón de ajustes eliges responsable y fecha; solo puedes asignar a personas con acceso al proyecto." : "Este proyecto todavía no tiene tareas."}</p>}
+    {abiertas.length > 0 && <ul className="divide-y rounded-xl border">{abiertas.map(fila)}</ul>}
+    {hechas.length > 0 && <details className="group" open={!abiertas.length}><summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground"><ChevronDown className="size-4 -rotate-90 transition group-open:rotate-0" />Hechas <span className="rounded-full bg-muted px-1.5 font-semibold">{hechas.length}</span></summary><ul className="mt-2 divide-y rounded-xl border">{hechas.map(fila)}</ul></details>}
+  </div>;
+}
+
+function AjustesTarea({ tarea, equipo, cambiar, eliminar, cerrar }: { tarea: TareaProyecto; equipo: Equipo; cambiar: (cambios: Record<string, unknown>) => Promise<void>; eliminar: () => void; cerrar: () => void }) {
+  const [titulo, setTitulo] = useState(tarea.titulo), [borrar, setBorrar] = useState(false);
+  const guardarTitulo = () => { const limpio = titulo.trim(); if (limpio && limpio !== tarea.titulo) void cambiar({ titulo: limpio }); else setTitulo(tarea.titulo); };
+  return <div role="group" aria-label={`Ajustes de «${tarea.titulo}»`} className="grid gap-3 border-t bg-muted/30 p-3 sm:grid-cols-2">
+    <label className="grid min-w-0 gap-1 text-xs font-semibold text-muted-foreground sm:col-span-2">Título<Input aria-label="Título de la tarea" value={titulo} maxLength={300} onChange={event => setTitulo(event.target.value)} onBlur={guardarTitulo} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); guardarTitulo(); } }} /></label>
+    <label className="grid min-w-0 gap-1 text-xs font-semibold text-muted-foreground">Estado<select aria-label={`Estado de «${tarea.titulo}»`} className={`${select} w-full min-w-0`} value={tarea.estado} onChange={event => void cambiar({ estado: event.target.value })}>{(["PENDIENTE", "EN_CURSO", "HECHA"] as EstadoTarea[]).map(e => <option key={e} value={e}>{estadoTareaEtiqueta[e]}</option>)}</select></label>
+    <label className="grid min-w-0 gap-1 text-xs font-semibold text-muted-foreground">Responsable<select aria-label={`Responsable de «${tarea.titulo}»`} className={`${select} w-full min-w-0`} value={tarea.responsableId ?? ""} onChange={event => void cambiar({ responsableId: event.target.value || null })}><option value="">Sin responsable</option>{equipo.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></label>
+    <label className="grid min-w-0 gap-1 text-xs font-semibold text-muted-foreground">Fecha límite<Input aria-label={`Fecha límite de «${tarea.titulo}»`} type="date" value={tarea.fechaLimite ?? ""} onChange={event => void cambiar({ fechaLimite: event.target.value || null })} className="h-9 w-full min-w-0 px-2" /></label>
+    <div className="flex flex-wrap items-end justify-end gap-2">
+      {borrar ? <><span className="text-xs text-muted-foreground">¿Eliminar la tarea?</span><Button type="button" size="sm" variant="outline" onClick={() => setBorrar(false)}>No</Button><Button type="button" size="sm" variant="destructive" onClick={eliminar}><Trash2 />Eliminar</Button></>
+        : <><Button type="button" size="sm" variant="ghost" className="text-danger-700 hover:text-danger-800 dark:text-danger-200" onClick={() => setBorrar(true)}><Trash2 />Eliminar</Button><Button type="button" size="sm" variant="outline" onClick={cerrar}><Check />Listo</Button></>}
+    </div>
   </div>;
 }
 

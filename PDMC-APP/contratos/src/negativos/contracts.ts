@@ -55,6 +55,8 @@ export type NegativeListing = {
   total: number; skip: number; take: number;
   /** "conteo", "gestion", "mixto", "aprobados", "listos" o "desaparecidos". */
   workflow: string;
+  /** Líneas de producto disponibles para filtrar. */
+  lineas: string[];
   resumen: {
     actuales: number; pendientesVerificar: number; activos: number; resueltos: number; sinConteo: number; conConteo: number;
     aprobados: number; listosCerrar: number; totalCasosActivos: number; totalUnidadesActivas: Decimal; unidades: Decimal;
