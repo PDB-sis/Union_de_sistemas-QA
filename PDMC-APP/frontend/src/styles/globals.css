@@ -1172,6 +1172,10 @@ body:has(#nl-badge-frame) .store-liquid-nav { bottom: calc(4rem + env(safe-area-
 body:has(#nl-badge-frame) .store-workspace { padding-bottom: 12rem; }
 body:has(#nl-badge-frame) .workspace-content { padding-bottom: 6rem; }
 
+/* El expediente que se desplaza por sí mismo (negativos) no puede heredar el overflow: clip de la
+   tarjeta: recortaría el final (observaciones y el botón de guardar) en vez de dejarlo desplazar. */
+.pdmc-surface.case-sheet.overflow-auto { overflow: auto; }
+
 /* Expediente de un negativo o una inconsistencia en celular y tablet: hoja de pantalla completa,
    sólida, por encima del encabezado flotante; el fondo no se desplaza mientras está abierta. */
 @media (max-width: 1279.98px) {

@@ -148,7 +148,7 @@ try {
   // Simula la insignia que Netlify inyecta en los sitios gratuitos (mismo id, tamaño y posición).
   await send("Page.addScriptToEvaluateOnNewDocument", { source: `document.addEventListener("DOMContentLoaded",()=>{const f=document.createElement("iframe");f.id="nl-badge-frame";f.style.cssText="position:fixed;bottom:0;right:0;border:0;width:216px;height:92px;z-index:2147483645;pointer-events:none;background:transparent";document.body.appendChild(f)})` });
   for (const ancho of anchos) {
-    await send("Emulation.setDeviceMetricsOverride", { width: ancho, height: 800, deviceScaleFactor: 1, mobile: true });
+    await send("Emulation.setDeviceMetricsOverride", { width: ancho, height: Number(process.env.PDMC_MOVIL_ALTO ?? 800), deviceScaleFactor: 1, mobile: ancho < 1280 });
     await send("Emulation.setTouchEmulationEnabled", { enabled: true });
     await send("Network.clearBrowserCookies");
     await send("Page.navigate", { url: `${origin}/login` });
@@ -231,6 +231,16 @@ try {
           const hoja = await evaluate(`(()=>{const a=document.querySelector('aside[aria-label="Expediente del negativo"]'),r=a.getBoundingClientRect(),arriba=document.elementFromPoint(innerWidth/2,30);let p=a.parentElement,t=[];while(p){const s=getComputedStyle(p);if(s.transform!=="none"||s.filter!=="none"||s.backdropFilter!=="none"||s.contain!=="none"||s.willChange!=="auto")t.push(p.className.slice(0,40)+":"+s.transform+"/"+s.filter+"/"+s.backdropFilter);p=p.parentElement}return {top:Math.round(r.top),alto:Math.round(r.height),pantalla:innerHeight,encima:a.contains(arriba),arriba:arriba?.className?.slice(0,40),t}})()`);
           if (hoja.top !== 0 || hoja.alto < hoja.pantalla - 1 || !hoja.encima) fallas.push({ ancho, rol, pantalla: "expediente-negativo", cortados: [`la hoja no cubre la pantalla: ${JSON.stringify(hoja)}`], total: 1, documento: ancho, ancho });
           console.info(`${hoja.top === 0 && hoja.encima ? "✓" : "✗"} ${ancho}px rectificacion · expediente a pantalla completa ${JSON.stringify(hoja)}`);
+        }
+        if (ancho >= 1280) {
+          // En PC el expediente es un panel lateral: cabe en la pantalla y se desplaza hasta el botón de guardar.
+          // Como al trabajar: se baja en la página hasta el panel (queda fijo arriba) y se desplaza su contenido.
+          await evaluate(`(()=>{const a=document.querySelector('aside[aria-label="Expediente del negativo"]');scrollTo(0,a.getBoundingClientRect().top+scrollY-160);})()`);
+          await new Promise(listo => setTimeout(listo, 300));
+          const panel = await evaluate(`(()=>{const a=document.querySelector('aside[aria-label="Expediente del negativo"]');a.scrollTop=a.scrollHeight;const r=a.getBoundingClientRect(),g=[...a.querySelectorAll('button')].find(b=>/Guardar/.test(b.textContent)),gr=g&&g.getBoundingClientRect();return {arriba:Math.round(r.top),abajo:Math.round(r.bottom),pantalla:innerHeight,desplaza:a.scrollHeight>a.clientHeight ? getComputedStyle(a).overflowY : "no hace falta",guardar:gr ? Math.round(gr.bottom) : null}})()`);
+          const bien = panel.abajo <= panel.pantalla && panel.guardar !== null && panel.guardar <= Math.min(panel.abajo, panel.pantalla);
+          console.info(`${bien ? "✓" : "✗"} ${ancho}px rectificacion · expediente en PC ${JSON.stringify(panel)}`);
+          if (!bien) fallas.push({ ancho, rol, pantalla: "expediente-negativo-pc", cortados: [`panel cortado: ${JSON.stringify(panel)}`], total: 1, documento: ancho, ancho });
         }
         await evaluate(`document.querySelector('aside[aria-label="Expediente del negativo"] details')?.setAttribute("open","")`);
         await revisar(rol, "expediente-negativo", ancho);
